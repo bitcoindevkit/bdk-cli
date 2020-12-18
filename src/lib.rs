@@ -183,9 +183,6 @@ pub struct WalletOpt {
     /// Sets the descriptor to use for internal addresses
     #[structopt(name = "CHANGE_DESCRIPTOR", short = "c", long = "change_descriptor")]
     pub change_descriptor: Option<String>,
-    /// Sets the logging level filter (off, error, warn, info, debug, trace)
-    #[structopt(long = "log_level", short = "l", default_value = "info")]
-    pub log_level: String,
     #[cfg(feature = "esplora")]
     /// Use the esplora server if given as parameter
     #[structopt(name = "ESPLORA_URL", short = "e", long = "esplora")]

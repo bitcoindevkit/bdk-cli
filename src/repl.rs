@@ -29,7 +29,7 @@ use std::sync::Arc;
 
 use bitcoin::Network;
 use clap::AppSettings;
-use log::{debug, info, warn, LevelFilter};
+use log::{debug, info, warn};
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use structopt::StructOpt;
@@ -69,10 +69,9 @@ fn prepare_home_dir() -> PathBuf {
 }
 
 fn main() {
-    let cli_opt: WalletOpt = WalletOpt::from_args();
+    env_logger::init();
 
-    let level = LevelFilter::from_str(cli_opt.log_level.as_str()).unwrap_or(LevelFilter::Info);
-    env_logger::builder().filter_level(level).init();
+    let cli_opt: WalletOpt = WalletOpt::from_args();
 
     let network = Network::from_str(cli_opt.network.as_str()).unwrap_or(Network::Testnet);
     debug!("network: {:?}", network);
