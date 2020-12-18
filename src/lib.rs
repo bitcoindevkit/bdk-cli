@@ -22,9 +22,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//! Command line interface
+//! BDK Command line interface
 //!
-//! This module provides a [structopt](https://docs.rs/crate/structopt) `struct` and `enum` that
+//! This lib provides a [structopt](https://docs.rs/crate/structopt) `struct` and `enum` that
 //! parse global wallet options and wallet subcommand options needed for a wallet command line
 //! interface.
 //!
@@ -40,12 +40,12 @@
 //! # use bdk::blockchain::esplora::EsploraBlockchainConfig;
 //! # use bdk::blockchain::{AnyBlockchain, ConfigurableBlockchain};
 //! # use bdk::blockchain::{AnyBlockchainConfig, ElectrumBlockchainConfig};
-//! # use bdk::cli::{self, WalletOpt, WalletSubCommand};
+//! # use bdk_cli::{self, WalletOpt, WalletSubCommand};
 //! # use bdk::database::MemoryDatabase;
 //! # use bdk::Wallet;
-//! # use bitcoin::hashes::core::str::FromStr;
 //! # use std::sync::Arc;
 //! # use structopt::StructOpt;
+//! # use std::str::FromStr;
 //!
 //! // to get args from cli use:
 //! // let cli_opt = WalletOpt::from_args();
@@ -85,27 +85,31 @@
 //!
 //! let wallet = Arc::new(wallet);
 //!
-//! let result = cli::handle_wallet_subcommand(&wallet, cli_opt.subcommand).unwrap();
+//! let result = bdk_cli::handle_wallet_subcommand(&wallet, cli_opt.subcommand).unwrap();
 //! println!("{}", serde_json::to_string_pretty(&result).unwrap());
 //! ```
+
+pub extern crate bdk;
+#[macro_use]
+extern crate serde_json;
+#[cfg(any(target_arch = "wasm32", feature = "async-interface"))]
+#[macro_use]
+extern crate async_trait;
+#[macro_use]
+extern crate bdk_macros;
 
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use structopt::StructOpt;
 
-#[allow(unused_imports)]
-use log::{debug, error, info, trace, LevelFilter};
-
-use bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
-use bitcoin::hashes::hex::FromHex;
-use bitcoin::util::psbt::PartiallySignedTransaction;
-use bitcoin::{Address, OutPoint, Script, Txid};
-
-use crate::blockchain::log_progress;
-use crate::error::Error;
-use crate::types::KeychainKind;
-use crate::{FeeRate, TxBuilder, Wallet};
+use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
+use bdk::bitcoin::hashes::hex::FromHex;
+use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
+use bdk::bitcoin::{Address, OutPoint, Script, Txid};
+use bdk::blockchain::log_progress;
+use bdk::Error;
+use bdk::{FeeRate, KeychainKind, TxBuilder, Wallet};
 
 /// Wallet global options and sub-command
 ///
@@ -116,8 +120,8 @@ use crate::{FeeRate, TxBuilder, Wallet};
 /// # Example
 ///
 /// ```
-/// # use bdk::cli::{WalletOpt, WalletSubCommand};
 /// # use structopt::StructOpt;
+/// # use bdk_cli::{WalletSubCommand, WalletOpt};
 ///
 /// let cli_args = vec!["repl", "--network", "testnet",
 ///                     "--descriptor", "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)",
@@ -214,14 +218,10 @@ pub struct WalletOpt {
 /// the command line or from a `String` vector, such as in the [`repl`](https://github.com/bitcoindevkit/bdk/blob/master/examples/repl.rs)
 /// example app.
 ///
-/// Additional "external" sub-commands can be captured via the [`WalletSubCommand::Other`] enum and passed to a
-/// custom `structopt` or another parser. See [structopt "External subcommands"](https://docs.rs/structopt/0.3.21/structopt/index.html#external-subcommands)
-/// for more information.
-///
 /// # Example
 ///
 /// ```
-/// # use bdk::cli::WalletSubCommand;
+/// # use bdk_cli::WalletSubCommand;
 /// # use structopt::StructOpt;
 ///
 /// let sync_sub_command = WalletSubCommand::from_iter(&["repl", "sync", "--max_addresses", "50"]);
@@ -230,13 +230,6 @@ pub struct WalletOpt {
 ///         WalletSubCommand::Sync {
 ///             max_addresses: Some(50)
 ///         }
-///     ));
-///
-/// let other_sub_command = WalletSubCommand::from_iter(&["repl", "custom", "--param1", "20"]);
-/// let external_args: Vec<String> = vec!["custom".to_string(), "--param1".to_string(), "20".to_string()];
-/// assert!(matches!(
-///         other_sub_command,
-///         WalletSubCommand::Other(v) if v == external_args
 ///     ));
 /// ```
 ///
@@ -247,7 +240,7 @@ pub struct WalletOpt {
 ///
 /// # Example
 /// ```
-/// # use bdk::cli::WalletSubCommand;
+/// # use bdk_cli::WalletSubCommand;
 /// # use structopt::StructOpt;
 /// # use clap::AppSettings;
 ///
@@ -385,9 +378,8 @@ pub enum WalletSubCommand {
         #[structopt(name = "BASE64_PSBT", long = "psbt", required = true)]
         psbt: Vec<String>,
     },
-    /// Put any extra arguments into this Vec
-    #[structopt(external_subcommand)]
-    Other(Vec<String>),
+    /// Enter REPL command loop mode
+    Repl,
 }
 
 fn parse_recipient(s: &str) -> Result<(Script, u64), String> {
@@ -421,8 +413,8 @@ pub fn handle_wallet_subcommand<C, D>(
     wallet_subcommand: WalletSubCommand,
 ) -> Result<serde_json::Value, Error>
 where
-    C: crate::blockchain::Blockchain,
-    D: crate::database::BatchDatabase,
+    C: bdk::blockchain::Blockchain,
+    D: bdk::database::BatchDatabase,
 {
     match wallet_subcommand {
         WalletSubCommand::GetNewAddress => Ok(json!({"address": wallet.get_new_address()?})),
@@ -595,15 +587,15 @@ where
 
             Ok(json!({ "psbt": base64::encode(&serialize(&final_psbt)) }))
         }
-        WalletSubCommand::Other(_) => Ok(json!({})),
+        WalletSubCommand::Repl => Ok(json!({})),
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::{WalletOpt, WalletSubCommand};
-    use bitcoin::hashes::core::str::FromStr;
-    use bitcoin::{Address, OutPoint};
+    use bdk::bitcoin::{Address, OutPoint};
+    use std::str::FromStr;
     use structopt::StructOpt;
 
     #[test]

@@ -40,9 +40,9 @@ use bdk::blockchain::esplora::EsploraBlockchainConfig;
 use bdk::blockchain::{
     AnyBlockchain, AnyBlockchainConfig, ConfigurableBlockchain, ElectrumBlockchainConfig,
 };
-use bdk::cli::{self, WalletOpt, WalletSubCommand};
 use bdk::sled;
 use bdk::Wallet;
+use bdk_cli::{self, WalletOpt, WalletSubCommand};
 
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(name = "BDK Wallet", setting = AppSettings::NoBinaryName,
@@ -94,7 +94,7 @@ fn main() {
         let esplora_concurrency = cli_opt.esplora_concurrency;
         cli_opt.esplora.map(|base_url| {
             AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
-                base_url: base_url.to_string(),
+                base_url,
                 concurrency: Some(esplora_concurrency),
             })
         })
@@ -123,7 +123,7 @@ fn main() {
     let wallet = Arc::new(wallet);
 
     match cli_opt.subcommand {
-        WalletSubCommand::Other(external) if external.contains(&"repl".to_string()) => {
+        WalletSubCommand::Repl => {
             let mut rl = Editor::<()>::new();
 
             // if rl.load_history("history.txt").is_err() {
@@ -138,7 +138,7 @@ fn main() {
                             continue;
                         }
                         rl.add_history_entry(line.as_str());
-                        let split_line: Vec<&str> = line.split(" ").collect();
+                        let split_line: Vec<&str> = line.split(' ').collect();
                         let repl_subcommand: Result<ReplOpt, clap::Error> =
                             ReplOpt::from_iter_safe(split_line);
                         debug!("repl_subcommand = {:?}", repl_subcommand);
@@ -148,7 +148,7 @@ fn main() {
                             continue;
                         }
 
-                        let result = cli::handle_wallet_subcommand(
+                        let result = bdk_cli::handle_wallet_subcommand(
                             &Arc::clone(&wallet),
                             repl_subcommand.unwrap().subcommand,
                         )
@@ -167,7 +167,7 @@ fn main() {
             // rl.save_history("history.txt").unwrap();
         }
         _ => {
-            let result = cli::handle_wallet_subcommand(&wallet, cli_opt.subcommand).unwrap();
+            let result = bdk_cli::handle_wallet_subcommand(&wallet, cli_opt.subcommand).unwrap();
             println!("{}", serde_json::to_string_pretty(&result).unwrap());
         }
     }
