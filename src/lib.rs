@@ -138,7 +138,6 @@ use bdk::{FeeRate, KeychainKind, TxBuilder, Wallet};
 ///         proxy: None,
 ///         descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
 ///         change_descriptor: None,
-///         log_level: "info".to_string(),
 ///         #[cfg(feature = "esplora")]
 ///         esplora: None,
 ///         #[cfg(feature = "esplora")]
@@ -612,7 +611,6 @@ mod test {
             proxy: None,
             descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
             change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
-            log_level: "info".to_string(),
             #[cfg(feature = "esplora")]
             esplora: Some("https://blockstream.info/api/".to_string()),
             #[cfg(feature = "esplora")]
@@ -638,7 +636,6 @@ mod test {
             proxy: None,
             descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
             change_descriptor: None,
-            log_level: "info".to_string(),
             #[cfg(feature = "esplora")]
             esplora: None,
             #[cfg(feature = "esplora")]
@@ -685,7 +682,6 @@ mod test {
             proxy: Some("127.0.0.1:9150".to_string()),
             descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
             change_descriptor: Some("wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
-            log_level: "info".to_string(),
             #[cfg(feature = "esplora")]
             esplora: None,
             #[cfg(feature = "esplora")]
@@ -722,7 +718,6 @@ mod test {
             proxy: None,
             descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
             change_descriptor: None,
-            log_level: "info".to_string(),
             #[cfg(feature = "esplora")]
             esplora: None,
             #[cfg(feature = "esplora")]
