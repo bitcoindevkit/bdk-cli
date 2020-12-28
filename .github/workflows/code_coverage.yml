@@ -1,0 +1,27 @@
+on: [push]
+
+name: Code Coverage
+
+jobs:
+  tarpaulin-codecov:
+    name: Tarpaulin to codecov.io
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set default toolchain
+        run: rustup default nightly
+      - name: Set profile
+        run: rustup set profile minimal
+
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin
+      - name: Tarpaulin
+        run: cargo tarpaulin --features default,esplora --run-types Tests,Doctests --out Xml
+
+      - name: Publish to codecov.io
+        uses: codecov/codecov-action@v1.0.15
+        with:
+          fail_ci_if_error: true
+          file: ./cobertura.xml
