@@ -1,3 +1,8 @@
+# BDK CLI lib and REPL bin
+
+![CI](https://github.com/bitcoindevkit/bdk-cli/workflows/CI/badge.svg)
+![Code Coverage](https://github.com/bitcoindevkit/bdk-cli/workflows/Code%20Coverage/badge.svg)
+
 ## About
 
 This project provides a command line interface (cli) Bitcoin wallet library and [`REPL`](https://en.wikipedia.org/wiki/Read%E2%80%93eval%E2%80%93print_loop)
