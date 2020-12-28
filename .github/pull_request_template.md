@@ -14,7 +14,7 @@ of the PR were done in a specific way -->
 #### All Submissions:
 
 * [ ] I've signed all my commits
-* [ ] I followed the [contribution guidelines](https://github.com/bitcoindevkit/bdk/blob/master/CONTRIBUTING.md)
+* [ ] I followed the [contribution guidelines](https://github.com/bitcoindevkit/bdk-cli/blob/master/CONTRIBUTING.md)
 * [ ] I ran `cargo fmt` and `cargo clippy` before committing
 
 #### New Features:
