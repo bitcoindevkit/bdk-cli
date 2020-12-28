@@ -55,7 +55,7 @@
 //!                     "sync", "--max_addresses", "50"];
 //! let cli_opt = WalletOpt::from_iter(&cli_args);
 //!
-//! let network = Network::from_str(cli_opt.network.as_str()).unwrap_or(Network::Testnet);
+//! let network = cli_opt.network;
 //!
 //! let descriptor = cli_opt.descriptor.as_str();
 //! let change_descriptor = cli_opt.change_descriptor.as_deref();
@@ -106,7 +106,7 @@ use structopt::StructOpt;
 use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
 use bdk::bitcoin::hashes::hex::FromHex;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-use bdk::bitcoin::{Address, OutPoint, Script, Txid};
+use bdk::bitcoin::{Address, Network, OutPoint, Script, Txid};
 use bdk::blockchain::log_progress;
 use bdk::Error;
 use bdk::{FeeRate, KeychainKind, TxBuilder, Wallet};
@@ -120,6 +120,7 @@ use bdk::{FeeRate, KeychainKind, TxBuilder, Wallet};
 /// # Example
 ///
 /// ```
+/// # use bdk::bitcoin::Network;
 /// # use structopt::StructOpt;
 /// # use bdk_cli::{WalletSubCommand, WalletOpt};
 ///
@@ -133,7 +134,7 @@ use bdk::{FeeRate, KeychainKind, TxBuilder, Wallet};
 /// let wallet_opt = WalletOpt::from_iter(&cli_args);
 ///
 /// let expected_wallet_opt = WalletOpt {
-///         network: "testnet".to_string(),
+///         network: Network::Testnet,
 ///         wallet: "main".to_string(),
 ///         proxy: None,
 ///         descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
@@ -163,7 +164,7 @@ pub struct WalletOpt {
         long = "network",
         default_value = "testnet"
     )]
-    pub network: String,
+    pub network: Network,
     /// Selects the wallet to use
     #[structopt(
         name = "WALLET_NAME",
@@ -222,11 +223,11 @@ pub struct WalletOpt {
 ///
 /// let sync_sub_command = WalletSubCommand::from_iter(&["repl", "sync", "--max_addresses", "50"]);
 /// assert!(matches!(
-///         sync_sub_command,
-///         WalletSubCommand::Sync {
-///             max_addresses: Some(50)
-///         }
-///     ));
+///     sync_sub_command,
+///     WalletSubCommand::Sync {
+///         max_addresses: Some(50)
+///     }
+/// ));
 /// ```
 ///
 /// To capture wallet sub-commands from a string vector without a preceeding binary name you can
@@ -590,7 +591,7 @@ where
 #[cfg(test)]
 mod test {
     use super::{WalletOpt, WalletSubCommand};
-    use bdk::bitcoin::{Address, OutPoint};
+    use bdk::bitcoin::{Address, Network, OutPoint};
     use std::str::FromStr;
     use structopt::StructOpt;
 
@@ -606,7 +607,7 @@ mod test {
         let wallet_opt = WalletOpt::from_iter(&cli_args);
 
         let expected_wallet_opt = WalletOpt {
-            network: "bitcoin".to_string(),
+            network: Network::Bitcoin,
             wallet: "main".to_string(),
             proxy: None,
             descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
@@ -631,7 +632,7 @@ mod test {
         let wallet_opt = WalletOpt::from_iter(&cli_args);
 
         let expected_wallet_opt = WalletOpt {
-            network: "testnet".to_string(),
+            network: Network::Testnet,
             wallet: "main".to_string(),
             proxy: None,
             descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
@@ -677,7 +678,7 @@ mod test {
         .unwrap();
 
         let expected_wallet_opt = WalletOpt {
-            network: "testnet".to_string(),
+            network: Network::Testnet,
             wallet: "main".to_string(),
             proxy: Some("127.0.0.1:9150".to_string()),
             descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
@@ -713,7 +714,7 @@ mod test {
         let wallet_opt = WalletOpt::from_iter(&cli_args);
 
         let expected_wallet_opt = WalletOpt {
-            network: "testnet".to_string(),
+            network: Network::Testnet,
             wallet: "main".to_string(),
             proxy: None,
             descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
@@ -730,5 +731,15 @@ mod test {
         };
 
         assert_eq!(expected_wallet_opt, wallet_opt);
+    }
+
+    #[test]
+    fn test_wrong_network() {
+        let cli_args = vec!["repl", "--network", "badnet",
+                            "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
+                            "sync", "--max_addresses", "50"];
+
+        let wallet_opt = WalletOpt::from_iter_safe(&cli_args);
+        assert!(wallet_opt.is_err());
     }
 }

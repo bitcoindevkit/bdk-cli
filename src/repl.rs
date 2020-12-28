@@ -24,7 +24,6 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use bitcoin::Network;
@@ -73,7 +72,7 @@ fn main() {
 
     let cli_opt: WalletOpt = WalletOpt::from_args();
 
-    let network = Network::from_str(cli_opt.network.as_str()).unwrap_or(Network::Testnet);
+    let network = cli_opt.network;
     debug!("network: {:?}", network);
     if network == Network::Bitcoin {
         warn!("This is experimental software and not currently recommended for use on Bitcoin mainnet, proceed with caution.")
