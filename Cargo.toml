@@ -2,7 +2,14 @@
 name = "bdk-cli"
 version = "0.1.0"
 edition = "2018"
-authors = ["Alekos Filini <alekos.filini@gmail.com>", "Riccardo Casatta <riccardo@casatta.it>"]
+authors = ["Alekos Filini <alekos.filini@gmail.com>", "Riccardo Casatta <riccardo@casatta.it>", "Steve Myers <steve@notmandatory.org"]
+homepage = "https://bitcoindevkit.org"
+repository = "https://github.com/bitcoindevkit/bdk-cli"
+documentation = "https://docs.rs/bdk-cli"
+description = "A CLI library and example CLI tool based on the BDK descriptor-based wallet library"
+keywords = ["bitcoin", "wallet", "descriptor", "psbt"]
+readme = "README.md"
+license-file = "LICENSE"
 
 [dependencies]
 bdk = { git = "https://github.com/bitcoindevkit/bdk.git" }
@@ -25,8 +32,7 @@ repl = ["async-trait", "rustyline", "dirs-next", "env_logger", "clap", "electrum
 electrum = ["bdk/electrum"]
 esplora = ["bdk/esplora"]
 
-
 [[bin]]
-name = "repl"
-path = "src/repl.rs"
+name = "bdk-cli"
+path = "src/bdk_cli.rs"
 required-features = ["repl"]

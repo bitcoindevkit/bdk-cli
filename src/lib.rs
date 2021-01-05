@@ -28,7 +28,7 @@
 //! parse global wallet options and wallet subcommand options needed for a wallet command line
 //! interface.
 //!
-//! See the `repl.rs` example for how to use this module to create a simple command line REPL
+//! See the `bdk-cli` example bin for how to use this module to create a simple command line
 //! wallet application.
 //!
 //! See [`WalletOpt`] for global wallet options and [`WalletSubCommand`] for supported sub-commands.
@@ -50,7 +50,7 @@
 //! // to get args from cli use:
 //! // let cli_opt = WalletOpt::from_args();
 //!
-//! let cli_args = vec!["repl", "--network", "testnet", "--descriptor",
+//! let cli_args = vec!["bdk-cli", "--network", "testnet", "--descriptor",
 //!                     "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)",
 //!                     "sync", "--max_addresses", "50"];
 //! let cli_opt = WalletOpt::from_iter(&cli_args);
@@ -124,7 +124,7 @@ use bdk::{FeeRate, KeychainKind, TxBuilder, Wallet};
 /// # use structopt::StructOpt;
 /// # use bdk_cli::{WalletSubCommand, WalletOpt};
 ///
-/// let cli_args = vec!["repl", "--network", "testnet",
+/// let cli_args = vec!["bdk-cli", "--network", "testnet",
 ///                     "--descriptor", "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)",
 ///                     "sync", "--max_addresses", "50"];
 ///
@@ -153,7 +153,7 @@ use bdk::{FeeRate, KeychainKind, TxBuilder, Wallet};
 /// ```
 
 #[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(name = "BDK Wallet",
+#[structopt(name = "BDK CLI",
 version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
 pub struct WalletOpt {
@@ -212,8 +212,8 @@ pub struct WalletOpt {
 /// Wallet sub-command
 ///
 /// A [structopt](https://docs.rs/crate/structopt) enum that parses wallet sub-command arguments from
-/// the command line or from a `String` vector, such as in the [`repl`](https://github.com/bitcoindevkit/bdk/blob/master/examples/repl.rs)
-/// example app.
+/// the command line or from a `String` vector, such as in the [`bdk-cli`](https://github.com/bitcoindevkit/bdk-cli/blob/master/src/bdkcli.rs)
+/// example cli wallet.
 ///
 /// # Example
 ///
@@ -221,7 +221,7 @@ pub struct WalletOpt {
 /// # use bdk_cli::WalletSubCommand;
 /// # use structopt::StructOpt;
 ///
-/// let sync_sub_command = WalletSubCommand::from_iter(&["repl", "sync", "--max_addresses", "50"]);
+/// let sync_sub_command = WalletSubCommand::from_iter(&["bdk-cli", "sync", "--max_addresses", "50"]);
 /// assert!(matches!(
 ///     sync_sub_command,
 ///     WalletSubCommand::Sync {
@@ -232,7 +232,7 @@ pub struct WalletOpt {
 ///
 /// To capture wallet sub-commands from a string vector without a preceeding binary name you can
 /// create a custom struct the includes the `NoBinaryName` clap setting and wraps the WalletSubCommand
-/// enum. See also the [`repl`](https://github.com/bitcoindevkit/bdk/blob/master/examples/repl.rs)
+/// enum. See also the [`bdk-cli`](https://github.com/bitcoindevkit/bdk-cli/blob/master/src/bdkcli.rs)
 /// example app.
 ///
 /// # Example
@@ -242,7 +242,7 @@ pub struct WalletOpt {
 /// # use clap::AppSettings;
 ///
 /// #[derive(Debug, StructOpt, Clone, PartialEq)]
-/// #[structopt(name = "BDK Wallet", setting = AppSettings::NoBinaryName,
+/// #[structopt(name = "BDK CLI", setting = AppSettings::NoBinaryName,
 /// version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 /// author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
 /// struct ReplOpt {
@@ -597,7 +597,7 @@ mod test {
 
     #[test]
     fn test_get_new_address() {
-        let cli_args = vec!["repl", "--network", "bitcoin",
+        let cli_args = vec!["bdk-cli", "--network", "bitcoin",
                             "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
                             "--esplora", "https://blockstream.info/api/",
@@ -625,7 +625,7 @@ mod test {
 
     #[test]
     fn test_sync() {
-        let cli_args = vec!["repl", "--network", "testnet",
+        let cli_args = vec!["bdk-cli", "--network", "testnet",
                             "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "sync", "--max_addresses", "50"];
 
@@ -652,7 +652,7 @@ mod test {
 
     #[test]
     fn test_create_tx() {
-        let cli_args = vec!["repl", "--network", "testnet", "--proxy", "127.0.0.1:9150",
+        let cli_args = vec!["bdk-cli", "--network", "testnet", "--proxy", "127.0.0.1:9150",
                             "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "--change_descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
                             "--server","ssl://electrum.blockstream.info:50002",
@@ -706,7 +706,7 @@ mod test {
 
     #[test]
     fn test_broadcast() {
-        let cli_args = vec!["repl", "--network", "testnet",
+        let cli_args = vec!["bdk-cli", "--network", "testnet",
                             "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "broadcast",
                             "--psbt", "cHNidP8BAEICAAAAASWhGE1AhvtO+2GjJHopssFmgfbq+WweHd8zN/DeaqmDAAAAAAD/////AQAAAAAAAAAABmoEAAECAwAAAAAAAAA="];

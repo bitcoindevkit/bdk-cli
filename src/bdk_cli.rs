@@ -44,7 +44,7 @@ use bdk::Wallet;
 use bdk_cli::{self, WalletOpt, WalletSubCommand};
 
 #[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(name = "BDK Wallet", setting = AppSettings::NoBinaryName,
+#[structopt(name = "BDK CLI", setting = AppSettings::NoBinaryName,
 version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
 struct ReplOpt {
