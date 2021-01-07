@@ -403,7 +403,7 @@ fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
 
 /// Execute a wallet sub-command with a given [`Wallet`].
 ///
-/// Wallet sub-commands are described in [`WalletSubCommand`]. See [`super::cli`] for example usage.
+/// Wallet sub-commands are described in [`WalletSubCommand`]. See [`crate`] for example usage.
 #[maybe_async]
 pub fn handle_wallet_subcommand<C, D>(
     wallet: &Wallet<C, D>,
