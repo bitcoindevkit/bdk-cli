@@ -9,7 +9,7 @@ documentation = "https://docs.rs/bdk-cli"
 description = "A CLI library and example CLI tool based on the BDK descriptor-based wallet library"
 keywords = ["bitcoin", "wallet", "descriptor", "psbt"]
 readme = "README.md"
-license-file = "LICENSE"
+license = "MIT"
 
 [dependencies]
 bdk = "^0.2"
