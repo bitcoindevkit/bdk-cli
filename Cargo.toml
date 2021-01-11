@@ -12,7 +12,7 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-bdk = "^0.2"
+bdk = { git="https://github.com/RCasatta/bdk", branch="timeout_none" }
 bdk-macros = "^0.2"
 structopt = "^0.3"
 serde_json = { version = "^1.0" }
