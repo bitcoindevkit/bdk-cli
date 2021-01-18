@@ -12,8 +12,8 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-bdk = "^0.2"
-bdk-macros = "^0.2"
+bdk = { git = "https://github.com/bitcoindevkit/bdk.git", branch = "release/0.3.0", version = "0.3.0-rc.1" }
+bdk-macros = { git = "https://github.com/bitcoindevkit/bdk.git", branch = "release/0.3.0" }
 structopt = "^0.3"
 serde_json = { version = "^1.0" }
 log = "^0.4"
