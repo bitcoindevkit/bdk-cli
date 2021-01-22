@@ -71,7 +71,7 @@
 //!         url: cli_opt.electrum,
 //!         socks5: cli_opt.proxy,
 //!         retry: 3,
-//!         timeout: 5,
+//!         timeout: None,
 //!     }),
 //! };
 //!
