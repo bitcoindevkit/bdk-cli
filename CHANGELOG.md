@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Project
+- Upgrade BDK to `0.3`
+
+#### Added
+- Add support for `wasm`
+
 ## [0.1.0]
 
 ### Project
