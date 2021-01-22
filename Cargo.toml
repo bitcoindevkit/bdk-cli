@@ -12,7 +12,7 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-bdk = "^0.3"
+bdk = { version = "^0.3", default-features = false }
 bdk-macros = "^0.2"
 structopt = "^0.3"
 serde_json = { version = "^1.0" }
@@ -27,10 +27,11 @@ env_logger = { version = "0.7", optional = true }
 clap = { version = "2.33", optional = true }
 
 [features]
-default = ["repl", "esplora"]
+default = ["repl", "esplora", "electrum", "bdk/key-value-db"]
 repl = ["async-trait", "rustyline", "dirs-next", "env_logger", "clap", "electrum"]
 electrum = ["bdk/electrum"]
 esplora = ["bdk/esplora"]
+compiler = ["bdk/compiler"]
 
 [[bin]]
 name = "bdk-cli"

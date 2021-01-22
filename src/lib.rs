@@ -90,6 +90,7 @@
 //! ```
 
 pub extern crate bdk;
+pub extern crate structopt;
 #[macro_use]
 extern crate serde_json;
 #[cfg(any(target_arch = "wasm32", feature = "async-interface"))]
