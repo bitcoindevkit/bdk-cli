@@ -820,10 +820,11 @@ mod test {
     use super::{CliOpts, WalletOpts};
     use crate::OfflineWalletSubCommand::{CreateTx, GetNewAddress};
     use crate::OnlineWalletSubCommand::{Broadcast, Sync};
-    use crate::{CliSubCommand, WalletSubCommand};
+    use crate::{CliSubCommand, WalletSubCommand, KeySubCommand, handle_key_subcommand};
     use bdk::bitcoin::{Address, Network, OutPoint};
     use std::str::FromStr;
     use structopt::StructOpt;
+    use bdk::miniscript::bitcoin::network::constants::Network::Testnet;
 
     #[test]
     fn test_wallet_get_new_address() {
@@ -1080,5 +1081,46 @@ mod test {
 
         let cli_opts = CliOpts::from_iter_safe(&cli_args);
         assert!(cli_opts.is_err());
+    }
+    
+    #[test]
+    fn test_key_generate() {
+        let network = Testnet;
+        let key_generate_cmd = KeySubCommand::Generate {
+            word_count: 12,
+            password: Some("test123".to_string())
+        };
+        
+        let result = handle_key_subcommand(network, key_generate_cmd).unwrap();
+        let result_obj = result.as_object().unwrap();
+        
+        let mnemonic = result_obj.get("mnemonic").unwrap().as_str().unwrap();
+        let mnemonic:Vec<&str> = mnemonic.split(' ').collect();
+        let xprv = result_obj.get("xprv").unwrap().as_str().unwrap();
+        let xpub = result_obj.get("xpub").unwrap().as_str().unwrap();
+        
+        assert_eq!(mnemonic.len(), 12);
+        assert_eq!(&xprv[0..4], "tprv");
+        assert_eq!(&xpub[0..4], "tpub");
+    }
+
+    #[test]
+    fn test_key_restore() {
+        let network = Testnet;
+        let key_generate_cmd = KeySubCommand::Restore {
+            mnemonic: "payment battle unit sword token broccoli era violin purse trip blood hire".to_string(),
+            password: Some("test123".to_string())
+        };
+
+        let result = handle_key_subcommand(network, key_generate_cmd).unwrap();
+        let result_obj = result.as_object().unwrap();
+
+        let fingerprint = result_obj.get("fingerprint").unwrap().as_str().unwrap();
+        let xprv = result_obj.get("xprv").unwrap().as_str().unwrap();
+        let xpub = result_obj.get("xpub").unwrap().as_str().unwrap();
+
+        assert_eq!(&fingerprint, &"828af366");
+        assert_eq!(&xprv, &"tprv8ZgxMBicQKsPd18TeiFknZKqaZFwpdX9tvvKh8eeHSSPBQi5g9xPHztBg411o78G8XkrhQb6Q1cVvBJ1a9xuFHpmWgvQsvkJkNxBjfGoqhK");
+        assert_eq!(&xpub, &"tpubD6NzVbkrYhZ4WUAFYMvMBxyx9amsyxi4UEX6yegwhiEn1txrJYmyUVW3rABPz2emcVT5H8PqBoMmWHmJG8fWi9a4iiGLDquUDtyYDKe9cqk");
     }
 }
