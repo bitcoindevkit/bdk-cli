@@ -55,7 +55,7 @@ use regex::Regex;
 version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
 struct ReplOpt {
-    /// Wallet sub-command
+    /// Repl sub-command
     #[structopt(subcommand)]
     pub subcommand: ReplSubCommand,
 }

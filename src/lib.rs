@@ -189,15 +189,19 @@ pub struct CliOpts {
 
 /// CLI sub-commands
 ///
-/// The top level mode for subsequent sub-commands, each may have different required options. For
+/// The top level sub-commands, each may have different required options. For
 /// instance [`CliSubCommand::Wallet`] requires [`WalletOpts`] with a required descriptor but
 /// [`CliSubCommand::Key`] sub-command does not. [`CliSubCommand::Repl`] also requires
 /// [`WalletOpts`] and a descriptor because in this mode both [`WalletSubCommand`] and
 /// [`KeySubCommand`] sub-commands are available.
-///
 #[derive(Debug, StructOpt, Clone, PartialEq)]
+#[structopt(
+    rename_all = "snake",
+    long_about = "Top level options and command modes"
+)]
 pub enum CliSubCommand {
     /// Wallet options and sub-commands
+    #[structopt(long_about = "Wallet mode")]
     Wallet {
         #[structopt(flatten)]
         wallet_opts: WalletOpts,
@@ -205,11 +209,13 @@ pub enum CliSubCommand {
         subcommand: WalletSubCommand,
     },
     /// Key management sub-commands
+    #[structopt(long_about = "Key management mode")]
     Key {
         #[structopt(subcommand)]
         subcommand: KeySubCommand,
     },
     /// Enter REPL command loop mode
+    #[structopt(long_about = "REPL command loop mode")]
     Repl {
         #[structopt(flatten)]
         wallet_opts: WalletOpts,
@@ -220,7 +226,6 @@ pub enum CliSubCommand {
 ///
 /// Can use either an online or offline wallet. An [`OnlineWalletSubCommand`] requires a blockchain
 /// client and network connection and an [`OfflineWalletSubCommand`] does not.
-///
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub enum WalletSubCommand {
     #[structopt(flatten)]
@@ -475,7 +480,6 @@ pub enum OfflineWalletSubCommand {
 /// [`CliSubCommand::Wallet`] sub-commands that require a blockchain client and network connection.
 /// These sub-commands use a provided descriptor, locally cached wallet information, and require a
 /// blockchain client and network connection.
-///
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(rename_all = "snake")]
 pub enum OnlineWalletSubCommand {
@@ -531,7 +535,6 @@ fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
 /// Execute an offline wallet sub-command
 ///
 /// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
-///
 #[maybe_async]
 pub fn handle_offline_wallet_subcommand<D>(
     wallet: &Wallet<(), D>,
@@ -697,7 +700,6 @@ where
 ///
 /// Online wallet sub-commands are described in [`OnlineWalletSubCommand`]. See [`crate`] for
 /// example usage.
-///
 #[maybe_async]
 pub fn handle_online_wallet_subcommand<C, D>(
     wallet: &Wallet<C, D>,
@@ -737,7 +739,6 @@ where
 ///
 /// These sub-commands are **EXPERIMENTAL** and should only be used for testing. Do not use this
 /// feature to create keys that secure actual funds on the Bitcoin mainnet.  
-///
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(rename_all = "snake")]
 pub enum KeySubCommand {
@@ -770,7 +771,6 @@ pub enum KeySubCommand {
 /// Execute a key sub-command
 ///
 /// Key sub-commands are described in [`KeySubCommand`].
-///
 pub fn handle_key_subcommand(
     network: Network,
     subcommand: KeySubCommand,
@@ -820,11 +820,11 @@ mod test {
     use super::{CliOpts, WalletOpts};
     use crate::OfflineWalletSubCommand::{CreateTx, GetNewAddress};
     use crate::OnlineWalletSubCommand::{Broadcast, Sync};
-    use crate::{CliSubCommand, WalletSubCommand, KeySubCommand, handle_key_subcommand};
+    use crate::{handle_key_subcommand, CliSubCommand, KeySubCommand, WalletSubCommand};
     use bdk::bitcoin::{Address, Network, OutPoint};
+    use bdk::miniscript::bitcoin::network::constants::Network::Testnet;
     use std::str::FromStr;
     use structopt::StructOpt;
-    use bdk::miniscript::bitcoin::network::constants::Network::Testnet;
 
     #[test]
     fn test_wallet_get_new_address() {
@@ -1082,23 +1082,23 @@ mod test {
         let cli_opts = CliOpts::from_iter_safe(&cli_args);
         assert!(cli_opts.is_err());
     }
-    
+
     #[test]
     fn test_key_generate() {
         let network = Testnet;
         let key_generate_cmd = KeySubCommand::Generate {
             word_count: 12,
-            password: Some("test123".to_string())
+            password: Some("test123".to_string()),
         };
-        
+
         let result = handle_key_subcommand(network, key_generate_cmd).unwrap();
         let result_obj = result.as_object().unwrap();
-        
+
         let mnemonic = result_obj.get("mnemonic").unwrap().as_str().unwrap();
-        let mnemonic:Vec<&str> = mnemonic.split(' ').collect();
+        let mnemonic: Vec<&str> = mnemonic.split(' ').collect();
         let xprv = result_obj.get("xprv").unwrap().as_str().unwrap();
         let xpub = result_obj.get("xpub").unwrap().as_str().unwrap();
-        
+
         assert_eq!(mnemonic.len(), 12);
         assert_eq!(&xprv[0..4], "tprv");
         assert_eq!(&xpub[0..4], "tpub");
@@ -1108,8 +1108,9 @@ mod test {
     fn test_key_restore() {
         let network = Testnet;
         let key_generate_cmd = KeySubCommand::Restore {
-            mnemonic: "payment battle unit sword token broccoli era violin purse trip blood hire".to_string(),
-            password: Some("test123".to_string())
+            mnemonic: "payment battle unit sword token broccoli era violin purse trip blood hire"
+                .to_string(),
+            password: Some("test123".to_string()),
         };
 
         let result = handle_key_subcommand(network, key_generate_cmd).unwrap();
