@@ -33,24 +33,43 @@ use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use structopt::StructOpt;
 
-use bdk::bitcoin;
 #[cfg(feature = "esplora")]
 use bdk::blockchain::esplora::EsploraBlockchainConfig;
 use bdk::blockchain::{
     AnyBlockchain, AnyBlockchainConfig, ConfigurableBlockchain, ElectrumBlockchainConfig,
 };
+use bdk::database::BatchDatabase;
 use bdk::sled;
+use bdk::sled::Tree;
 use bdk::Wallet;
-use bdk_cli::{self, WalletOpt, WalletSubCommand};
+use bdk::{bitcoin, Error};
+use bdk_cli::WalletSubCommand;
+use bdk_cli::{
+    CliOpts, CliSubCommand, KeySubCommand, OfflineWalletSubCommand, OnlineWalletSubCommand,
+    WalletOpts,
+};
+use regex::Regex;
 
 #[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(name = "BDK CLI", setting = AppSettings::NoBinaryName,
+#[structopt(name = "", setting = AppSettings::NoBinaryName,
 version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
 struct ReplOpt {
     /// Wallet sub-command
     #[structopt(subcommand)]
-    pub subcommand: WalletSubCommand,
+    pub subcommand: ReplSubCommand,
+}
+
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+pub enum ReplSubCommand {
+    #[structopt(flatten)]
+    OnlineWalletSubCommand(OnlineWalletSubCommand),
+    #[structopt(flatten)]
+    OfflineWalletSubCommand(OfflineWalletSubCommand),
+    #[structopt(flatten)]
+    KeySubCommand(KeySubCommand),
+    /// Exit REPL loop
+    Exit,
 }
 
 fn prepare_home_dir() -> PathBuf {
