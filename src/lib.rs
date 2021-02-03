@@ -22,25 +22,29 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//! BDK Command line interface
+//! BDK command line interface
 //!
-//! This lib provides a [structopt](https://docs.rs/crate/structopt) `struct` and `enum` that
-//! parse global wallet options and wallet subcommand options needed for a wallet command line
-//! interface.
+//! This lib provides [`structopt`] structs and enums that parse CLI options and sub-commands from
+//! the command line or from a `String` vector that can be used to access features of the [`bdk`]
+//! library. Functions are also provided to handle subcommands and options and provide results via
+//! the [`bdk`] lib.  
 //!
-//! See the `bdk-cli` example bin for how to use this module to create a simple command line
-//! wallet application.
+//! See the [`bdk-cli`] example bin for how to use this lib to create a simple command line
+//! application that demonstrates [`bdk`] wallet and key management features.
 //!
-//! See [`WalletOpt`] for global wallet options and [`WalletSubCommand`] for supported sub-commands.
+//! See [`CliOpts`] for global cli options and [`CliSubCommand`] for supported top level sub-commands.
+//!
+//! [`structopt`]: https://docs.rs/crate/structopt
+//! [`bdk`]: https://github.com/bitcoindevkit/bdk
+//! [`bdk-cli`]: https://github.com/bitcoindevkit/bdk-cli/blob/master/src/bdk_cli.rs
 //!
 //! # Example
 //!
 //! ```
 //! # use bdk::bitcoin::Network;
-//! # use bdk::blockchain::esplora::EsploraBlockchainConfig;
 //! # use bdk::blockchain::{AnyBlockchain, ConfigurableBlockchain};
 //! # use bdk::blockchain::{AnyBlockchainConfig, ElectrumBlockchainConfig};
-//! # use bdk_cli::{self, WalletOpt, WalletSubCommand};
+//! # use bdk_cli::{self, CliOpts, CliSubCommand, WalletOpts, OfflineWalletSubCommand, WalletSubCommand};
 //! # use bdk::database::MemoryDatabase;
 //! # use bdk::Wallet;
 //! # use std::sync::Arc;
@@ -48,49 +52,46 @@
 //! # use std::str::FromStr;
 //!
 //! // to get args from cli use:
-//! // let cli_opt = WalletOpt::from_args();
+//! // let cli_opts = CliOpts::from_args();
 //!
-//! let cli_args = vec!["bdk-cli", "--network", "testnet", "--descriptor",
+//! let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet", "--descriptor",
 //!                     "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)",
 //!                     "sync", "--max_addresses", "50"];
-//! let cli_opt = WalletOpt::from_iter(&cli_args);
 //!
-//! let network = cli_opt.network;
+//! let cli_opts = CliOpts::from_iter(&cli_args);
+//! let network = cli_opts.network;
 //!
-//! let descriptor = cli_opt.descriptor.as_str();
-//! let change_descriptor = cli_opt.change_descriptor.as_deref();
+//! if let CliSubCommand::Wallet {
+//!         wallet_opts,
+//!         subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand)
+//!     } = cli_opts.subcommand {
 //!
-//! let database = MemoryDatabase::new();
+//!     let descriptor = wallet_opts.descriptor.as_str();
+//!     let change_descriptor = wallet_opts.change_descriptor.as_deref();
 //!
-//! let config = match cli_opt.esplora {
-//!     Some(base_url) => AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
-//!         base_url: base_url.to_string(),
-//!         concurrency: Some(cli_opt.esplora_concurrency),
-//!     }),
-//!     None => AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
-//!         url: cli_opt.electrum,
-//!         socks5: cli_opt.proxy,
-//!         retry: 3,
-//!         timeout: None,
-//!     }),
-//! };
+//!     let database = MemoryDatabase::new();
 //!
-//! let wallet = Wallet::new(
-//!     descriptor,
-//!     change_descriptor,
-//!     network,
-//!     database,
-//!     AnyBlockchain::from_config(&config).unwrap(),
-//! ).unwrap();
+//!     let config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
+//!                 url: wallet_opts.electrum,
+//!                 socks5: wallet_opts.proxy,
+//!                 retry: 3,
+//!                 timeout: None,
+//!             });
 //!
-//! let wallet = Arc::new(wallet);
+//!     let wallet = Wallet::new(
+//!         descriptor,
+//!         change_descriptor,
+//!         network,
+//!         database,
+//!         AnyBlockchain::from_config(&config).unwrap(),
+//!     ).unwrap();
 //!
-//! let result = bdk_cli::handle_wallet_subcommand(&wallet, cli_opt.subcommand).unwrap();
-//! println!("{}", serde_json::to_string_pretty(&result).unwrap());
+//!     let result = bdk_cli::handle_online_wallet_subcommand(&wallet, online_subcommand).unwrap();
+//!     println!("{}", serde_json::to_string_pretty(&result).unwrap());
+//! }
 //! ```
 
 pub extern crate bdk;
-pub extern crate structopt;
 #[macro_use]
 extern crate serde_json;
 #[cfg(any(target_arch = "wasm32", feature = "async-interface"))]
@@ -104,60 +105,75 @@ use std::str::FromStr;
 
 use structopt::StructOpt;
 
+use crate::OfflineWalletSubCommand::*;
+use crate::OnlineWalletSubCommand::*;
 use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
 use bdk::bitcoin::hashes::hex::FromHex;
+use bdk::bitcoin::secp256k1::Secp256k1;
+use bdk::bitcoin::util::bip32::ExtendedPubKey;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Network, OutPoint, Script, Txid};
-use bdk::blockchain::log_progress;
+use bdk::blockchain::{log_progress, Blockchain};
+use bdk::database::BatchDatabase;
+use bdk::keys::bip39::{Language, Mnemonic, MnemonicType};
+use bdk::keys::{DerivableKey, ExtendedKey, GeneratableKey, GeneratedKey};
+use bdk::miniscript::miniscript;
 use bdk::Error;
 use bdk::{FeeRate, KeychainKind, TxBuilder, Wallet};
 
-/// Wallet global options and sub-command
+/// Global options
 ///
-/// A [structopt](https://docs.rs/crate/structopt) `struct` that parses wallet global options and
-/// sub-command from the command line or from a `String` vector. See [`WalletSubCommand`] for details
-/// on parsing sub-commands.
+/// The global options and top level sub-command required for all subsequent [`CliSubCommand`]'s.
 ///
 /// # Example
 ///
 /// ```
 /// # use bdk::bitcoin::Network;
 /// # use structopt::StructOpt;
-/// # use bdk_cli::{WalletSubCommand, WalletOpt};
+/// # use bdk_cli::{CliOpts, WalletOpts, CliSubCommand, WalletSubCommand};
+/// # use bdk_cli::OnlineWalletSubCommand::Sync;
 ///
-/// let cli_args = vec!["bdk-cli", "--network", "testnet",
+/// let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
 ///                     "--descriptor", "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)",
 ///                     "sync", "--max_addresses", "50"];
 ///
-/// // to get WalletOpt from OS command line args use:
-/// // let wallet_opt = WalletOpt::from_args();
+/// // to get CliOpts from the OS command line args use:
+/// // let cli_opts = CliOpts::from_args();
+/// let cli_opts = CliOpts::from_iter(&cli_args);
 ///
-/// let wallet_opt = WalletOpt::from_iter(&cli_args);
+/// let expected_cli_opts = CliOpts {
+///             network: Network::Testnet,
+///             subcommand: CliSubCommand::Wallet {
+///                 wallet_opts: WalletOpts {
+///                     wallet: "main".to_string(),
+///                     descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
+///                     change_descriptor: None,
+///                     #[cfg(feature = "electrum")]
+///                     proxy: None,
+///                     #[cfg(feature = "electrum")]
+///                     retries: 5,
+///                     #[cfg(feature = "electrum")]
+///                     timeout: None,
+///                     #[cfg(feature = "electrum")]
+///                     electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+///                     #[cfg(feature = "esplora")]
+///                     esplora: None,
+///                     #[cfg(feature = "esplora")]
+///                     esplora_concurrency: 4,
+///                 },
+///                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync {
+///                     max_addresses: Some(50)
+///                 }),
+///             },
+///         };
 ///
-/// let expected_wallet_opt = WalletOpt {
-///         network: Network::Testnet,
-///         wallet: "main".to_string(),
-///         proxy: None,
-///         descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
-///         change_descriptor: None,
-///         #[cfg(feature = "esplora")]
-///         esplora: None,
-///         #[cfg(feature = "esplora")]
-///         esplora_concurrency: 4,
-///         electrum: "ssl://electrum.blockstream.info:60002".to_string(),
-///         subcommand: WalletSubCommand::Sync {
-///             max_addresses: Some(50)
-///         },
-/// };
-///
-/// assert_eq!(expected_wallet_opt, wallet_opt);
+/// assert_eq!(expected_cli_opts, cli_opts);
 /// ```
-
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(name = "BDK CLI",
 version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
-pub struct WalletOpt {
+pub struct CliOpts {
     /// Sets the network
     #[structopt(
         name = "NETWORK",
@@ -166,6 +182,96 @@ pub struct WalletOpt {
         default_value = "testnet"
     )]
     pub network: Network,
+    /// Top level cli sub-command
+    #[structopt(subcommand)]
+    pub subcommand: CliSubCommand,
+}
+
+/// CLI sub-commands
+///
+/// The top level mode for subsequent sub-commands, each may have different required options. For
+/// instance [`CliSubCommand::Wallet`] requires [`WalletOpts`] with a required descriptor but
+/// [`CliSubCommand::Key`] sub-command does not. [`CliSubCommand::Repl`] also requires
+/// [`WalletOpts`] and a descriptor because in this mode both [`WalletSubCommand`] and
+/// [`KeySubCommand`] sub-commands are available.
+///
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+pub enum CliSubCommand {
+    /// Wallet options and sub-commands
+    Wallet {
+        #[structopt(flatten)]
+        wallet_opts: WalletOpts,
+        #[structopt(subcommand)]
+        subcommand: WalletSubCommand,
+    },
+    /// Key management sub-commands
+    Key {
+        #[structopt(subcommand)]
+        subcommand: KeySubCommand,
+    },
+    /// Enter REPL command loop mode
+    Repl {
+        #[structopt(flatten)]
+        wallet_opts: WalletOpts,
+    },
+}
+
+/// Wallet sub-commands
+///
+/// Can use either an online or offline wallet. An [`OnlineWalletSubCommand`] requires a blockchain
+/// client and network connection and an [`OfflineWalletSubCommand`] does not.
+///
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+pub enum WalletSubCommand {
+    #[structopt(flatten)]
+    OnlineWalletSubCommand(OnlineWalletSubCommand),
+    #[structopt(flatten)]
+    OfflineWalletSubCommand(OfflineWalletSubCommand),
+}
+
+/// Wallet options
+///
+/// The wallet options required for all [`CliSubCommand::Wallet`] or [`CliSubCommand::Repl`]
+/// sub-commands. These options capture wallet descriptor and blockchain client information. The \
+/// blockchain client details are only used for [`OnlineWalletSubCommand`]s.   
+///
+/// # Example
+///
+/// ```
+/// # use bdk::bitcoin::Network;
+/// # use structopt::StructOpt;
+/// # use bdk_cli:: WalletOpts;
+///
+/// let cli_args = vec!["wallet",
+///                     "--descriptor", "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)"];
+///
+/// // to get WalletOpt from OS command line args use:
+/// // let wallet_opt = WalletOpt::from_args();
+///
+/// let wallet_opts = WalletOpts::from_iter(&cli_args);
+///
+/// let expected_wallet_opts = WalletOpts {
+///               wallet: "main".to_string(),
+///               descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
+///               change_descriptor: None,
+///               #[cfg(feature = "electrum")]
+///               proxy: None,
+///               #[cfg(feature = "electrum")]
+///               retries: 5,
+///               #[cfg(feature = "electrum")]
+///               timeout: None,
+///               #[cfg(feature = "electrum")]
+///               electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+///               #[cfg(feature = "esplora")]               
+///               esplora: None,
+///               #[cfg(feature = "esplora")]
+///               esplora_concurrency: 4,
+/// };
+///
+/// assert_eq!(expected_wallet_opts, wallet_opts);
+/// ```
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+pub struct WalletOpts {
     /// Selects the wallet to use
     #[structopt(
         name = "WALLET_NAME",
@@ -174,30 +280,31 @@ pub struct WalletOpt {
         default_value = "main"
     )]
     pub wallet: String,
-    #[cfg(feature = "electrum")]
-    /// Sets the SOCKS5 proxy for the Electrum client
-    #[structopt(name = "PROXY_SERVER:PORT", short = "p", long = "proxy")]
-    pub proxy: Option<String>,
     /// Sets the descriptor to use for the external addresses
     #[structopt(name = "DESCRIPTOR", short = "d", long = "descriptor", required = true)]
     pub descriptor: String,
     /// Sets the descriptor to use for internal addresses
     #[structopt(name = "CHANGE_DESCRIPTOR", short = "c", long = "change_descriptor")]
     pub change_descriptor: Option<String>,
-    #[cfg(feature = "esplora")]
-    /// Use the esplora server if given as parameter
-    #[structopt(name = "ESPLORA_URL", short = "e", long = "esplora")]
-    pub esplora: Option<String>,
-    #[cfg(feature = "esplora")]
-    /// Concurrency of requests made to the esplora server
-    #[structopt(
-        name = "ESPLORA_CONCURRENCY",
-        long = "esplora_concurrency",
-        default_value = "4"
-    )]
-    pub esplora_concurrency: u8,
+    /// Sets the SOCKS5 proxy for the Electrum client
     #[cfg(feature = "electrum")]
+    #[structopt(name = "PROXY_SERVER:PORT", short = "p", long = "proxy")]
+    pub proxy: Option<String>,
+    /// Sets the SOCKS5 proxy retries for the Electrum client
+    #[cfg(feature = "electrum")]
+    #[structopt(
+        name = "PROXY_RETRIES",
+        short = "r",
+        long = "retries",
+        default_value = "5"
+    )]
+    pub retries: u8,
+    /// Sets the SOCKS5 proxy timeout for the Electrum client
+    #[cfg(feature = "electrum")]
+    #[structopt(name = "PROXY_TIMEOUT", short = "t", long = "timeout")]
+    pub timeout: Option<u8>,
     /// Sets the Electrum server to use
+    #[cfg(feature = "electrum")]
     #[structopt(
         name = "SERVER:PORT",
         short = "s",
@@ -205,9 +312,18 @@ pub struct WalletOpt {
         default_value = "ssl://electrum.blockstream.info:60002"
     )]
     pub electrum: String,
-    /// Wallet sub-command
-    #[structopt(subcommand)]
-    pub subcommand: WalletSubCommand,
+    /// Use the esplora server if given as parameter
+    #[cfg(feature = "esplora")]
+    #[structopt(name = "ESPLORA_URL", short = "e", long = "esplora")]
+    pub esplora: Option<String>,
+    /// Concurrency of requests made to the esplora server
+    #[cfg(feature = "esplora")]
+    #[structopt(
+        name = "ESPLORA_CONCURRENCY",
+        long = "esplora_concurrency",
+        default_value = "4"
+    )]
+    pub esplora_concurrency: u8,
 }
 
 /// Wallet sub-command
