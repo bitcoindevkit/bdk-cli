@@ -119,7 +119,7 @@ use bdk::keys::bip39::{Language, Mnemonic, MnemonicType};
 use bdk::keys::{DerivableKey, ExtendedKey, GeneratableKey, GeneratedKey};
 use bdk::miniscript::miniscript;
 use bdk::Error;
-use bdk::{FeeRate, KeychainKind, TxBuilder, Wallet};
+use bdk::{FeeRate, KeychainKind, Wallet};
 
 /// Global options
 ///
@@ -556,36 +556,36 @@ where
             external_policy,
             internal_policy,
         } => {
-            let mut tx_builder = TxBuilder::new();
+            let mut tx_builder = wallet.build_tx();
 
             if send_all {
-                tx_builder = tx_builder
+                tx_builder
                     .drain_wallet()
                     .set_single_recipient(recipients[0].0.clone());
             } else {
-                tx_builder = tx_builder.set_recipients(recipients);
+                tx_builder.set_recipients(recipients);
             }
 
             if enable_rbf {
-                tx_builder = tx_builder.enable_rbf();
+                tx_builder.enable_rbf();
             }
 
             if offline_signer {
-                tx_builder = tx_builder
+                tx_builder
                     .force_non_witness_utxo()
                     .include_output_redeem_witness_script();
             }
 
             if let Some(fee_rate) = fee_rate {
-                tx_builder = tx_builder.fee_rate(FeeRate::from_sat_per_vb(fee_rate));
+                tx_builder.fee_rate(FeeRate::from_sat_per_vb(fee_rate));
             }
 
             if let Some(utxos) = utxos {
-                tx_builder = tx_builder.utxos(utxos).manually_selected_only();
+                tx_builder.add_utxos(&utxos[..])?.manually_selected_only();
             }
 
             if let Some(unspendable) = unspendable {
-                tx_builder = tx_builder.unspendable(unspendable);
+                tx_builder.unspendable(unspendable);
             }
 
             let policies = vec![
@@ -596,10 +596,10 @@ where
             for (policy, keychain) in policies.into_iter().filter_map(|x| x) {
                 let policy = serde_json::from_str::<BTreeMap<String, Vec<usize>>>(&policy)
                     .map_err(|s| Error::Generic(s.to_string()))?;
-                tx_builder = tx_builder.policy_path(policy, keychain);
+                tx_builder.policy_path(policy, keychain);
             }
 
-            let (psbt, details) = wallet.create_tx(tx_builder)?;
+            let (psbt, details) = tx_builder.finish()?;
             Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"details": details,}))
         }
         BumpFee {
@@ -612,27 +612,28 @@ where
         } => {
             let txid = Txid::from_str(txid.as_str()).map_err(|s| Error::Generic(s.to_string()))?;
 
-            let mut tx_builder = TxBuilder::new().fee_rate(FeeRate::from_sat_per_vb(fee_rate));
+            let mut tx_builder = wallet.build_fee_bump(txid)?;
+            tx_builder.fee_rate(FeeRate::from_sat_per_vb(fee_rate));
 
             if send_all {
-                tx_builder = tx_builder.maintain_single_recipient();
+                tx_builder.maintain_single_recipient()?;
             }
 
             if offline_signer {
-                tx_builder = tx_builder
+                tx_builder
                     .force_non_witness_utxo()
                     .include_output_redeem_witness_script();
             }
 
             if let Some(utxos) = utxos {
-                tx_builder = tx_builder.utxos(utxos);
+                tx_builder.add_utxos(&utxos[..])?;
             }
 
             if let Some(unspendable) = unspendable {
-                tx_builder = tx_builder.unspendable(unspendable);
+                tx_builder.unspendable(unspendable);
             }
 
-            let (psbt, details) = wallet.bump_fee(&txid, tx_builder)?;
+            let (psbt, details) = tx_builder.finish()?;
             Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"details": details,}))
         }
         Policies => Ok(json!({

@@ -12,8 +12,8 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-bdk = { git = "https://github.com/afilini/bdk.git", branch = "fix/better-derivable-key-api", features = ["all-keys"]}
-bdk-macros = "^0.2"
+bdk = { git = "https://github.com/bitcoindevkit/bdk.git", commit = "4c36020e", features = ["all-keys"]}
+bdk-macros = { git = "https://github.com/bitcoindevkit/bdk.git", commit = "4c36020e" }
 structopt = "^0.3"
 serde_json = { version = "^1.0" }
 log = "^0.4"
