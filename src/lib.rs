@@ -326,24 +326,22 @@ pub struct WalletOpts {
     pub esplora_concurrency: u8,
 }
 
-/// Wallet sub-command
+/// Offline Wallet sub-command
 ///
-/// A [structopt](https://docs.rs/crate/structopt) enum that parses wallet sub-command arguments from
-/// the command line or from a `String` vector, such as in the [`bdk-cli`](https://github.com/bitcoindevkit/bdk-cli/blob/master/src/bdkcli.rs)
-/// example cli wallet.
+/// [`CliSubCommand::Wallet`] sub-commands that do not require a blockchain client and network
+/// connection. These sub-commands use only the provided descriptor or locally cached wallet
+/// information.
 ///
 /// # Example
 ///
 /// ```
-/// # use bdk_cli::WalletSubCommand;
+/// # use bdk_cli::OfflineWalletSubCommand;
 /// # use structopt::StructOpt;
 ///
-/// let sync_sub_command = WalletSubCommand::from_iter(&["bdk-cli", "sync", "--max_addresses", "50"]);
+/// let address_sub_command = OfflineWalletSubCommand::from_iter(&["wallet", "get_new_address"]);
 /// assert!(matches!(
-///     sync_sub_command,
-///     WalletSubCommand::Sync {
-///         max_addresses: Some(50)
-///     }
+///     address_sub_command,
+///     OfflineWalletSubCommand::GetNewAddress
 /// ));
 /// ```
 ///
@@ -354,7 +352,7 @@ pub struct WalletOpts {
 ///
 /// # Example
 /// ```
-/// # use bdk_cli::WalletSubCommand;
+/// # use bdk_cli::OfflineWalletSubCommand;
 /// # use structopt::StructOpt;
 /// # use clap::AppSettings;
 ///
@@ -362,26 +360,23 @@ pub struct WalletOpts {
 /// #[structopt(name = "BDK CLI", setting = AppSettings::NoBinaryName,
 /// version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 /// author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
-/// struct ReplOpt {
+/// struct ReplOpts {
 ///     /// Wallet sub-command
 ///     #[structopt(subcommand)]
-///     pub subcommand: WalletSubCommand,
+///     pub subcommand: OfflineWalletSubCommand,
 /// }
+///
+/// let repl_opts = ReplOpts::from_iter(&["get_new_address"]);
+/// assert!(matches!(
+///     repl_opts.subcommand,
+///     OfflineWalletSubCommand::GetNewAddress
+/// ));
 /// ```
 #[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(
-    rename_all = "snake",
-    long_about = "A modern, lightweight, descriptor-based wallet"
-)]
-pub enum WalletSubCommand {
+#[structopt(rename_all = "snake")]
+pub enum OfflineWalletSubCommand {
     /// Generates a new external address
     GetNewAddress,
-    /// Syncs with the chosen blockchain server
-    Sync {
-        /// max addresses to consider
-        #[structopt(short = "v", long = "max_addresses")]
-        max_addresses: Option<u32>,
-    },
     /// Lists the available spendable UTXOs
     ListUnspent,
     /// Lists all the incoming and outgoing transactions of the wallet
@@ -452,25 +447,6 @@ pub enum WalletSubCommand {
         #[structopt(name = "HEIGHT", long = "assume_height")]
         assume_height: Option<u32>,
     },
-    /// Broadcasts a transaction to the network. Takes either a raw transaction or a PSBT to extract
-    Broadcast {
-        /// Sets the PSBT to sign
-        #[structopt(
-            name = "BASE64_PSBT",
-            long = "psbt",
-            required_unless = "RAWTX",
-            conflicts_with = "RAWTX"
-        )]
-        psbt: Option<String>,
-        /// Sets the raw transaction to broadcast
-        #[structopt(
-            name = "RAWTX",
-            long = "tx",
-            required_unless = "BASE64_PSBT",
-            conflicts_with = "BASE64_PSBT"
-        )]
-        tx: Option<String>,
-    },
     /// Extracts a raw transaction from a PSBT
     ExtractPsbt {
         /// Sets the PSBT to extract
@@ -492,8 +468,42 @@ pub enum WalletSubCommand {
         #[structopt(name = "BASE64_PSBT", long = "psbt", required = true)]
         psbt: Vec<String>,
     },
-    /// Enter REPL command loop mode
-    Repl,
+}
+
+/// Online Wallet sub-command
+///
+/// [`CliSubCommand::Wallet`] sub-commands that require a blockchain client and network connection.
+/// These sub-commands use a provided descriptor, locally cached wallet information, and require a
+/// blockchain client and network connection.
+///
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+#[structopt(rename_all = "snake")]
+pub enum OnlineWalletSubCommand {
+    /// Syncs with the chosen blockchain server
+    Sync {
+        /// max addresses to consider
+        #[structopt(short = "v", long = "max_addresses")]
+        max_addresses: Option<u32>,
+    },
+    /// Broadcasts a transaction to the network. Takes either a raw transaction or a PSBT to extract
+    Broadcast {
+        /// Sets the PSBT to sign
+        #[structopt(
+            name = "BASE64_PSBT",
+            long = "psbt",
+            required_unless = "RAWTX",
+            conflicts_with = "RAWTX"
+        )]
+        psbt: Option<String>,
+        /// Sets the raw transaction to broadcast
+        #[structopt(
+            name = "RAWTX",
+            long = "tx",
+            required_unless = "BASE64_PSBT",
+            conflicts_with = "BASE64_PSBT"
+        )]
+        tx: Option<String>,
+    },
 }
 
 fn parse_recipient(s: &str) -> Result<(Script, u64), String> {
