@@ -528,30 +528,24 @@ fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
     OutPoint::from_str(s).map_err(|e| format!("{:?}", e))
 }
 
-/// Execute a wallet sub-command with a given [`Wallet`].
+/// Execute an offline wallet sub-command
 ///
-/// Wallet sub-commands are described in [`WalletSubCommand`]. See [`crate`] for example usage.
+/// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
+///
 #[maybe_async]
-pub fn handle_wallet_subcommand<C, D>(
-    wallet: &Wallet<C, D>,
-    wallet_subcommand: WalletSubCommand,
+pub fn handle_offline_wallet_subcommand<D>(
+    wallet: &Wallet<(), D>,
+    offline_subcommand: OfflineWalletSubCommand,
 ) -> Result<serde_json::Value, Error>
 where
-    C: bdk::blockchain::Blockchain,
-    D: bdk::database::BatchDatabase,
+    D: BatchDatabase,
 {
-    match wallet_subcommand {
-        WalletSubCommand::GetNewAddress => Ok(json!({"address": wallet.get_new_address()?})),
-        WalletSubCommand::Sync { max_addresses } => {
-            maybe_await!(wallet.sync(log_progress(), max_addresses))?;
-            Ok(json!({}))
-        }
-        WalletSubCommand::ListUnspent => Ok(serde_json::to_value(&wallet.list_unspent()?)?),
-        WalletSubCommand::ListTransactions => {
-            Ok(serde_json::to_value(&wallet.list_transactions(false)?)?)
-        }
-        WalletSubCommand::GetBalance => Ok(json!({"satoshi": wallet.get_balance()?})),
-        WalletSubCommand::CreateTx {
+    match offline_subcommand {
+        GetNewAddress => Ok(json!({"address": wallet.get_new_address()?})),
+        ListUnspent => Ok(serde_json::to_value(&wallet.list_unspent()?)?),
+        ListTransactions => Ok(serde_json::to_value(&wallet.list_transactions(false)?)?),
+        GetBalance => Ok(json!({"satoshi": wallet.get_balance()?})),
+        CreateTx {
             recipients,
             send_all,
             enable_rbf,
@@ -608,7 +602,7 @@ where
             let (psbt, details) = wallet.create_tx(tx_builder)?;
             Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"details": details,}))
         }
-        WalletSubCommand::BumpFee {
+        BumpFee {
             txid,
             send_all,
             offline_signer,
@@ -641,15 +635,15 @@ where
             let (psbt, details) = wallet.bump_fee(&txid, tx_builder)?;
             Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"details": details,}))
         }
-        WalletSubCommand::Policies => Ok(json!({
+        Policies => Ok(json!({
             "external": wallet.policies(KeychainKind::External)?,
             "internal": wallet.policies(KeychainKind::Internal)?,
         })),
-        WalletSubCommand::PublicDescriptor => Ok(json!({
+        PublicDescriptor => Ok(json!({
             "external": wallet.public_descriptor(KeychainKind::External)?.map(|d| d.to_string()),
             "internal": wallet.public_descriptor(KeychainKind::Internal)?.map(|d| d.to_string()),
         })),
-        WalletSubCommand::Sign {
+        Sign {
             psbt,
             assume_height,
         } => {
@@ -658,27 +652,12 @@ where
             let (psbt, finalized) = wallet.sign(psbt, assume_height)?;
             Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized,}))
         }
-        WalletSubCommand::Broadcast { psbt, tx } => {
-            let tx = match (psbt, tx) {
-                (Some(psbt), None) => {
-                    let psbt = base64::decode(&psbt).unwrap();
-                    let psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
-                    psbt.extract_tx()
-                }
-                (None, Some(tx)) => deserialize(&Vec::<u8>::from_hex(&tx).unwrap()).unwrap(),
-                (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
-                (None, None) => panic!("Missing `psbt` and `tx` option"),
-            };
-
-            let txid = maybe_await!(wallet.broadcast(tx))?;
-            Ok(json!({ "txid": txid }))
-        }
-        WalletSubCommand::ExtractPsbt { psbt } => {
+        ExtractPsbt { psbt } => {
             let psbt = base64::decode(&psbt).unwrap();
             let psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
             Ok(json!({"raw_tx": serialize_hex(&psbt.extract_tx()),}))
         }
-        WalletSubCommand::FinalizePsbt {
+        FinalizePsbt {
             psbt,
             assume_height,
         } => {
@@ -688,7 +667,7 @@ where
             let (psbt, finalized) = wallet.finalize_psbt(psbt, assume_height)?;
             Ok(json!({ "psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized,}))
         }
-        WalletSubCommand::CombinePsbt { psbt } => {
+        CombinePsbt { psbt } => {
             let mut psbts = psbt
                 .iter()
                 .map(|s| {
@@ -708,10 +687,130 @@ where
                         Ok(acc)
                     },
                 )?;
-
             Ok(json!({ "psbt": base64::encode(&serialize(&final_psbt)) }))
         }
-        WalletSubCommand::Repl => Ok(json!({})),
+    }
+}
+
+/// Execute an online wallet sub-command
+///
+/// Online wallet sub-commands are described in [`OnlineWalletSubCommand`]. See [`crate`] for
+/// example usage.
+///
+#[maybe_async]
+pub fn handle_online_wallet_subcommand<C, D>(
+    wallet: &Wallet<C, D>,
+    online_subcommand: OnlineWalletSubCommand,
+) -> Result<serde_json::Value, Error>
+where
+    C: Blockchain,
+    D: BatchDatabase,
+{
+    match online_subcommand {
+        Sync { max_addresses } => {
+            maybe_await!(wallet.sync(log_progress(), max_addresses))?;
+            Ok(json!({}))
+        }
+        Broadcast { psbt, tx } => {
+            let tx = match (psbt, tx) {
+                (Some(psbt), None) => {
+                    let psbt = base64::decode(&psbt).unwrap();
+                    let psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
+                    psbt.extract_tx()
+                }
+                (None, Some(tx)) => deserialize(&Vec::<u8>::from_hex(&tx).unwrap()).unwrap(),
+                (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
+                (None, None) => panic!("Missing `psbt` and `tx` option"),
+            };
+
+            let txid = maybe_await!(wallet.broadcast(tx))?;
+            Ok(json!({ "txid": txid }))
+        }
+    }
+}
+
+/// Key sub-command
+///
+/// Provides basic key operations that are not related to a specific wallet such as generating a
+/// new random master extended key or restoring a master extended key from mnemonic words.
+///
+/// These sub-commands are **EXPERIMENTAL** and should only be used for testing. Do not use this
+/// feature to create keys that secure actual funds on the Bitcoin mainnet.  
+///
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+#[structopt(rename_all = "snake")]
+pub enum KeySubCommand {
+    /// Generates new random seed mnemonic phrase and corresponding master extended keys
+    Generate {
+        /// Entropy level based on number of random seed mnemonic words
+        #[structopt(
+        name = "WORD_COUNT",
+        short = "e",
+        long = "entropy",
+        default_value = "24",
+        possible_values = &["12","24"],
+        )]
+        word_count: usize,
+        /// Seed password
+        #[structopt(name = "PASSWORD", short = "p", long = "password")]
+        password: Option<String>,
+    },
+    /// Restore a master extended keys from seed backup mnemonic words
+    Restore {
+        /// Seed mnemonic words, must be quoted (eg. "word1 word2 ...")
+        #[structopt(name = "MNEMONIC", short = "m", long = "mnemonic")]
+        mnemonic: String,
+        /// Seed password
+        #[structopt(name = "PASSWORD", short = "p", long = "password")]
+        password: Option<String>,
+    },
+}
+
+/// Execute a key sub-command
+///
+/// Key sub-commands are described in [`KeySubCommand`].
+///
+pub fn handle_key_subcommand(
+    network: Network,
+    subcommand: KeySubCommand,
+) -> Result<serde_json::Value, Error> {
+    let secp = Secp256k1::new();
+
+    match subcommand {
+        KeySubCommand::Generate {
+            word_count,
+            password,
+        } => {
+            let mnemonic_type = match word_count {
+                12 => MnemonicType::Words12,
+                _ => MnemonicType::Words24,
+            };
+            let mnemonic: GeneratedKey<_, miniscript::Bare> =
+                Mnemonic::generate((mnemonic_type, Language::English)).unwrap();
+            //.map_err(|e| KeyError::from(e.unwrap()))?;
+            let mnemonic = mnemonic.into_key();
+            let xkey: ExtendedKey = (mnemonic.clone(), password).into_extended_key()?;
+            let xprv = xkey.into_xprv(network).unwrap();
+            let xpub = ExtendedPubKey::from_private(&secp, &xprv);
+            let fingerprint = xprv.fingerprint(&secp);
+            Ok(
+                json!({ "mnemonic": mnemonic.phrase(), "xprv": xprv.to_string(),"xpub": xpub.to_string(), "fingerprint": fingerprint.to_string() }),
+            )
+        }
+        KeySubCommand::Restore { mnemonic, password } => {
+            let mnemonic = Mnemonic::from_phrase(mnemonic.as_ref(), Language::English).unwrap();
+            //     .map_err(|e| {
+            //     KeyError::from(e.downcast::<bdk::keys::bip39::ErrorKind>().unwrap())
+            // })?;
+            let xkey: ExtendedKey = (mnemonic, password).into_extended_key()?;
+            let xprv = xkey.into_xprv(network).unwrap();
+            let xpub = ExtendedPubKey::from_private(&secp, &xprv);
+            let fingerprint = xprv.fingerprint(&secp);
+
+            Ok(
+                json!({ "xprv": xprv.to_string(),"xpub": xpub.to_string(), "fingerprint": fingerprint.to_string() }),
+            )
+        }
     }
 }
 
