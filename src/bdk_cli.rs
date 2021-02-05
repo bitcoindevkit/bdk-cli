@@ -50,8 +50,9 @@ use bdk_cli::{
 };
 use regex::Regex;
 
+/// REPL mode
 #[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(name = "", long_about = "REPL mode", setting = AppSettings::NoBinaryName, 
+#[structopt(name = "", setting = AppSettings::NoBinaryName, 
 version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
 pub enum ReplSubCommand {

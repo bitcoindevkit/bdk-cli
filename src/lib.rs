@@ -331,52 +331,58 @@ pub struct WalletOpts {
     pub esplora_concurrency: u8,
 }
 
-/// Offline Wallet sub-command
-///
-/// [`CliSubCommand::Wallet`] sub-commands that do not require a blockchain client and network
-/// connection. These sub-commands use only the provided descriptor or locally cached wallet
-/// information.
-///
-/// # Example
-///
-/// ```
-/// # use bdk_cli::OfflineWalletSubCommand;
-/// # use structopt::StructOpt;
-///
-/// let address_sub_command = OfflineWalletSubCommand::from_iter(&["wallet", "get_new_address"]);
-/// assert!(matches!(
-///     address_sub_command,
-///     OfflineWalletSubCommand::GetNewAddress
-/// ));
-/// ```
-///
-/// To capture wallet sub-commands from a string vector without a preceeding binary name you can
-/// create a custom struct the includes the `NoBinaryName` clap setting and wraps the WalletSubCommand
-/// enum. See also the [`bdk-cli`](https://github.com/bitcoindevkit/bdk-cli/blob/master/src/bdkcli.rs)
-/// example app.
-///
-/// # Example
-/// ```
-/// # use bdk_cli::OfflineWalletSubCommand;
-/// # use structopt::StructOpt;
-/// # use clap::AppSettings;
-///
-/// #[derive(Debug, StructOpt, Clone, PartialEq)]
-/// #[structopt(name = "BDK CLI", setting = AppSettings::NoBinaryName,
-/// version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
-/// author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
-/// struct ReplOpts {
-///     /// Wallet sub-command
-///     #[structopt(subcommand)]
-///     pub subcommand: OfflineWalletSubCommand,
-/// }
-///
-/// let repl_opts = ReplOpts::from_iter(&["get_new_address"]);
-/// assert!(matches!(
-///     repl_opts.subcommand,
-///     OfflineWalletSubCommand::GetNewAddress
-/// ));
-/// ```
+// This is a workaround for `structopt` issue #333, #391, #418; see https://github.com/TeXitoi/structopt/issues/333#issuecomment-712265332
+#[cfg_attr(not(doc), allow(missing_docs))]
+#[cfg_attr(
+    doc,
+    doc = r#"
+Offline Wallet sub-command
+
+[`CliSubCommand::Wallet`] sub-commands that do not require a blockchain client and network
+connection. These sub-commands use only the provided descriptor or locally cached wallet
+information.
+
+# Example
+
+```
+# use bdk_cli::OfflineWalletSubCommand;
+# use structopt::StructOpt;
+
+let address_sub_command = OfflineWalletSubCommand::from_iter(&["wallet", "get_new_address"]);
+assert!(matches!(
+     address_sub_command,
+    OfflineWalletSubCommand::GetNewAddress
+));
+```
+
+To capture wallet sub-commands from a string vector without a preceeding binary name you can
+create a custom struct the includes the `NoBinaryName` clap setting and wraps the WalletSubCommand
+enum. See also the [`bdk-cli`](https://github.com/bitcoindevkit/bdk-cli/blob/master/src/bdkcli.rs)
+example app.
+
+# Example
+```
+# use bdk_cli::OfflineWalletSubCommand;
+# use structopt::StructOpt;
+# use clap::AppSettings;
+
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+#[structopt(name = "BDK CLI", setting = AppSettings::NoBinaryName,
+version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
+author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
+struct ReplOpts {
+    /// Wallet sub-command
+    #[structopt(subcommand)]
+    pub subcommand: OfflineWalletSubCommand,
+}
+
+let repl_opts = ReplOpts::from_iter(&["get_new_address"]);
+assert!(matches!(
+    repl_opts.subcommand,
+    OfflineWalletSubCommand::GetNewAddress
+));
+"#
+)]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(rename_all = "snake")]
 pub enum OfflineWalletSubCommand {
@@ -475,11 +481,17 @@ pub enum OfflineWalletSubCommand {
     },
 }
 
-/// Online Wallet sub-command
-///
-/// [`CliSubCommand::Wallet`] sub-commands that require a blockchain client and network connection.
-/// These sub-commands use a provided descriptor, locally cached wallet information, and require a
-/// blockchain client and network connection.
+#[cfg_attr(not(doc), allow(missing_docs))]
+#[cfg_attr(
+    doc,
+    doc = r#"
+Online Wallet sub-command
+
+[`CliSubCommand::Wallet`] sub-commands that require a blockchain client and network connection.
+These sub-commands use a provided descriptor, locally cached wallet information, and require a
+blockchain client and network connection.
+"#
+)]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(rename_all = "snake")]
 pub enum OnlineWalletSubCommand {
@@ -732,13 +744,19 @@ where
     }
 }
 
-/// Key sub-command
-///
-/// Provides basic key operations that are not related to a specific wallet such as generating a
-/// new random master extended key or restoring a master extended key from mnemonic words.
-///
-/// These sub-commands are **EXPERIMENTAL** and should only be used for testing. Do not use this
-/// feature to create keys that secure actual funds on the Bitcoin mainnet.  
+#[cfg_attr(not(doc), allow(missing_docs))]
+#[cfg_attr(
+    doc,
+    doc = r#"
+Key sub-command
+
+Provides basic key operations that are not related to a specific wallet such as generating a
+new random master extended key or restoring a master extended key from mnemonic words.
+
+These sub-commands are **EXPERIMENTAL** and should only be used for testing. Do not use this
+feature to create keys that secure actual funds on the Bitcoin mainnet.  
+"#
+)]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(rename_all = "snake")]
 pub enum KeySubCommand {
