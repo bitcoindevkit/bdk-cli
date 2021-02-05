@@ -51,16 +51,9 @@ use bdk_cli::{
 use regex::Regex;
 
 #[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(name = "", setting = AppSettings::NoBinaryName,
+#[structopt(name = "", long_about = "REPL mode", setting = AppSettings::NoBinaryName, 
 version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
-struct ReplOpt {
-    /// Repl sub-command
-    #[structopt(subcommand)]
-    pub subcommand: ReplSubCommand,
-}
-
-#[derive(Debug, StructOpt, Clone, PartialEq)]
 pub enum ReplSubCommand {
     #[structopt(flatten)]
     OnlineWalletSubCommand(OnlineWalletSubCommand),
@@ -162,8 +155,6 @@ fn main() {
         warn!("This is experimental software and not currently recommended for use on Bitcoin mainnet, proceed with caution.")
     }
 
-    //println!("cli_opts = {:?}", cli_opts);
-
     let result = match cli_opts.subcommand {
         CliSubCommand::Wallet {
             wallet_opts,
@@ -220,16 +211,16 @@ fn main() {
                             .iter()
                             .flat_map(|s| filter_regex.find_iter(s).map(|m| m.as_str()))
                             .collect();
-                        let repl_opt: Result<ReplOpt, clap::Error> =
-                            ReplOpt::from_iter_safe(filtered_line);
-                        debug!("repl_opt = {:?}", repl_opt);
+                        let repl_subcommand: Result<ReplSubCommand, clap::Error> =
+                            ReplSubCommand::from_iter_safe(filtered_line);
+                        debug!("repl_subcommand = {:?}", repl_subcommand);
 
-                        if let Err(err) = repl_opt {
+                        if let Err(err) = repl_subcommand {
                             println!("{}", err.message);
                             continue;
                         }
 
-                        let repl_subcommand = repl_opt.unwrap().subcommand;
+                        let repl_subcommand = repl_subcommand.unwrap();
 
                         let result = match repl_subcommand {
                             ReplSubCommand::OnlineWalletSubCommand(online_subcommand) => {
