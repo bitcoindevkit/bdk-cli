@@ -760,7 +760,7 @@ feature to create keys that secure actual funds on the Bitcoin mainnet.
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(rename_all = "snake")]
 pub enum KeySubCommand {
-    /// Generates new random seed mnemonic phrase and corresponding master extended keys
+    /// Generates new random seed mnemonic phrase and corresponding master extended key
     Generate {
         /// Entropy level based on number of random seed mnemonic words
         #[structopt(
@@ -775,7 +775,7 @@ pub enum KeySubCommand {
         #[structopt(name = "PASSWORD", short = "p", long = "password")]
         password: Option<String>,
     },
-    /// Restore a master extended keys from seed backup mnemonic words
+    /// Restore a master extended key from seed backup mnemonic words
     Restore {
         /// Seed mnemonic words, must be quoted (eg. "word1 word2 ...")
         #[structopt(name = "MNEMONIC", short = "m", long = "mnemonic")]
@@ -804,7 +804,7 @@ pub fn handle_key_subcommand(
                 12 => MnemonicType::Words12,
                 _ => MnemonicType::Words24,
             };
-            let mnemonic: GeneratedKey<_, miniscript::Bare> =
+            let mnemonic: GeneratedKey<_, miniscript::BareCtx> =
                 Mnemonic::generate((mnemonic_type, Language::English)).unwrap();
             //.map_err(|e| KeyError::from(e.unwrap()))?;
             let mnemonic = mnemonic.into_key();
