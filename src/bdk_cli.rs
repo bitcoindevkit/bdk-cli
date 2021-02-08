@@ -50,9 +50,11 @@ use bdk_cli::{
 };
 use regex::Regex;
 
+const REPL_LINE_SPLIT_REGEX: &str = r#""([^"]*)"|'([^']*)'|([\w\-]+)"#;
+
 /// REPL mode
 #[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(name = "", setting = AppSettings::NoBinaryName, 
+#[structopt(name = "", setting = AppSettings::NoBinaryName,
 version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
 pub enum ReplSubCommand {
@@ -195,8 +197,7 @@ fn main() {
             //     println!("No previous history.");
             // }
 
-            let split_regex = Regex::new(r#"[\w\-]+|"[\w\s]*""#).unwrap();
-            let filter_regex = Regex::new(r#"[\w\s\-]+"#).unwrap();
+            let split_regex = Regex::new(REPL_LINE_SPLIT_REGEX).unwrap();
 
             loop {
                 let readline = rl.readline(">> ");
@@ -206,14 +207,18 @@ fn main() {
                             continue;
                         }
                         rl.add_history_entry(line.as_str());
-                        let split_line: Vec<&str> =
-                            split_regex.find_iter(&line).map(|m| m.as_str()).collect();
-                        let filtered_line: Vec<&str> = split_line
-                            .iter()
-                            .flat_map(|s| filter_regex.find_iter(s).map(|m| m.as_str()))
+                        let split_line: Vec<&str> = split_regex
+                            .captures_iter(&line)
+                            .map(|c| {
+                                c.get(1)
+                                    .or_else(|| c.get(2))
+                                    .or_else(|| c.get(3))
+                                    .unwrap()
+                                    .as_str()
+                            })
                             .collect();
                         let repl_subcommand: Result<ReplSubCommand, clap::Error> =
-                            ReplSubCommand::from_iter_safe(filtered_line);
+                            ReplSubCommand::from_iter_safe(split_line);
                         debug!("repl_subcommand = {:?}", repl_subcommand);
 
                         if let Err(err) = repl_subcommand {
@@ -266,25 +271,58 @@ fn main() {
 
 #[cfg(test)]
 mod test {
+    use crate::REPL_LINE_SPLIT_REGEX;
     use regex::Regex;
 
     #[test]
-    fn test_regex() {
-        let split_regex = Regex::new(r#"[\w\-]+|"[\w\s]*""#).unwrap();
-        //println!("split_regex = {:?}", &split_regex);
-        let filter_regex = Regex::new(r#"[\w\s\-]+"#).unwrap();
-        //println!("filter_regex = {:?}", &filter_regex);
-        let line = r#"restore -m "word1 word2 word3" -p test"#;
-        let split_line: Vec<&str> = split_regex.find_iter(&line).map(|m| m.as_str()).collect();
-        //println!("split_line({}) = {:?}", &line, &split_line);
-        let filtered_line: Vec<&str> = split_line
-            .iter()
-            .flat_map(|s| filter_regex.find_iter(s).map(|m| m.as_str()))
+    fn test_regex_double_quotes() {
+        let split_regex = Regex::new(REPL_LINE_SPLIT_REGEX).unwrap();
+        let line = r#"restore -m "word1 word2 word3" -p 'test! 123 -test' "#;
+        let split_line: Vec<&str> = split_regex
+            .captures_iter(&line)
+            .map(|c| {
+                c.get(1)
+                    .or_else(|| c.get(2))
+                    .or_else(|| c.get(3))
+                    .unwrap()
+                    .as_str()
+            })
             .collect();
-        //println!("filtered_line({:?}) = {:?}", &split_line, &filtered_line);
         assert_eq!(
-            vec!("restore", "-m", "word1 word2 word3", "-p", "test"),
-            filtered_line
+            vec!(
+                "restore",
+                "-m",
+                "word1 word2 word3",
+                "-p",
+                "test! 123 -test"
+            ),
+            split_line
+        );
+    }
+
+    #[test]
+    fn test_regex_single_quotes() {
+        let split_regex = Regex::new(REPL_LINE_SPLIT_REGEX).unwrap();
+        let line = r#"restore -m 'word1 word2 word3' -p "test *123 -test" "#;
+        let split_line: Vec<&str> = split_regex
+            .captures_iter(&line)
+            .map(|c| {
+                c.get(1)
+                    .or_else(|| c.get(2))
+                    .or_else(|| c.get(3))
+                    .unwrap()
+                    .as_str()
+            })
+            .collect();
+        assert_eq!(
+            vec!(
+                "restore",
+                "-m",
+                "word1 word2 word3",
+                "-p",
+                "test *123 -test"
+            ),
+            split_line
         );
     }
 }
