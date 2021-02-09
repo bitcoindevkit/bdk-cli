@@ -24,7 +24,6 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use bitcoin::Network;
 use clap::AppSettings;
@@ -186,10 +185,6 @@ fn main() {
         CliSubCommand::Repl { wallet_opts } => {
             let database = open_database(&wallet_opts);
             let online_wallet = new_online_wallet(network, &wallet_opts, database.clone()).unwrap();
-            let online_wallet = Arc::new(online_wallet);
-
-            let offline_wallet = new_offline_wallet(network, &wallet_opts, database).unwrap();
-            let offline_wallet = Arc::new(offline_wallet);
 
             let mut rl = Editor::<()>::new();
 
@@ -231,13 +226,13 @@ fn main() {
                         let result = match repl_subcommand {
                             ReplSubCommand::OnlineWalletSubCommand(online_subcommand) => {
                                 bdk_cli::handle_online_wallet_subcommand(
-                                    &Arc::clone(&online_wallet),
+                                    &online_wallet,
                                     online_subcommand,
                                 )
                             }
                             ReplSubCommand::OfflineWalletSubCommand(offline_subcommand) => {
                                 bdk_cli::handle_offline_wallet_subcommand(
-                                    &Arc::clone(&offline_wallet),
+                                    &online_wallet,
                                     offline_subcommand,
                                 )
                             }

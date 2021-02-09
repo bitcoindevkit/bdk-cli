@@ -580,8 +580,8 @@ fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
 ///
 /// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
 #[maybe_async]
-pub fn handle_offline_wallet_subcommand<D>(
-    wallet: &Wallet<(), D>,
+pub fn handle_offline_wallet_subcommand<T, D>(
+    wallet: &Wallet<T, D>,
     offline_subcommand: OfflineWalletSubCommand,
 ) -> Result<serde_json::Value, Error>
 where
