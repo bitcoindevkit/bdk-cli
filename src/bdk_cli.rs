@@ -100,8 +100,8 @@ where
     // Try to use Esplora config if "esplora" feature is enabled
     #[cfg(feature = "esplora")]
     let config_esplora: Option<AnyBlockchainConfig> = {
-        let esplora_concurrency = wallet_opts.esplora_concurrency;
-        wallet_opts.esplora.clone().map(|base_url| {
+        let esplora_concurrency = wallet_opts.esplora_opts.esplora_concurrency;
+        wallet_opts.esplora_opts.esplora.clone().map(|base_url| {
             AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
                 base_url,
                 concurrency: Some(esplora_concurrency),
@@ -112,10 +112,10 @@ where
     let config_esplora = None;
 
     let config_electrum = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
-        url: wallet_opts.electrum.clone(),
-        socks5: wallet_opts.proxy.clone(),
-        retry: wallet_opts.retries,
-        timeout: wallet_opts.timeout,
+        url: wallet_opts.electrum_opts.electrum.clone(),
+        socks5: wallet_opts.electrum_opts.proxy.clone(),
+        retry: wallet_opts.electrum_opts.retries,
+        timeout: wallet_opts.electrum_opts.timeout,
     });
 
     // Fall back to Electrum config if Esplora config isn't provided

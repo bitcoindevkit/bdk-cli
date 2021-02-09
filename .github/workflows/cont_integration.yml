@@ -14,7 +14,10 @@ jobs:
           - 1.45.0 # MSRV
         features:
           - default
-          - default,esplora
+          - repl
+          - electrum
+          - esplora
+          - repl,electrum,esplora
     steps:
       - name: Checkout
         uses: actions/checkout@v2

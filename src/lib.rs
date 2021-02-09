@@ -40,7 +40,9 @@
 //!
 //! # Example
 //!
-//! ```
+//! ```no_run
+//! # #[cfg(feature = "electrum")]
+//! # {
 //! # use bdk::bitcoin::Network;
 //! # use bdk::blockchain::{AnyBlockchain, ConfigurableBlockchain};
 //! # use bdk::blockchain::{AnyBlockchainConfig, ElectrumBlockchainConfig};
@@ -72,8 +74,8 @@
 //!     let database = MemoryDatabase::new();
 //!
 //!     let config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
-//!                 url: wallet_opts.electrum,
-//!                 socks5: wallet_opts.proxy,
+//!                 url: wallet_opts.electrum_opts.electrum,
+//!                 socks5: wallet_opts.electrum_opts.proxy,
 //!                 retry: 3,
 //!                 timeout: None,
 //!             });
@@ -89,6 +91,7 @@
 //!     let result = bdk_cli::handle_online_wallet_subcommand(&wallet, online_subcommand).unwrap();
 //!     println!("{}", serde_json::to_string_pretty(&result).unwrap());
 //! }
+//! # }
 //! ```
 
 pub extern crate bdk;
@@ -131,6 +134,10 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 /// # use bdk::bitcoin::Network;
 /// # use structopt::StructOpt;
 /// # use bdk_cli::{CliOpts, WalletOpts, CliSubCommand, WalletSubCommand};
+/// # #[cfg(feature = "electrum")]
+/// # use bdk_cli::ElectrumOpts;
+/// # #[cfg(feature = "esplora")]
+/// # use bdk_cli::EsploraOpts;
 /// # use bdk_cli::OnlineWalletSubCommand::Sync;
 ///
 /// let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
@@ -148,18 +155,18 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///                     wallet: "main".to_string(),
 ///                     descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
 ///                     change_descriptor: None,
-///                     #[cfg(feature = "electrum")]
-///                     proxy: None,
-///                     #[cfg(feature = "electrum")]
-///                     retries: 5,
-///                     #[cfg(feature = "electrum")]
-///                     timeout: None,
-///                     #[cfg(feature = "electrum")]
-///                     electrum: "ssl://electrum.blockstream.info:60002".to_string(),
-///                     #[cfg(feature = "esplora")]
-///                     esplora: None,
-///                     #[cfg(feature = "esplora")]
-///                     esplora_concurrency: 4,
+///               #[cfg(feature = "electrum")]
+///               electrum_opts: ElectrumOpts {
+///                   proxy: None,
+///                   retries: 5,
+///                   timeout: None,
+///                   electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+///               },
+///               #[cfg(feature = "esplora")]
+///               esplora_opts: EsploraOpts {               
+///                   esplora: None,
+///                   esplora_concurrency: 4,
+///               }
 ///                 },
 ///                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync {
 ///                     max_addresses: Some(50)
@@ -237,7 +244,7 @@ pub enum WalletSubCommand {
 /// Wallet options
 ///
 /// The wallet options required for all [`CliSubCommand::Wallet`] or [`CliSubCommand::Repl`]
-/// sub-commands. These options capture wallet descriptor and blockchain client information. The \
+/// sub-commands. These options capture wallet descriptor and blockchain client information. The
 /// blockchain client details are only used for [`OnlineWalletSubCommand`]s.   
 ///
 /// # Example
@@ -245,7 +252,11 @@ pub enum WalletSubCommand {
 /// ```
 /// # use bdk::bitcoin::Network;
 /// # use structopt::StructOpt;
-/// # use bdk_cli:: WalletOpts;
+/// # use bdk_cli::WalletOpts;
+/// # #[cfg(feature = "electrum")]
+/// # use bdk_cli::ElectrumOpts;
+/// # #[cfg(feature = "esplora")]
+/// # use bdk_cli::EsploraOpts;
 ///
 /// let cli_args = vec!["wallet",
 ///                     "--descriptor", "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)"];
@@ -260,17 +271,17 @@ pub enum WalletSubCommand {
 ///               descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
 ///               change_descriptor: None,
 ///               #[cfg(feature = "electrum")]
-///               proxy: None,
-///               #[cfg(feature = "electrum")]
-///               retries: 5,
-///               #[cfg(feature = "electrum")]
-///               timeout: None,
-///               #[cfg(feature = "electrum")]
-///               electrum: "ssl://electrum.blockstream.info:60002".to_string(),
-///               #[cfg(feature = "esplora")]               
-///               esplora: None,
+///               electrum_opts: ElectrumOpts {
+///                   proxy: None,
+///                   retries: 5,
+///                   timeout: None,
+///                   electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+///               },
 ///               #[cfg(feature = "esplora")]
-///               esplora_concurrency: 4,
+///               esplora_opts: EsploraOpts {               
+///                   esplora: None,
+///                   esplora_concurrency: 4,
+///               }
 /// };
 ///
 /// assert_eq!(expected_wallet_opts, wallet_opts);
@@ -291,12 +302,24 @@ pub struct WalletOpts {
     /// Sets the descriptor to use for internal addresses
     #[structopt(name = "CHANGE_DESCRIPTOR", short = "c", long = "change_descriptor")]
     pub change_descriptor: Option<String>,
-    /// Sets the SOCKS5 proxy for the Electrum client
     #[cfg(feature = "electrum")]
+    #[structopt(flatten)]
+    pub electrum_opts: ElectrumOpts,
+    #[cfg(feature = "esplora")]
+    #[structopt(flatten)]
+    pub esplora_opts: EsploraOpts,
+}
+
+/// Electrum options
+///
+/// Electrum blockchain client information used by [`OnlineWalletSubCommand`]s.
+#[cfg(feature = "electrum")]
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+pub struct ElectrumOpts {
+    /// Sets the SOCKS5 proxy for the Electrum client
     #[structopt(name = "PROXY_SERVER:PORT", short = "p", long = "proxy")]
     pub proxy: Option<String>,
     /// Sets the SOCKS5 proxy retries for the Electrum client
-    #[cfg(feature = "electrum")]
     #[structopt(
         name = "PROXY_RETRIES",
         short = "r",
@@ -305,11 +328,9 @@ pub struct WalletOpts {
     )]
     pub retries: u8,
     /// Sets the SOCKS5 proxy timeout for the Electrum client
-    #[cfg(feature = "electrum")]
     #[structopt(name = "PROXY_TIMEOUT", short = "t", long = "timeout")]
     pub timeout: Option<u8>,
     /// Sets the Electrum server to use
-    #[cfg(feature = "electrum")]
     #[structopt(
         name = "SERVER:PORT",
         short = "s",
@@ -317,12 +338,18 @@ pub struct WalletOpts {
         default_value = "ssl://electrum.blockstream.info:60002"
     )]
     pub electrum: String,
+}
+
+/// Esplora options
+///
+/// Esplora blockchain client information used by [`OnlineWalletSubCommand`]s.
+#[cfg(feature = "esplora")]
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+pub struct EsploraOpts {
     /// Use the esplora server if given as parameter
-    #[cfg(feature = "esplora")]
     #[structopt(name = "ESPLORA_URL", short = "e", long = "esplora")]
     pub esplora: Option<String>,
     /// Concurrency of requests made to the esplora server
-    #[cfg(feature = "esplora")]
     #[structopt(
         name = "ESPLORA_CONCURRENCY",
         long = "esplora_concurrency",
@@ -359,6 +386,11 @@ To capture wallet sub-commands from a string vector without a preceeding binary 
 create a custom struct the includes the `NoBinaryName` clap setting and wraps the WalletSubCommand
 enum. See also the [`bdk-cli`](https://github.com/bitcoindevkit/bdk-cli/blob/master/src/bdkcli.rs)
 example app.
+"#
+)]
+#[cfg_attr(
+    all(doc, feature = "repl"),
+    doc = r#"
 
 # Example
 ```
@@ -836,9 +868,14 @@ pub fn handle_key_subcommand(
 #[cfg(test)]
 mod test {
     use super::{CliOpts, WalletOpts};
+    #[cfg(feature = "electrum")]
+    use crate::ElectrumOpts;
+    #[cfg(feature = "esplora")]
+    use crate::EsploraOpts;
     use crate::OfflineWalletSubCommand::{CreateTx, GetNewAddress};
     use crate::OnlineWalletSubCommand::{Broadcast, Sync};
     use crate::{handle_key_subcommand, CliSubCommand, KeySubCommand, WalletSubCommand};
+
     use bdk::bitcoin::{Address, Network, OutPoint};
     use bdk::miniscript::bitcoin::network::constants::Network::Testnet;
     use std::str::FromStr;
@@ -861,17 +898,17 @@ mod test {
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     #[cfg(feature = "electrum")]
-                    proxy: None,
-                    #[cfg(feature = "electrum")]
-                    retries: 5,
-                    #[cfg(feature = "electrum")]
-                    timeout: None,
-                    #[cfg(feature = "electrum")]
-                    electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+                    electrum_opts: ElectrumOpts {
+                        proxy: None,
+                        retries: 5,
+                        timeout: None,
+                        electrum: "ssl://electrum.blockstream.info:60002".to_string()
+                    },
                     #[cfg(feature = "esplora")]
-                    esplora: None,
-                    #[cfg(feature = "esplora")]
-                    esplora_concurrency: 4
+                    esplora_opts: EsploraOpts {
+                        esplora: None,
+                        esplora_concurrency: 4
+                    },
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
             },
@@ -899,14 +936,18 @@ mod test {
                     wallet: "main".to_string(),
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
-                    proxy: Some("127.0.0.1:9150".to_string()),
-                    retries: 3,
-                    timeout: Some(10),
-                    electrum: "ssl://electrum.blockstream.info:50002".to_string(),
+                    #[cfg(feature = "electrum")]
+                    electrum_opts: ElectrumOpts {
+                        proxy: Some("127.0.0.1:9150".to_string()),
+                        retries: 3,
+                        timeout: Some(10),
+                        electrum: "ssl://electrum.blockstream.info:50002".to_string(),
+                    },
                     #[cfg(feature = "esplora")]
-                    esplora: None,
-                    #[cfg(feature = "esplora")]
-                    esplora_concurrency: 4,
+                    esplora_opts: EsploraOpts {
+                        esplora: None,
+                        esplora_concurrency: 4,
+                    }
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
             },
@@ -935,15 +976,17 @@ mod test {
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     #[cfg(feature = "electrum")]
-                    proxy: None,
-                    #[cfg(feature = "electrum")]
-                    retries: 5,
-                    #[cfg(feature = "electrum")]
-                    timeout: None,
-                    #[cfg(feature = "electrum")]
-                    electrum: "ssl://electrum.blockstream.info:60002".to_string(),
-                    esplora: Some("https://blockstream.info/api/".to_string()),
-                    esplora_concurrency: 5,
+                    electrum_opts: ElectrumOpts {
+                        proxy: None,
+                        retries: 5,
+                        timeout: None,
+                        electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+                    },
+                    #[cfg(feature = "esplora")]
+                    esplora_opts: EsploraOpts {
+                        esplora: Some("https://blockstream.info/api/".to_string()),
+                        esplora_concurrency: 5,
+                    }
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
             },
@@ -968,17 +1011,17 @@ mod test {
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: None,
                     #[cfg(feature = "electrum")]
-                    proxy: None,
-                    #[cfg(feature = "electrum")]
-                    retries: 5,
-                    #[cfg(feature = "electrum")]
-                    timeout: None,
-                    #[cfg(feature = "electrum")]
-                    electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+                    electrum_opts: ElectrumOpts {
+                        proxy: None,
+                        retries: 5,
+                        timeout: None,
+                        electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+                    },
                     #[cfg(feature = "esplora")]
-                    esplora: None,
-                    #[cfg(feature = "esplora")]
-                    esplora_concurrency: 4,
+                    esplora_opts: EsploraOpts {
+                        esplora: None,
+                        esplora_concurrency: 4,
+                    }
                 },
                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync {
                     max_addresses: Some(50)
@@ -1023,17 +1066,17 @@ mod test {
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     #[cfg(feature = "electrum")]
-                    proxy: None,
-                    #[cfg(feature = "electrum")]
-                    retries: 5,
-                    #[cfg(feature = "electrum")]
-                    timeout: None,
-                    #[cfg(feature = "electrum")]
-                    electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+                    electrum_opts: ElectrumOpts {
+                        proxy: None,
+                        retries: 5,
+                        timeout: None,
+                        electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+                    },
                     #[cfg(feature = "esplora")]
-                    esplora: None,
-                    #[cfg(feature = "esplora")]
-                    esplora_concurrency: 4,
+                    esplora_opts: EsploraOpts {
+                        esplora: None,
+                        esplora_concurrency: 4,
+                    }
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(CreateTx {
                     recipients: vec![(script1, 123456), (script2, 78910)],
@@ -1069,17 +1112,17 @@ mod test {
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: None,
                     #[cfg(feature = "electrum")]
-                    proxy: None,
-                    #[cfg(feature = "electrum")]
-                    retries: 5,
-                    #[cfg(feature = "electrum")]
-                    timeout: None,
-                    #[cfg(feature = "electrum")]
-                    electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+                    electrum_opts: ElectrumOpts {
+                        proxy: None,
+                        retries: 5,
+                        timeout: None,
+                        electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+                    },
                     #[cfg(feature = "esplora")]
-                    esplora: None,
-                    #[cfg(feature = "esplora")]
-                    esplora_concurrency: 4,
+                    esplora_opts: EsploraOpts {
+                        esplora: None,
+                        esplora_concurrency: 4,
+                    }
                 },
                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Broadcast {
                     psbt: Some("cHNidP8BAEICAAAAASWhGE1AhvtO+2GjJHopssFmgfbq+WweHd8zN/DeaqmDAAAAAAD/////AQAAAAAAAAAABmoEAAECAwAAAAAAAAA=".to_string()),
