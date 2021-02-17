@@ -582,7 +582,6 @@ fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
 /// Execute an offline wallet sub-command
 ///
 /// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
-#[maybe_async]
 pub fn handle_offline_wallet_subcommand<T, D>(
     wallet: &Wallet<T, D>,
     offline_subcommand: OfflineWalletSubCommand,
