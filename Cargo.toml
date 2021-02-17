@@ -32,6 +32,7 @@ repl = ["bdk/key-value-db", "clap", "dirs-next", "env_logger", "regex", "rustyli
 electrum = ["bdk/electrum"]
 esplora = ["bdk/esplora"]
 compiler = ["bdk/compiler"]
+async-interface = ["bdk/async-interface"]
 
 [[bin]]
 name = "bdk-cli"
