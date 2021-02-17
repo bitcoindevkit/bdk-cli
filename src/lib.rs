@@ -106,6 +106,7 @@ extern crate bdk_macros;
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
+pub use structopt;
 use structopt::StructOpt;
 
 use crate::OfflineWalletSubCommand::*;
