@@ -113,13 +113,16 @@ use crate::OnlineWalletSubCommand::*;
 use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
 use bdk::bitcoin::hashes::hex::FromHex;
 use bdk::bitcoin::secp256k1::Secp256k1;
-use bdk::bitcoin::util::bip32::ExtendedPubKey;
+use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Network, OutPoint, Script, Txid};
 use bdk::blockchain::{log_progress, Blockchain};
 use bdk::database::BatchDatabase;
+use bdk::descriptor::Segwitv0;
 use bdk::keys::bip39::{Language, Mnemonic, MnemonicType};
-use bdk::keys::{DerivableKey, ExtendedKey, GeneratableKey, GeneratedKey};
+use bdk::keys::DescriptorKey::Secret;
+use bdk::keys::KeyError::{InvalidNetwork, Message};
+use bdk::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
 use bdk::miniscript::miniscript;
 use bdk::Error;
 use bdk::{FeeRate, KeychainKind, Wallet};
@@ -816,6 +819,15 @@ pub enum KeySubCommand {
         #[structopt(name = "PASSWORD", short = "p", long = "password")]
         password: Option<String>,
     },
+    /// Derive an xpub from an xprv and a derivation path string (ie. "m/84'/1'/0'/0")
+    Derive {
+        /// Extended private key to derive from
+        #[structopt(name = "XPRV", short = "x", long = "xprv")]
+        xprv: String,
+        /// Path to use to derive extended public key from extended private key
+        #[structopt(name = "PATH", short = "p", long = "path")]
+        path: String,
+    },
 }
 
 /// Execute a key sub-command
@@ -842,10 +854,9 @@ pub fn handle_key_subcommand(
             let mnemonic = mnemonic.into_key();
             let xkey: ExtendedKey = (mnemonic.clone(), password).into_extended_key()?;
             let xprv = xkey.into_xprv(network).unwrap();
-            let xpub = ExtendedPubKey::from_private(&secp, &xprv);
             let fingerprint = xprv.fingerprint(&secp);
             Ok(
-                json!({ "mnemonic": mnemonic.phrase(), "xprv": xprv.to_string(),"xpub": xpub.to_string(), "fingerprint": fingerprint.to_string() }),
+                json!({ "mnemonic": mnemonic.phrase(), "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }),
             )
         }
         KeySubCommand::Restore { mnemonic, password } => {
@@ -855,12 +866,26 @@ pub fn handle_key_subcommand(
             // })?;
             let xkey: ExtendedKey = (mnemonic, password).into_extended_key()?;
             let xprv = xkey.into_xprv(network).unwrap();
-            let xpub = ExtendedPubKey::from_private(&secp, &xprv);
             let fingerprint = xprv.fingerprint(&secp);
 
-            Ok(
-                json!({ "xprv": xprv.to_string(),"xpub": xpub.to_string(), "fingerprint": fingerprint.to_string() }),
-            )
+            Ok(json!({ "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }))
+        }
+        KeySubCommand::Derive { xprv, path } => {
+            let xprv = ExtendedPrivKey::from_str(xprv.as_str())?;
+            if xprv.network != network {
+                return Err(Error::Key(InvalidNetwork));
+            }
+
+            let deriv_path: DerivationPath = DerivationPath::from_str(path.as_str())?;
+            let xprv_desc_key: DescriptorKey<Segwitv0> =
+                xprv.into_descriptor_key(None, deriv_path)?;
+
+            if let Secret(secret_key, _, _) = xprv_desc_key {
+                let desc_pubkey = secret_key.as_public(&secp).unwrap();
+                Ok(json!({"xpub": desc_pubkey.to_string()}))
+            } else {
+                Err(Error::Key(Message("Invalid key variant".to_string())))
+            }
         }
     }
 }
@@ -1158,11 +1183,9 @@ mod test {
         let mnemonic = result_obj.get("mnemonic").unwrap().as_str().unwrap();
         let mnemonic: Vec<&str> = mnemonic.split(' ').collect();
         let xprv = result_obj.get("xprv").unwrap().as_str().unwrap();
-        let xpub = result_obj.get("xpub").unwrap().as_str().unwrap();
 
         assert_eq!(mnemonic.len(), 12);
         assert_eq!(&xprv[0..4], "tprv");
-        assert_eq!(&xpub[0..4], "tpub");
     }
 
     #[test]
@@ -1179,10 +1202,25 @@ mod test {
 
         let fingerprint = result_obj.get("fingerprint").unwrap().as_str().unwrap();
         let xprv = result_obj.get("xprv").unwrap().as_str().unwrap();
-        let xpub = result_obj.get("xpub").unwrap().as_str().unwrap();
 
         assert_eq!(&fingerprint, &"828af366");
         assert_eq!(&xprv, &"tprv8ZgxMBicQKsPd18TeiFknZKqaZFwpdX9tvvKh8eeHSSPBQi5g9xPHztBg411o78G8XkrhQb6Q1cVvBJ1a9xuFHpmWgvQsvkJkNxBjfGoqhK");
-        assert_eq!(&xpub, &"tpubD6NzVbkrYhZ4WUAFYMvMBxyx9amsyxi4UEX6yegwhiEn1txrJYmyUVW3rABPz2emcVT5H8PqBoMmWHmJG8fWi9a4iiGLDquUDtyYDKe9cqk");
+    }
+
+    #[test]
+    fn test_key_derive() {
+        let network = Testnet;
+        let key_generate_cmd = KeySubCommand::Derive {
+            xprv: "tprv8ZgxMBicQKsPfQjJy8ge2cvBfDjLxJSkvNLVQiw7BQ5gTjKadG2rrcQB5zjcdaaUTz5EDNJaS77q4DzjqjogQBfMsaXFFNP3UqoBnwt2kyT"
+                .to_string(),
+            path: "m/84'/1'/0'/0".to_string(),
+        };
+
+        let result = handle_key_subcommand(network, key_generate_cmd).unwrap();
+        let result_obj = result.as_object().unwrap();
+
+        let xpub = result_obj.get("xpub").unwrap().as_str().unwrap();
+
+        assert_eq!(&xpub, &"[566844c5/84'/1'/0']tpubDDrcq8JNTLVwaGnXp7KqZZxFJoic49ikEotWnpm6hpMY2hL2F1hpgbBBkEdsFJHU1iAx9DzMUKYr5mrphBMoXxhsBPhnVdmaoSCaeh6QWgj/0/*");
     }
 }
