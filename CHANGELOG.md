@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `handle_key_subcommand` function
 
 #### Changed
-- Upgrade BDK to `0.3`
+- Upgrade `bdk` to `0.4.0` and `bdk-macros` to `0.3.0`
 - Renamed `WalletOpt` struct to `WalletOpts`
 - `WalletSubCommand` enum split into `OfflineWalletSubCommand` and `OnlineWalletSubCommand`
 - Split `handle_wallet_subcommand` into two functions, `handle_offline_wallet_subcommand` and `handle_online_wallet_subcommand`
@@ -25,7 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Added
 - Top level commands "wallet", "key", and "repl"
-- "key" command has sub-commands to "generate" and "restore" a master extended key
+- "key" sub-commands to "generate" and "restore" a master private key
+- "key" sub-command to "derive" an extended public key from a master private key
 - "repl" command now has an "exit" sub-command
 
 #### Changed
