@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         rust:
-          - stable
+          - 1.50.0 # STABLE
           - 1.45.0 # MSRV
         features:
           - default
@@ -51,7 +51,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Set default toolchain
-        run: rustup default stable
+        run: rustup default 1.50.0 # STABLE
       - name: Set profile
         run: rustup set profile minimal
       - name: Add clippy
