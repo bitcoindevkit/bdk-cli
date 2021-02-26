@@ -1,6 +1,6 @@
 [package]
 name = "bdk-cli"
-version = "0.1.1-dev"
+version = "0.2.0"
 edition = "2018"
 authors = ["Alekos Filini <alekos.filini@gmail.com>", "Riccardo Casatta <riccardo@casatta.it>", "Steve Myers <steve@notmandatory.org>"]
 homepage = "https://bitcoindevkit.org"
