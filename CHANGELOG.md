@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Project
+
+#### Added
+- `CliSubCommand::Compile` enum variant and `handle_compile_subcommand()` function
+
+### `bdk-cli` bin
+
+#### Added
+- New top level command "Compile" which compiles a miniscript policy to an output descriptor
+
 ## [0.2.0]
 
 ### Project

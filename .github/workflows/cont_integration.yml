@@ -17,7 +17,8 @@ jobs:
           - repl
           - electrum
           - esplora
-          - repl,electrum,esplora
+          - compiler
+          - repl,electrum,esplora,compiler
     steps:
       - name: Checkout
         uses: actions/checkout@v2

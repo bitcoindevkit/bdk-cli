@@ -117,11 +117,15 @@ use bdk::bitcoin::{Address, Network, OutPoint, Script, Txid};
 use bdk::blockchain::{log_progress, Blockchain};
 use bdk::database::BatchDatabase;
 use bdk::descriptor::Segwitv0;
+#[cfg(feature = "compiler")]
+use bdk::descriptor::{Descriptor, Legacy, Miniscript};
 use bdk::keys::bip39::{Language, Mnemonic, MnemonicType};
 use bdk::keys::DescriptorKey::Secret;
 use bdk::keys::KeyError::{InvalidNetwork, Message};
 use bdk::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
 use bdk::miniscript::miniscript;
+#[cfg(feature = "compiler")]
+use bdk::miniscript::policy::Concrete;
 use bdk::Error;
 use bdk::{FeeRate, KeychainKind, Wallet};
 
@@ -221,6 +225,17 @@ pub enum CliSubCommand {
     Key {
         #[structopt(subcommand)]
         subcommand: KeySubCommand,
+    },
+    /// Compile a miniscript policy to an output descriptor
+    #[cfg(feature = "compiler")]
+    #[structopt(long_about = "Miniscript policy compiler")]
+    Compile {
+        /// Sets the spending policy to compile
+        #[structopt(name = "POLICY", required = true, index = 1)]
+        policy: String,
+        /// Sets the script type used to embed the compiled policy
+        #[structopt(name = "TYPE", short = "t", long = "type", default_value = "wsh", possible_values = &["sh","wsh", "sh-wsh"])]
+        script_type: String,
     },
     /// Enter REPL command loop mode
     #[structopt(long_about = "REPL command loop mode")]
@@ -887,9 +902,39 @@ pub fn handle_key_subcommand(
     }
 }
 
+/// Execute the miniscript compiler sub-command
+///
+/// Compiler options are described in [`CliSubCommand::Compile`].
+#[cfg(feature = "compiler")]
+pub fn handle_compile_subcommand(
+    _network: Network,
+    policy: String,
+    script_type: String,
+) -> Result<serde_json::Value, Error> {
+    let policy = Concrete::<String>::from_str(policy.as_str())?;
+    let legacy_policy: Miniscript<String, Legacy> = policy
+        .compile()
+        .map_err(|e| Error::Generic(e.to_string()))?;
+    let segwit_policy: Miniscript<String, Segwitv0> = policy
+        .compile()
+        .map_err(|e| Error::Generic(e.to_string()))?;
+
+    let descriptor = match script_type.as_str() {
+        "sh" => Descriptor::new_sh(legacy_policy),
+        "wsh" => Descriptor::new_wsh(segwit_policy),
+        "sh-wsh" => Descriptor::new_sh_wsh(segwit_policy),
+        _ => panic!("Invalid type"),
+    }
+    .map_err(Error::Miniscript)?;
+
+    Ok(json!({"descriptor": descriptor.to_string()}))
+}
+
 #[cfg(test)]
 mod test {
     use super::{CliOpts, WalletOpts};
+    #[cfg(feature = "compiler")]
+    use crate::handle_compile_subcommand;
     #[cfg(feature = "electrum")]
     use crate::ElectrumOpts;
     #[cfg(feature = "esplora")]
@@ -904,7 +949,7 @@ mod test {
     use structopt::StructOpt;
 
     #[test]
-    fn test_wallet_get_new_address() {
+    fn test_parse_wallet_get_new_address() {
         let cli_args = vec!["bdk-cli", "--network", "bitcoin", "wallet",
                             "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
@@ -941,7 +986,7 @@ mod test {
 
     #[cfg(feature = "electrum")]
     #[test]
-    fn test_wallet_electrum() {
+    fn test_parse_wallet_electrum() {
         let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
                             "--proxy", "127.0.0.1:9150", "--retries", "3", "--timeout", "10",
                             "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
@@ -980,7 +1025,7 @@ mod test {
 
     #[cfg(feature = "esplora")]
     #[test]
-    fn test_wallet_esplora() {
+    fn test_parse_wallet_esplora() {
         let cli_args = vec!["bdk-cli", "--network", "bitcoin", "wallet",
                             "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",             
@@ -1018,7 +1063,7 @@ mod test {
     }
 
     #[test]
-    fn test_wallet_sync() {
+    fn test_parse_wallet_sync() {
         let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
                             "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "sync", "--max_addresses", "50"];
@@ -1055,7 +1100,7 @@ mod test {
     }
 
     #[test]
-    fn test_wallet_create_tx() {
+    fn test_parse_wallet_create_tx() {
         let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
                             "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "--change_descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
@@ -1118,7 +1163,7 @@ mod test {
     }
 
     #[test]
-    fn test_wallet_broadcast() {
+    fn test_parse_wallet_broadcast() {
         let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
                             "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "broadcast",
@@ -1157,7 +1202,7 @@ mod test {
     }
 
     #[test]
-    fn test_wrong_network() {
+    fn test_parse_wrong_network() {
         let cli_args = vec!["repl", "--network", "badnet", "wallet",
                             "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "sync", "--max_addresses", "50"];
@@ -1219,5 +1264,47 @@ mod test {
         let xpub = result_obj.get("xpub").unwrap().as_str().unwrap();
 
         assert_eq!(&xpub, &"[566844c5/84'/1'/0']tpubDDrcq8JNTLVwaGnXp7KqZZxFJoic49ikEotWnpm6hpMY2hL2F1hpgbBBkEdsFJHU1iAx9DzMUKYr5mrphBMoXxhsBPhnVdmaoSCaeh6QWgj/0/*");
+    }
+
+    #[cfg(feature = "compiler")]
+    #[test]
+    fn test_parse_compile() {
+        let cli_args = vec![
+            "bdk-cli",
+            "compile",
+            "thresh(3,pk(Alice),pk(Bob),pk(Carol),older(2))",
+            "--type",
+            "sh-wsh",
+        ];
+
+        let cli_opts = CliOpts::from_iter(&cli_args);
+
+        let expected_cli_opts = CliOpts {
+            network: Network::Testnet,
+            subcommand: CliSubCommand::Compile {
+                policy: "thresh(3,pk(Alice),pk(Bob),pk(Carol),older(2))".to_string(),
+                script_type: "sh-wsh".to_string(),
+            },
+        };
+
+        assert_eq!(expected_cli_opts, cli_opts);
+    }
+
+    #[cfg(feature = "compiler")]
+    #[test]
+    fn test_compile() {
+        let result = handle_compile_subcommand(
+            Network::Testnet,
+            "thresh(3,pk(Alice),pk(Bob),pk(Carol),older(2))".to_string(),
+            "sh-wsh".to_string(),
+        )
+        .unwrap();
+        let result_obj = result.as_object().unwrap();
+
+        let descriptor = result_obj.get("descriptor").unwrap().as_str().unwrap();
+        assert_eq!(
+            &descriptor,
+            &"sh(wsh(thresh(3,pk(Alice),s:pk(Bob),s:pk(Carol),sdv:older(2))))#l4qaawgv"
+        );
     }
 }

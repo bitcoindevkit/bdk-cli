@@ -182,9 +182,17 @@ fn main() {
             let result = bdk_cli::handle_key_subcommand(network, key_subcommand);
             serde_json::to_string_pretty(&result.unwrap()).unwrap()
         }
+        #[cfg(feature = "compiler")]
+        CliSubCommand::Compile {
+            policy,
+            script_type,
+        } => {
+            let result = bdk_cli::handle_compile_subcommand(network, policy, script_type);
+            serde_json::to_string_pretty(&result.unwrap()).unwrap()
+        }
         CliSubCommand::Repl { wallet_opts } => {
             let database = open_database(&wallet_opts);
-            let online_wallet = new_online_wallet(network, &wallet_opts, database.clone()).unwrap();
+            let online_wallet = new_online_wallet(network, &wallet_opts, database).unwrap();
 
             let mut rl = Editor::<()>::new();
 
