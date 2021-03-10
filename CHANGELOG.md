@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Added
 - `CliSubCommand::Compile` enum variant and `handle_compile_subcommand()` function
+- Make repl and electrum default features
 
 ### `bdk-cli` bin
 

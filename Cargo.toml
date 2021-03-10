@@ -27,7 +27,7 @@ clap = { version = "2.33", optional = true }
 regex = {version = "1", optional = true }
 
 [features]
-default = []
+default = ["repl", "electrum"]
 repl = ["bdk/key-value-db", "clap", "dirs-next", "env_logger", "regex", "rustyline"]
 electrum = ["bdk/electrum"]
 esplora = ["bdk/esplora"]
