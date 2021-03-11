@@ -27,7 +27,7 @@ use std::path::PathBuf;
 
 use bitcoin::Network;
 use clap::AppSettings;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use structopt::StructOpt;
@@ -157,42 +157,54 @@ fn main() {
         warn!("This is experimental software and not currently recommended for use on Bitcoin mainnet, proceed with caution.")
     }
 
+    match handle_command(cli_opts, network) {
+        Ok(result) => println!("{}", result),
+        Err(e) => {
+            match e {
+                Error::ChecksumMismatch => error!("Descriptor checksum mismatch. Are you using a different descriptor for an already defined wallet name? (if you are not specifying the wallet name it defaults to 'main')"),
+                e => error!("{}", e.to_string()),
+            }
+        },
+    }
+}
+
+fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> {
     let result = match cli_opts.subcommand {
         CliSubCommand::Wallet {
             wallet_opts,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
             let database = open_database(&wallet_opts);
-            let wallet = new_online_wallet(network, &wallet_opts, database).unwrap();
-            let result = bdk_cli::handle_online_wallet_subcommand(&wallet, online_subcommand);
-            serde_json::to_string_pretty(&result.unwrap()).unwrap()
+            let wallet = new_online_wallet(network, &wallet_opts, database)?;
+            let result = bdk_cli::handle_online_wallet_subcommand(&wallet, online_subcommand)?;
+            serde_json::to_string_pretty(&result)?
         }
         CliSubCommand::Wallet {
             wallet_opts,
             subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
             let database = open_database(&wallet_opts);
-            let wallet = new_offline_wallet(network, &wallet_opts, database).unwrap();
-            let result = bdk_cli::handle_offline_wallet_subcommand(&wallet, offline_subcommand);
-            serde_json::to_string_pretty(&result.unwrap()).unwrap()
+            let wallet = new_offline_wallet(network, &wallet_opts, database)?;
+            let result = bdk_cli::handle_offline_wallet_subcommand(&wallet, offline_subcommand)?;
+            serde_json::to_string_pretty(&result)?
         }
         CliSubCommand::Key {
             subcommand: key_subcommand,
         } => {
-            let result = bdk_cli::handle_key_subcommand(network, key_subcommand);
-            serde_json::to_string_pretty(&result.unwrap()).unwrap()
+            let result = bdk_cli::handle_key_subcommand(network, key_subcommand)?;
+            serde_json::to_string_pretty(&result)?
         }
         #[cfg(feature = "compiler")]
         CliSubCommand::Compile {
             policy,
             script_type,
         } => {
-            let result = bdk_cli::handle_compile_subcommand(network, policy, script_type);
-            serde_json::to_string_pretty(&result.unwrap()).unwrap()
+            let result = bdk_cli::handle_compile_subcommand(network, policy, script_type)?;
+            serde_json::to_string_pretty(&result)?
         }
         CliSubCommand::Repl { wallet_opts } => {
             let database = open_database(&wallet_opts);
-            let online_wallet = new_online_wallet(network, &wallet_opts, database).unwrap();
+            let online_wallet = new_online_wallet(network, &wallet_opts, database)?;
 
             let mut rl = Editor::<()>::new();
 
@@ -200,7 +212,8 @@ fn main() {
             //     println!("No previous history.");
             // }
 
-            let split_regex = Regex::new(REPL_LINE_SPLIT_REGEX).unwrap();
+            let split_regex =
+                Regex::new(REPL_LINE_SPLIT_REGEX).map_err(|e| Error::Generic(e.to_string()))?;
 
             loop {
                 let readline = rl.readline(">> ");
@@ -268,8 +281,7 @@ fn main() {
             "Exiting REPL".to_string()
         }
     };
-
-    println!("{}", result);
+    Ok(result)
 }
 
 #[cfg(test)]
