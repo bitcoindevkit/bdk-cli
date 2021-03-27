@@ -1,6 +1,6 @@
 [package]
 name = "bdk-cli"
-version = "0.2.1"
+version = "0.2.1-dev"
 edition = "2018"
 authors = ["Alekos Filini <alekos.filini@gmail.com>", "Riccardo Casatta <riccardo@casatta.it>", "Steve Myers <steve@notmandatory.org>"]
 homepage = "https://bitcoindevkit.org"
@@ -12,8 +12,8 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-bdk = { version = "^0.4", default-features = false, features = ["all-keys"]}
-bdk-macros = "^0.3"
+bdk = { version = "^0.5", default-features = false, features = ["all-keys"]}
+bdk-macros = "^0.4"
 structopt = "^0.3"
 serde_json = { version = "^1.0" }
 log = "^0.4"
