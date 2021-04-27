@@ -111,7 +111,7 @@ use crate::OnlineWalletSubCommand::*;
 use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
 use bdk::bitcoin::hashes::hex::FromHex;
 use bdk::bitcoin::secp256k1::Secp256k1;
-use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
+use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey, KeySource};
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Network, OutPoint, Script, Txid};
 use bdk::blockchain::{log_progress, Blockchain};
@@ -887,14 +887,18 @@ pub fn handle_key_subcommand(
             if xprv.network != network {
                 return Err(Error::Key(InvalidNetwork));
             }
-
             let deriv_path: DerivationPath = DerivationPath::from_str(path.as_str())?;
-            let xprv_desc_key: DescriptorKey<Segwitv0> =
-                xprv.into_descriptor_key(None, deriv_path)?;
 
-            if let Secret(secret_key, _, _) = xprv_desc_key {
-                let desc_pubkey = secret_key.as_public(&secp).unwrap();
-                Ok(json!({"xpub": desc_pubkey.to_string()}))
+            let derived_xprv = &xprv.derive_priv(&secp, &deriv_path)?;
+
+            let origin: KeySource = (xprv.fingerprint(&secp), deriv_path);
+
+            let derived_xprv_desc_key: DescriptorKey<Segwitv0> =
+                derived_xprv.into_descriptor_key(Some(origin), DerivationPath::default())?;
+
+            if let Secret(desc_seckey, _, _) = derived_xprv_desc_key {
+                let desc_pubkey = desc_seckey.as_public(&secp).unwrap();
+                Ok(json!({"xpub": desc_pubkey.to_string(), "xprv": desc_seckey.to_string()}))
             } else {
                 Err(Error::Key(Message("Invalid key variant".to_string())))
             }
@@ -1262,8 +1266,10 @@ mod test {
         let result_obj = result.as_object().unwrap();
 
         let xpub = result_obj.get("xpub").unwrap().as_str().unwrap();
+        let xprv = result_obj.get("xprv").unwrap().as_str().unwrap();
 
-        assert_eq!(&xpub, &"[566844c5/84'/1'/0']tpubDDrcq8JNTLVwaGnXp7KqZZxFJoic49ikEotWnpm6hpMY2hL2F1hpgbBBkEdsFJHU1iAx9DzMUKYr5mrphBMoXxhsBPhnVdmaoSCaeh6QWgj/0/*");
+        assert_eq!(&xpub, &"[566844c5/84'/1'/0'/0]tpubDFeqiDkfwR1tAhPxsXSZMfEmfpDhwhLyhLKZgmeBvuBkZQusoWeL62oGg2oTNGcENeKdwuGepAB85eMvyLemabYe9PSqv6cr5mFXktHc3Ka/*");
+        assert_eq!(&xprv, &"[566844c5/84'/1'/0'/0]tprv8ixoZoiRo3LDHENAysmxxFaf6nhmnNA582inQFbtWdPMivf7B7pjuYBQVuLC5bkM7tJZEDbfoivENsGZPBnQg1n52Kuc1P8X2Ei3XJuJX7c/*");
     }
 
     #[cfg(feature = "compiler")]
