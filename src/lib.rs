@@ -831,7 +831,7 @@ pub enum KeySubCommand {
         #[structopt(name = "PASSWORD", short = "p", long = "password")]
         password: Option<String>,
     },
-    /// Derive an xpub from an xprv and a derivation path string (ie. "m/84'/1'/0'/0")
+    /// Derive a child key pair from a master extended key and a derivation path string
     Derive {
         /// Extended private key to derive from
         #[structopt(name = "XPRV", short = "x", long = "xprv")]
