@@ -831,7 +831,7 @@ pub enum KeySubCommand {
         #[structopt(name = "PASSWORD", short = "p", long = "password")]
         password: Option<String>,
     },
-    /// Derive a child key pair from a master extended key and a derivation path string
+    /// Derive a child key pair from a master extended key and a derivation path string (eg. "m/84'/1'/0'/0" or "m/84h/1h/0h/0")
     Derive {
         /// Extended private key to derive from
         #[structopt(name = "XPRV", short = "x", long = "xprv")]
