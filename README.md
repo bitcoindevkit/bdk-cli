@@ -23,6 +23,18 @@ To sync a wallet to the default electrum server:
 cargo run -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
 ```
 
+To sync a wallet to Bitcoin Core node (assuming a regtest node at 127.0.0.1:18444) serving compact filters:
+
+Update `Cargo.toml`
+```
+[features]
+default = ["repl", "electrum", "compact_filters"]
+```
+Then run:
+```shell
+cargo run -- --network regtest wallet --node 127.0.0.1:18444 --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
+```
+
 To get a wallet balance with customized logging:
 
 ```shell
