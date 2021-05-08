@@ -33,6 +33,7 @@ electrum = ["bdk/electrum"]
 esplora = ["bdk/esplora"]
 compiler = ["bdk/compiler"]
 async-interface = ["bdk/async-interface"]
+compact_filters = ["bdk/compact_filters"]
 
 [[bin]]
 name = "bdk-cli"
