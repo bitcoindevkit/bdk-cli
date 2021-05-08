@@ -324,6 +324,24 @@ pub struct WalletOpts {
     #[cfg(feature = "esplora")]
     #[structopt(flatten)]
     pub esplora_opts: EsploraOpts,
+    #[cfg(feature = "compact_filters")]
+    #[structopt(flatten)]
+    pub compactfilter_opts: CompactFilterOpts,
+}
+
+/// Compact Filter options
+///
+/// Compact filter peer information used by [`OnlineWalletSubCommand`]s.
+#[cfg(feature = "compact_filters")]
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+pub struct CompactFilterOpts {
+    /// Sets the light client network address
+    #[structopt(name = "ADDRESS:PORT", short = "n", long = "node")]
+    pub address: String,
+
+    /// Optionally skip initial `skip_blocks` blocks (default: 0)
+    #[structopt(name = "SKIP_BLOCKS", short = "k", long = "skip_blocks")]
+    pub skip_blocks: Option<usize>,
 }
 
 /// Electrum options
@@ -938,6 +956,8 @@ mod test {
     use super::{CliOpts, WalletOpts};
     #[cfg(feature = "compiler")]
     use crate::handle_compile_subcommand;
+    #[cfg(feature = "compact_filters")]
+    use crate::CompactFilterOpts;
     #[cfg(feature = "electrum")]
     use crate::ElectrumOpts;
     #[cfg(feature = "esplora")]
@@ -979,6 +999,11 @@ mod test {
                         esplora: None,
                         esplora_concurrency: 4
                     },
+                    #[cfg(feature = "compact_filters")]
+                    compactfilter_opts: CompactFilterOpts{
+                        address: "127.0.0.1:18444".to_string(),
+                        skip_blocks: None
+                    }
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
             },
@@ -1017,7 +1042,12 @@ mod test {
                     esplora_opts: EsploraOpts {
                         esplora: None,
                         esplora_concurrency: 4,
-                    }
+                    },
+                    #[cfg(feature = "compact_filters")]
+                    compactfilter_opts: CompactFilterOpts{
+                        address: "127.0.0.1:18444".to_string(),
+                        skip_blocks: None
+                    },
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
             },
@@ -1056,7 +1086,56 @@ mod test {
                     esplora_opts: EsploraOpts {
                         esplora: Some("https://blockstream.info/api/".to_string()),
                         esplora_concurrency: 5,
-                    }
+                    },
+                    #[cfg(feature = "compact_filters")]
+                    compactfilter_opts: CompactFilterOpts{
+                        address: "127.0.0.1:18444".to_string(),
+                        skip_blocks: None
+                    },
+                },
+                subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
+            },
+        };
+
+        assert_eq!(expected_cli_opts, cli_opts);
+    }
+
+    #[cfg(feature = "compact_filters")]
+    #[test]
+    fn test_parse_wallet_compact_filters() {
+        let cli_args = vec!["bdk-cli", "--network", "bitcoin", "wallet",
+                            "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
+                            "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",             
+                            "--node", "127.0.0.1:18444",
+                            "--skip_blocks", "5",
+                            "get_new_address"];
+
+        let cli_opts = CliOpts::from_iter(&cli_args);
+
+        let expected_cli_opts = CliOpts {
+            network: Network::Bitcoin,
+            subcommand: CliSubCommand::Wallet {
+                wallet_opts: WalletOpts {
+                    wallet: "main".to_string(),
+                    descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
+                    change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
+                    #[cfg(feature = "electrum")]
+                    electrum_opts: ElectrumOpts {
+                        proxy: None,
+                        retries: 5,
+                        timeout: None,
+                        electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+                    },
+                    #[cfg(feature = "esplora")]
+                    esplora_opts: EsploraOpts {
+                        esplora: Some("https://blockstream.info/api/".to_string()),
+                        esplora_concurrency: 5,
+                    },
+                    #[cfg(feature = "compact_filters")]
+                    compactfilter_opts: CompactFilterOpts{
+                        address: "127.0.0.1:18444".to_string(),
+                        skip_blocks: Some(5)
+                    },
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
             },
@@ -1091,7 +1170,12 @@ mod test {
                     esplora_opts: EsploraOpts {
                         esplora: None,
                         esplora_concurrency: 4,
-                    }
+                    },
+                    #[cfg(feature = "compact_filters")]
+                    compactfilter_opts: CompactFilterOpts{
+                        address: "127.0.0.1:18444".to_string(),
+                        skip_blocks: None
+                    },
                 },
                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync {
                     max_addresses: Some(50)
@@ -1146,7 +1230,12 @@ mod test {
                     esplora_opts: EsploraOpts {
                         esplora: None,
                         esplora_concurrency: 4,
-                    }
+                    },
+                    #[cfg(feature = "compact_filters")]
+                    compactfilter_opts: CompactFilterOpts{
+                        address: "127.0.0.1:18444".to_string(),
+                        skip_blocks: None
+                    },
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(CreateTx {
                     recipients: vec![(script1, 123456), (script2, 78910)],
@@ -1192,7 +1281,12 @@ mod test {
                     esplora_opts: EsploraOpts {
                         esplora: None,
                         esplora_concurrency: 4,
-                    }
+                    },
+                    #[cfg(feature = "compact_filters")]
+                    compactfilter_opts: CompactFilterOpts{
+                        address: "127.0.0.1:18444".to_string(),
+                        skip_blocks: None
+                    },
                 },
                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Broadcast {
                     psbt: Some("cHNidP8BAEICAAAAASWhGE1AhvtO+2GjJHopssFmgfbq+WweHd8zN/DeaqmDAAAAAAD/////AQAAAAAAAAAABmoEAAECAwAAAAAAAAA=".to_string()),

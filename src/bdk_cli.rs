@@ -32,6 +32,8 @@ use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use structopt::StructOpt;
 
+#[cfg(feature = "compact_filters")]
+use bdk::blockchain::compact_filters::{BitcoinPeerConfig, CompactFiltersBlockchainConfig};
 #[cfg(feature = "esplora")]
 use bdk::blockchain::esplora::EsploraBlockchainConfig;
 use bdk::blockchain::{
@@ -117,8 +119,32 @@ where
         timeout: wallet_opts.electrum_opts.timeout,
     });
 
-    // Fall back to Electrum config if Esplora config isn't provided
-    let config = config_esplora.unwrap_or(config_electrum);
+    #[cfg(feature = "compact_filters")]
+    let compact_filter_config: Option<AnyBlockchainConfig> = {
+        let peerconfig = BitcoinPeerConfig {
+            address: wallet_opts.compactfilter_opts.address.clone(),
+            socks5: None,
+            socks5_credentials: None,
+        };
+
+        Some(AnyBlockchainConfig::CompactFilters(
+            CompactFiltersBlockchainConfig {
+                peers: vec![peerconfig],
+                network,
+                storage_dir: wallet_opts.wallet.clone(),
+                skip_blocks: wallet_opts.compactfilter_opts.skip_blocks,
+            },
+        ))
+    };
+
+    #[cfg(not(feature = "compact_filters"))]
+    let compact_filter_config = None;
+
+    // Fall back to Electrum config if Esplora or Compact Filter config isn't provided
+    let config = config_esplora.unwrap_or_else(|| match compact_filter_config {
+        Some(config) => config,
+        None => config_electrum,
+    });
 
     let descriptor = wallet_opts.descriptor.as_str();
     let change_descriptor = wallet_opts.change_descriptor.as_deref();
