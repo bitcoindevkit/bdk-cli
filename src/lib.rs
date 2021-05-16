@@ -335,13 +335,32 @@ pub struct WalletOpts {
 #[cfg(feature = "compact_filters")]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct CompactFilterOpts {
+    /// Sets the SOCKS5 proxy for the Electrum client
+    #[structopt(name = "CPROXY_SERVER:PORT", long = "cmpct_proxy")]
+    pub proxy: Option<String>,
+
+    #[structopt(name = "PROXY_SERVER:USER", short = "u", long = "user")]
+    pub user: Option<String>,
+
+    #[structopt(name = "PROXY_SERVER:PASSWD", long = "passwd")]
+    pub passwd: Option<String>,
+
     /// Sets the light client network address
     #[structopt(name = "ADDRESS:PORT", short = "n", long = "node")]
     pub address: String,
 
-    /// Optionally skip initial `skip_blocks` blocks (default: 0)
-    #[structopt(name = "SKIP_BLOCKS", short = "k", long = "skip_blocks")]
-    pub skip_blocks: Option<usize>,
+    /// Sets the number of parallel node connection
+    #[structopt(name = "CONNECTIONS", long = "conn_count", default_value = "1")]
+    pub conn_count: usize,
+
+    /// Optionally skip initial `skip_blocks` blocks
+    #[structopt(
+        name = "SKIP_BLOCKS",
+        short = "k",
+        long = "skip_blocks",
+        default_value = "0"
+    )]
+    pub skip_blocks: usize,
 }
 
 /// Electrum options
@@ -1001,9 +1020,13 @@ mod test {
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
+                        proxy: Some("127.0.0.1:9005".to_string()),
+                        user: Some("random_user".to_string()),
+                        passwd: Some("random_passwd".to_string()),
                         address: "127.0.0.1:18444".to_string(),
-                        skip_blocks: None
-                    }
+                        conn_count: 4,
+                        skip_blocks: 5,
+                    },
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
             },
@@ -1045,8 +1068,12 @@ mod test {
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
+                        proxy: Some("127.0.0.1:9005".to_string()),
+                        user: Some("random_user".to_string()),
+                        passwd: Some("random_passwd".to_string()),
                         address: "127.0.0.1:18444".to_string(),
-                        skip_blocks: None
+                        conn_count: 4,
+                        skip_blocks: 5,
                     },
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
@@ -1106,7 +1133,11 @@ mod test {
         let cli_args = vec!["bdk-cli", "--network", "bitcoin", "wallet",
                             "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",             
+                            "--cmpct_proxy", "127.0.0.1:9005",
+                            "-u", "random_user",
+                            "--passwd", "random_passwd",
                             "--node", "127.0.0.1:18444",
+                            "--conn_count", "4",
                             "--skip_blocks", "5",
                             "get_new_address"];
 
@@ -1133,8 +1164,12 @@ mod test {
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
+                        proxy: Some("127.0.0.1:9005".to_string()),
+                        user: Some("random_user".to_string()),
+                        passwd: Some("random_passwd".to_string()),
                         address: "127.0.0.1:18444".to_string(),
-                        skip_blocks: Some(5)
+                        conn_count: 4,
+                        skip_blocks: 5,
                     },
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
@@ -1173,8 +1208,12 @@ mod test {
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
+                        proxy: Some("127.0.0.1:9005".to_string()),
+                        user: Some("random_user".to_string()),
+                        passwd: Some("random_passwd".to_string()),
                         address: "127.0.0.1:18444".to_string(),
-                        skip_blocks: None
+                        conn_count: 4,
+                        skip_blocks: 5,
                     },
                 },
                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync {
@@ -1233,8 +1272,12 @@ mod test {
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
+                        proxy: Some("127.0.0.1:9005".to_string()),
+                        user: Some("random_user".to_string()),
+                        passwd: Some("random_passwd".to_string()),
                         address: "127.0.0.1:18444".to_string(),
-                        skip_blocks: None
+                        conn_count: 4,
+                        skip_blocks: 5,
                     },
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(CreateTx {
@@ -1284,8 +1327,12 @@ mod test {
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
+                        proxy: Some("127.0.0.1:9005".to_string()),
+                        user: Some("random_user".to_string()),
+                        passwd: Some("random_passwd".to_string()),
                         address: "127.0.0.1:18444".to_string(),
-                        skip_blocks: None
+                        conn_count: 4,
+                        skip_blocks: 5,
                     },
                 },
                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Broadcast {
