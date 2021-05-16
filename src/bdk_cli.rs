@@ -79,7 +79,11 @@ fn prepare_home_dir() -> PathBuf {
         fs::create_dir(&dir).unwrap();
     }
 
+    #[cfg(not(feature = "compact_filters"))]
     dir.push("database.sled");
+
+    #[cfg(feature = "compact_filters")]
+    dir.push("compact_filters");
     dir
 }
 
@@ -120,31 +124,36 @@ where
     });
 
     #[cfg(feature = "compact_filters")]
-    let compact_filter_config: Option<AnyBlockchainConfig> = {
+    let config_compact_filters: Option<AnyBlockchainConfig> = {
         let peerconfig = BitcoinPeerConfig {
             address: wallet_opts.compactfilter_opts.address.clone(),
-            socks5: None,
-            socks5_credentials: None,
+            socks5: wallet_opts.compactfilter_opts.proxy.clone(),
+            socks5_credentials: match (
+                wallet_opts.compactfilter_opts.user.clone(),
+                wallet_opts.compactfilter_opts.passwd.clone(),
+            ) {
+                (Some(user), Some(passwd)) => Some((user, passwd)),
+                _ => None,
+            },
         };
 
         Some(AnyBlockchainConfig::CompactFilters(
             CompactFiltersBlockchainConfig {
                 peers: vec![peerconfig],
                 network,
-                storage_dir: wallet_opts.wallet.clone(),
-                skip_blocks: wallet_opts.compactfilter_opts.skip_blocks,
+                storage_dir: prepare_home_dir().into_os_string().into_string().unwrap(),
+                skip_blocks: Some(wallet_opts.compactfilter_opts.skip_blocks),
             },
         ))
     };
 
     #[cfg(not(feature = "compact_filters"))]
-    let compact_filter_config = None;
+    let config_compact_filters = None;
 
     // Fall back to Electrum config if Esplora or Compact Filter config isn't provided
-    let config = config_esplora.unwrap_or_else(|| match compact_filter_config {
-        Some(config) => config,
-        None => config_electrum,
-    });
+    let config = config_esplora
+        .or(config_compact_filters)
+        .unwrap_or(config_electrum);
 
     let descriptor = wallet_opts.descriptor.as_str();
     let change_descriptor = wallet_opts.change_descriptor.as_deref();
