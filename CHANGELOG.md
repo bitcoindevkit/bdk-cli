@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Added
 - New top level command "Compile" which compiles a miniscript policy to an output descriptor
+- `CompactFilterOpts` to `WalletOpts` to enable compact-filter blockchain configuration 
 
 ## [0.2.0]
 
@@ -42,7 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - "key" sub-commands to "generate" and "restore" a master private key
 - "key" sub-command to "derive" an extended public key from a master private key
 - "repl" command now has an "exit" sub-command
-- `CompactFilterOpts` to `WalletOpts` to enable compact-filter blockchain configuration 
 
 #### Changed
 - "wallet" sub-commands and options must be proceeded by "wallet" command
