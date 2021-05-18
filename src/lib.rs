@@ -1281,7 +1281,6 @@ mod test {
 
         assert_eq!(&xpub, &"[566844c5/84'/1'/0']tpubDFeqiDkfwR1tAhPxsXSZMfEmfpDhwhLyhLKZgmeBvuBkZQusoWeL62oGg2oTNGcENeKdwuGepAB85eMvyLemabYe9PSqv6cr5mFXktHc3Ka/0/*");
         assert_eq!(&xprv, &"[566844c5/84'/1'/0']tprv8ixoZoiRo3LDHENAysmxxFaf6nhmnNA582inQFbtWdPMivf7B7pjuYBQVuLC5bkM7tJZEDbfoivENsGZPBnQg1n52Kuc1P8X2Ei3XJuJX7c/0/*");
-
     }
 
     #[cfg(feature = "compiler")]
