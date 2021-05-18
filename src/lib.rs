@@ -888,13 +888,24 @@ pub fn handle_key_subcommand(
                 return Err(Error::Key(InvalidNetwork));
             }
             let deriv_path: DerivationPath = DerivationPath::from_str(path.as_str())?;
-
             let derived_xprv = &xprv.derive_priv(&secp, &deriv_path)?;
 
-            let origin: KeySource = (xprv.fingerprint(&secp), deriv_path);
+            let deriv_path_len = (&deriv_path).as_ref().len();
+            let normal_suffix_len = (&deriv_path)
+                .into_iter()
+                .rev()
+                .take_while(|c| c.is_normal())
+                .count();
+
+            let deriv_path_hardened =
+                DerivationPath::from(&deriv_path[..(deriv_path_len - normal_suffix_len)]);
+            let deriv_path_normal =
+                DerivationPath::from(&deriv_path[(deriv_path_len - normal_suffix_len)..]);
+
+            let origin: KeySource = (xprv.fingerprint(&secp).clone(), deriv_path_hardened.clone());
 
             let derived_xprv_desc_key: DescriptorKey<Segwitv0> =
-                derived_xprv.into_descriptor_key(Some(origin), DerivationPath::default())?;
+                derived_xprv.into_descriptor_key(Some(origin), deriv_path_normal)?;
 
             if let Secret(desc_seckey, _, _) = derived_xprv_desc_key {
                 let desc_pubkey = desc_seckey.as_public(&secp).unwrap();
@@ -1257,7 +1268,7 @@ mod test {
     fn test_key_derive() {
         let network = Testnet;
         let key_generate_cmd = KeySubCommand::Derive {
-            xprv: "tprv8ZgxMBicQKsPfQjJy8ge2cvBfDjLxJSkvNLVQiw7BQ5gTjKadG2rrcQB5zjcdaaUTz5EDNJaS77q4DzjqjogQBfMsaXFFNP3UqoBnwt2kyT"
+            xprv: "tprv8ZgxMBicQKsPd18TeiFknZKqaZFwpdX9tvvKh8eeHSSPBQi5g9xPHztBg411o78G8XkrhQb6Q1cVvBJ1a9xuFHpmWgvQsvkJkNxBjfGoqhK"
                 .to_string(),
             path: "m/84'/1'/0'/0".to_string(),
         };
@@ -1268,8 +1279,8 @@ mod test {
         let xpub = result_obj.get("xpub").unwrap().as_str().unwrap();
         let xprv = result_obj.get("xprv").unwrap().as_str().unwrap();
 
-        assert_eq!(&xpub, &"[566844c5/84'/1'/0'/0]tpubDFeqiDkfwR1tAhPxsXSZMfEmfpDhwhLyhLKZgmeBvuBkZQusoWeL62oGg2oTNGcENeKdwuGepAB85eMvyLemabYe9PSqv6cr5mFXktHc3Ka/*");
-        assert_eq!(&xprv, &"[566844c5/84'/1'/0'/0]tprv8ixoZoiRo3LDHENAysmxxFaf6nhmnNA582inQFbtWdPMivf7B7pjuYBQVuLC5bkM7tJZEDbfoivENsGZPBnQg1n52Kuc1P8X2Ei3XJuJX7c/*");
+        assert_eq!(&xprv, &"[828af366/84'/1'/0']tprv8hpCmEEuKXVfoJbP7MscEtCaid7ELVQtZACPbNLAECWgeShRJ34rq9b5sfqTRxG6s9qN1d3W1zwvmdDC3umodftA9TzMDWZqXnoBqVtEcsm/0/*");
+        assert_eq!(&xpub, &"[828af366/84'/1'/0']tpubDEWEueH9TuBLgmdB11YCeHrhHedAVpbo8ToAstNTeUK5UvxBvRtT1eCx3q81tj2JcdCV3MumeBW8sGPLXDvEpXivDbE4GW9pVkTXnakXCzS/0/*");  
     }
 
     #[cfg(feature = "compiler")]
