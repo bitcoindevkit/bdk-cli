@@ -1268,7 +1268,7 @@ mod test {
     fn test_key_derive() {
         let network = Testnet;
         let key_generate_cmd = KeySubCommand::Derive {
-            xprv: "tprv8ZgxMBicQKsPd18TeiFknZKqaZFwpdX9tvvKh8eeHSSPBQi5g9xPHztBg411o78G8XkrhQb6Q1cVvBJ1a9xuFHpmWgvQsvkJkNxBjfGoqhK"
+            xprv: "tprv8ZgxMBicQKsPfQjJy8ge2cvBfDjLxJSkvNLVQiw7BQ5gTjKadG2rrcQB5zjcdaaUTz5EDNJaS77q4DzjqjogQBfMsaXFFNP3UqoBnwt2kyT"
                 .to_string(),
             path: "m/84'/1'/0'/0".to_string(),
         };
@@ -1279,8 +1279,9 @@ mod test {
         let xpub = result_obj.get("xpub").unwrap().as_str().unwrap();
         let xprv = result_obj.get("xprv").unwrap().as_str().unwrap();
 
-        assert_eq!(&xprv, &"[828af366/84'/1'/0']tprv8hpCmEEuKXVfoJbP7MscEtCaid7ELVQtZACPbNLAECWgeShRJ34rq9b5sfqTRxG6s9qN1d3W1zwvmdDC3umodftA9TzMDWZqXnoBqVtEcsm/0/*");
-        assert_eq!(&xpub, &"[828af366/84'/1'/0']tpubDEWEueH9TuBLgmdB11YCeHrhHedAVpbo8ToAstNTeUK5UvxBvRtT1eCx3q81tj2JcdCV3MumeBW8sGPLXDvEpXivDbE4GW9pVkTXnakXCzS/0/*");
+        assert_eq!(&xpub, &"[566844c5/84'/1'/0']tpubDFeqiDkfwR1tAhPxsXSZMfEmfpDhwhLyhLKZgmeBvuBkZQusoWeL62oGg2oTNGcENeKdwuGepAB85eMvyLemabYe9PSqv6cr5mFXktHc3Ka/0/*");
+        assert_eq!(&xprv, &"[566844c5/84'/1'/0']tprv8ixoZoiRo3LDHENAysmxxFaf6nhmnNA582inQFbtWdPMivf7B7pjuYBQVuLC5bkM7tJZEDbfoivENsGZPBnQg1n52Kuc1P8X2Ei3XJuJX7c/0/*");
+
     }
 
     #[cfg(feature = "compiler")]
