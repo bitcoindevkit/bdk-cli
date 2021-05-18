@@ -902,7 +902,7 @@ pub fn handle_key_subcommand(
             let deriv_path_normal =
                 DerivationPath::from(&deriv_path[(deriv_path_len - normal_suffix_len)..]);
 
-            let origin: KeySource = (xprv.fingerprint(&secp).clone(), deriv_path_hardened.clone());
+            let origin: KeySource = (xprv.fingerprint(&secp), deriv_path_hardened);
 
             let derived_xprv_desc_key: DescriptorKey<Segwitv0> =
                 derived_xprv.into_descriptor_key(Some(origin), deriv_path_normal)?;
@@ -1280,7 +1280,7 @@ mod test {
         let xprv = result_obj.get("xprv").unwrap().as_str().unwrap();
 
         assert_eq!(&xprv, &"[828af366/84'/1'/0']tprv8hpCmEEuKXVfoJbP7MscEtCaid7ELVQtZACPbNLAECWgeShRJ34rq9b5sfqTRxG6s9qN1d3W1zwvmdDC3umodftA9TzMDWZqXnoBqVtEcsm/0/*");
-        assert_eq!(&xpub, &"[828af366/84'/1'/0']tpubDEWEueH9TuBLgmdB11YCeHrhHedAVpbo8ToAstNTeUK5UvxBvRtT1eCx3q81tj2JcdCV3MumeBW8sGPLXDvEpXivDbE4GW9pVkTXnakXCzS/0/*");  
+        assert_eq!(&xpub, &"[828af366/84'/1'/0']tpubDEWEueH9TuBLgmdB11YCeHrhHedAVpbo8ToAstNTeUK5UvxBvRtT1eCx3q81tj2JcdCV3MumeBW8sGPLXDvEpXivDbE4GW9pVkTXnakXCzS/0/*");
     }
 
     #[cfg(feature = "compiler")]
