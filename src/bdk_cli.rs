@@ -88,7 +88,9 @@ fn prepare_home_dir() -> PathBuf {
 }
 
 fn open_database(wallet_opts: &WalletOpts) -> Tree {
-    let database = sled::open(prepare_home_dir().to_str().unwrap()).unwrap();
+    let mut database_path = prepare_home_dir();
+    database_path.push(wallet_opts.wallet.clone());
+    let database = sled::open(database_path).unwrap();
     let tree = database.open_tree(&wallet_opts.wallet).unwrap();
     debug!("database opened successfully");
     tree
