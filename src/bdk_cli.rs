@@ -120,28 +120,27 @@ where
 
     let config_electrum = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
         url: wallet_opts.electrum_opts.electrum.clone(),
-        socks5: wallet_opts.electrum_opts.proxy.clone(),
-        retry: wallet_opts.electrum_opts.retries,
+        socks5: wallet_opts.proxy_opts.proxy.clone(),
+        retry: wallet_opts.proxy_opts.retries,
         timeout: wallet_opts.electrum_opts.timeout,
     });
 
     #[cfg(feature = "compact_filters")]
     let config_compact_filters: Option<AnyBlockchainConfig> = {
-        let peerconfig = BitcoinPeerConfig {
-            address: wallet_opts.compactfilter_opts.address.clone(),
-            socks5: wallet_opts.compactfilter_opts.proxy.clone(),
-            socks5_credentials: match (
-                wallet_opts.compactfilter_opts.user.clone(),
-                wallet_opts.compactfilter_opts.passwd.clone(),
-            ) {
-                (Some(user), Some(passwd)) => Some((user, passwd)),
-                _ => None,
-            },
-        };
+        let mut peers = vec![];
+        for addrs in wallet_opts.compactfilter_opts.address.clone() {
+            for _ in 0..wallet_opts.compactfilter_opts.conn_count {
+                peers.push(BitcoinPeerConfig {
+                    address: addrs.clone(),
+                    socks5: wallet_opts.proxy_opts.proxy.clone(),
+                    socks5_credentials: wallet_opts.proxy_opts.proxy_auth.clone(),
+                })
+            }
+        }
 
         Some(AnyBlockchainConfig::CompactFilters(
             CompactFiltersBlockchainConfig {
-                peers: vec![peerconfig],
+                peers,
                 network,
                 storage_dir: prepare_home_dir().into_os_string().into_string().unwrap(),
                 skip_blocks: Some(wallet_opts.compactfilter_opts.skip_blocks),

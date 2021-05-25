@@ -327,6 +327,34 @@ pub struct WalletOpts {
     #[cfg(feature = "compact_filters")]
     #[structopt(flatten)]
     pub compactfilter_opts: CompactFilterOpts,
+
+    #[cfg(any(feature = "compact_filters", feature = "electrum"))]
+    #[structopt(flatten)]
+    pub proxy_opts: ProxyOpts,
+}
+
+/// Proxy Server options
+///
+/// Only activated for `compact_filters` or `electrum`
+#[cfg(any(feature = "compact_filters", feature = "electrum"))]
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+pub struct ProxyOpts {
+    /// Sets the SOCKS5 proxy for Blockchain backend
+    #[structopt(name = "PROXY_ADDRS:PORT", long = "proxy", short = "p")]
+    pub proxy: Option<String>,
+
+    /// Sets the SOCKS5 proxy credential
+    #[structopt(name="PRXOY_USER:PASSWD", long="proxy_auth", short="a", parse(try_from_str = parse_proxy_auth))]
+    pub proxy_auth: Option<(String, String)>,
+
+    /// Sets the SOCKS5 proxy retries for the Electrum client
+    #[structopt(
+        name = "PROXY_RETRIES",
+        short = "r",
+        long = "retries",
+        default_value = "5"
+    )]
+    pub retries: u8,
 }
 
 /// Compact Filter options
@@ -335,22 +363,17 @@ pub struct WalletOpts {
 #[cfg(feature = "compact_filters")]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct CompactFilterOpts {
-    /// Sets the SOCKS5 proxy for the Electrum client
-    #[structopt(name = "CPROXY_SERVER:PORT", long = "cmpct_proxy")]
-    pub proxy: Option<String>,
+    /// Sets the full node network address
+    #[structopt(
+        name = "ADDRESS:PORT",
+        short = "n",
+        long = "node",
+        default_value = "127.0.0.1:18444"
+    )]
+    pub address: Vec<String>,
 
-    #[structopt(name = "PROXY_SERVER:USER", short = "u", long = "user")]
-    pub user: Option<String>,
-
-    #[structopt(name = "PROXY_SERVER:PASSWD", long = "passwd")]
-    pub passwd: Option<String>,
-
-    /// Sets the light client network address
-    #[structopt(name = "ADDRESS:PORT", short = "n", long = "node")]
-    pub address: String,
-
-    /// Sets the number of parallel node connection
-    #[structopt(name = "CONNECTIONS", long = "conn_count", default_value = "1")]
+    /// Sets the number of parallel node connections
+    #[structopt(name = "CONNECTIONS", long = "conn_count", default_value = "4")]
     pub conn_count: usize,
 
     /// Optionally skip initial `skip_blocks` blocks
@@ -369,17 +392,6 @@ pub struct CompactFilterOpts {
 #[cfg(feature = "electrum")]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct ElectrumOpts {
-    /// Sets the SOCKS5 proxy for the Electrum client
-    #[structopt(name = "PROXY_SERVER:PORT", short = "p", long = "proxy")]
-    pub proxy: Option<String>,
-    /// Sets the SOCKS5 proxy retries for the Electrum client
-    #[structopt(
-        name = "PROXY_RETRIES",
-        short = "r",
-        long = "retries",
-        default_value = "5"
-    )]
-    pub retries: u8,
     /// Sets the SOCKS5 proxy timeout for the Electrum client
     #[structopt(name = "PROXY_TIMEOUT", short = "t", long = "timeout")]
     pub timeout: Option<u8>,
@@ -623,6 +635,18 @@ fn parse_recipient(s: &str) -> Result<(Script, u64), String> {
     }
 
     Ok((addr.unwrap().script_pubkey(), val.unwrap()))
+}
+
+fn parse_proxy_auth(s: &str) -> Result<(String, String), String> {
+    let parts: Vec<_> = s.split(':').collect();
+    if parts.len() != 2 {
+        return Err("Invalid format".to_string());
+    }
+
+    let user = parts[0].to_string();
+    let passwd = parts[1].to_string();
+
+    Ok((user, passwd))
 }
 
 fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
@@ -983,6 +1007,8 @@ mod test {
     use crate::EsploraOpts;
     use crate::OfflineWalletSubCommand::{CreateTx, GetNewAddress};
     use crate::OnlineWalletSubCommand::{Broadcast, Sync};
+    #[cfg(any(feature = "cpmpact_filters", feature = "electrum"))]
+    use crate::ProxyOpts;
     use crate::{handle_key_subcommand, CliSubCommand, KeySubCommand, WalletSubCommand};
 
     use bdk::bitcoin::{Address, Network, OutPoint};
@@ -1008,8 +1034,6 @@ mod test {
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
-                        proxy: None,
-                        retries: 5,
                         timeout: None,
                         electrum: "ssl://electrum.blockstream.info:60002".to_string()
                     },
@@ -1020,13 +1044,16 @@ mod test {
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
-                        proxy: Some("127.0.0.1:9005".to_string()),
-                        user: Some("random_user".to_string()),
-                        passwd: Some("random_passwd".to_string()),
-                        address: "127.0.0.1:18444".to_string(),
+                        address: vec!["127.0.0.1:18444".to_string()],
                         conn_count: 4,
-                        skip_blocks: 5,
+                        skip_blocks: 0,
                     },
+                    #[cfg(any(feature="compact_filetrs", feature="electrum"))]
+                    proxy_opts: ProxyOpts{
+                        proxy: None,
+                        proxy_auth: None,
+                        retries: 5,
+                    }
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
             },
@@ -1056,8 +1083,6 @@ mod test {
                     change_descriptor: Some("wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
-                        proxy: Some("127.0.0.1:9150".to_string()),
-                        retries: 3,
                         timeout: Some(10),
                         electrum: "ssl://electrum.blockstream.info:50002".to_string(),
                     },
@@ -1068,13 +1093,16 @@ mod test {
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
-                        proxy: Some("127.0.0.1:9005".to_string()),
-                        user: Some("random_user".to_string()),
-                        passwd: Some("random_passwd".to_string()),
-                        address: "127.0.0.1:18444".to_string(),
+                        address: vec!["127.0.0.1:18444".to_string()],
                         conn_count: 4,
-                        skip_blocks: 5,
+                        skip_blocks: 0,
                     },
+                    #[cfg(any(feature="compact_filetrs", feature="electrum"))]
+                    proxy_opts: ProxyOpts{
+                        proxy: Some("127.0.0.1:9150".to_string()),
+                        proxy_auth: None,
+                        retries: 3,
+                    }
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
             },
@@ -1104,8 +1132,6 @@ mod test {
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
-                        proxy: None,
-                        retries: 5,
                         timeout: None,
                         electrum: "ssl://electrum.blockstream.info:60002".to_string(),
                     },
@@ -1116,9 +1142,16 @@ mod test {
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
-                        address: "127.0.0.1:18444".to_string(),
-                        skip_blocks: None
+                        address: vec!["127.0.0.1:18444".to_string()],
+                        skip_blocks: 0,
+                        conn_count: 4,
                     },
+                    #[cfg(any(feature="compact_filetrs", feature="electrum"))]
+                    proxy_opts: ProxyOpts{
+                        proxy: None,
+                        proxy_auth: None,
+                        retries: 5,
+                    }
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
             },
@@ -1133,10 +1166,9 @@ mod test {
         let cli_args = vec!["bdk-cli", "--network", "bitcoin", "wallet",
                             "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",             
-                            "--cmpct_proxy", "127.0.0.1:9005",
-                            "-u", "random_user",
-                            "--passwd", "random_passwd",
-                            "--node", "127.0.0.1:18444",
+                            "--proxy", "127.0.0.1:9005",
+                            "--proxy_auth", "random_user:random_passwd",
+                            "--node", "127.0.0.1:18444", "127.2.3.1:19695",
                             "--conn_count", "4",
                             "--skip_blocks", "5",
                             "get_new_address"];
@@ -1152,25 +1184,26 @@ mod test {
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
-                        proxy: None,
-                        retries: 5,
                         timeout: None,
                         electrum: "ssl://electrum.blockstream.info:60002".to_string(),
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        esplora: Some("https://blockstream.info/api/".to_string()),
-                        esplora_concurrency: 5,
+                        esplora: None,
+                        esplora_concurrency: 4,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
-                        proxy: Some("127.0.0.1:9005".to_string()),
-                        user: Some("random_user".to_string()),
-                        passwd: Some("random_passwd".to_string()),
-                        address: "127.0.0.1:18444".to_string(),
+                        address: vec!["127.0.0.1:18444".to_string(), "127.2.3.1:19695".to_string()],
                         conn_count: 4,
                         skip_blocks: 5,
                     },
+                    #[cfg(any(feature="compact_filetrs", feature="electrum"))]
+                    proxy_opts: ProxyOpts{
+                        proxy: Some("127.0.0.1:9005".to_string()),
+                        proxy_auth: Some(("random_user".to_string(), "random_passwd".to_string())),
+                        retries: 5,
+                    }
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
             },
@@ -1196,8 +1229,6 @@ mod test {
                     change_descriptor: None,
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
-                        proxy: None,
-                        retries: 5,
                         timeout: None,
                         electrum: "ssl://electrum.blockstream.info:60002".to_string(),
                     },
@@ -1208,13 +1239,16 @@ mod test {
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
-                        proxy: Some("127.0.0.1:9005".to_string()),
-                        user: Some("random_user".to_string()),
-                        passwd: Some("random_passwd".to_string()),
-                        address: "127.0.0.1:18444".to_string(),
+                        address: vec!["127.0.0.1:18444".to_string()],
                         conn_count: 4,
-                        skip_blocks: 5,
+                        skip_blocks: 0,
                     },
+                    #[cfg(any(feature="compact_filetrs", feature="electrum"))]
+                    proxy_opts: ProxyOpts{
+                        proxy: None,
+                        proxy_auth: None,
+                        retries: 5,
+                    }
                 },
                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync {
                     max_addresses: Some(50)
@@ -1260,8 +1294,6 @@ mod test {
                     change_descriptor: Some("wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
-                        proxy: None,
-                        retries: 5,
                         timeout: None,
                         electrum: "ssl://electrum.blockstream.info:60002".to_string(),
                     },
@@ -1272,13 +1304,16 @@ mod test {
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
-                        proxy: Some("127.0.0.1:9005".to_string()),
-                        user: Some("random_user".to_string()),
-                        passwd: Some("random_passwd".to_string()),
-                        address: "127.0.0.1:18444".to_string(),
+                        address: vec!["127.0.0.1:18444".to_string()],
                         conn_count: 4,
-                        skip_blocks: 5,
+                        skip_blocks: 0,
                     },
+                    #[cfg(any(feature="compact_filetrs", feature="electrum"))]
+                    proxy_opts: ProxyOpts{
+                        proxy: None,
+                        proxy_auth: None,
+                        retries: 5,
+                    }
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(CreateTx {
                     recipients: vec![(script1, 123456), (script2, 78910)],
@@ -1315,8 +1350,6 @@ mod test {
                     change_descriptor: None,
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
-                        proxy: None,
-                        retries: 5,
                         timeout: None,
                         electrum: "ssl://electrum.blockstream.info:60002".to_string(),
                     },
@@ -1327,13 +1360,16 @@ mod test {
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
-                        proxy: Some("127.0.0.1:9005".to_string()),
-                        user: Some("random_user".to_string()),
-                        passwd: Some("random_passwd".to_string()),
-                        address: "127.0.0.1:18444".to_string(),
+                        address: vec!["127.0.0.1:18444".to_string()],
                         conn_count: 4,
-                        skip_blocks: 5,
+                        skip_blocks: 0,
                     },
+                    #[cfg(any(feature="compact_filetrs", feature="electrum"))]
+                    proxy_opts: ProxyOpts{
+                        proxy: None,
+                        proxy_auth: None,
+                        retries: 5,
+                    }
                 },
                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Broadcast {
                     psbt: Some("cHNidP8BAEICAAAAASWhGE1AhvtO+2GjJHopssFmgfbq+WweHd8zN/DeaqmDAAAAAAD/////AQAAAAAAAAAABmoEAAECAwAAAAAAAAA=".to_string()),
