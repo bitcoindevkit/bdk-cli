@@ -126,7 +126,9 @@ use bdk::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, Genera
 use bdk::miniscript::miniscript;
 #[cfg(feature = "compiler")]
 use bdk::miniscript::policy::Concrete;
+use bdk::wallet::AddressIndex;
 use bdk::Error;
+use bdk::SignOptions;
 use bdk::{FeeRate, KeychainKind, Wallet};
 
 /// Global options
@@ -692,7 +694,7 @@ where
     D: BatchDatabase,
 {
     match offline_subcommand {
-        GetNewAddress => Ok(json!({"address": wallet.get_new_address()?})),
+        GetNewAddress => Ok(json!({"address": wallet.get_address(AddressIndex::New)?})),
         ListUnspent => Ok(serde_json::to_value(&wallet.list_unspent()?)?),
         ListTransactions => Ok(serde_json::to_value(&wallet.list_transactions(false)?)?),
         GetBalance => Ok(json!({"satoshi": wallet.get_balance()?})),
@@ -722,9 +724,7 @@ where
             }
 
             if offline_signer {
-                tx_builder
-                    .force_non_witness_utxo()
-                    .include_output_redeem_witness_script();
+                tx_builder.include_output_redeem_witness_script();
             }
 
             if let Some(fee_rate) = fee_rate {
@@ -771,9 +771,7 @@ where
             }
 
             if offline_signer {
-                tx_builder
-                    .force_non_witness_utxo()
-                    .include_output_redeem_witness_script();
+                tx_builder.include_output_redeem_witness_script();
             }
 
             if let Some(utxos) = utxos {
@@ -800,8 +798,12 @@ where
             assume_height,
         } => {
             let psbt = base64::decode(&psbt).unwrap();
-            let psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
-            let (psbt, finalized) = wallet.sign(psbt, assume_height)?;
+            let mut psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
+            let signopt = SignOptions {
+                assume_height,
+                ..Default::default()
+            };
+            let finalized = wallet.sign(&mut psbt, signopt)?;
             Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized,}))
         }
         ExtractPsbt { psbt } => {
@@ -814,9 +816,13 @@ where
             assume_height,
         } => {
             let psbt = base64::decode(&psbt).unwrap();
-            let psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
+            let mut psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
 
-            let (psbt, finalized) = wallet.finalize_psbt(psbt, assume_height)?;
+            let signopt = SignOptions {
+                assume_height,
+                ..Default::default()
+            };
+            let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
             Ok(json!({ "psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized,}))
         }
         CombinePsbt { psbt } => {

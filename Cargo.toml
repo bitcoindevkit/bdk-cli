@@ -12,7 +12,7 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-bdk = { version = "^0.5.1", default-features = false, features = ["all-keys"]}
+bdk = { version = "^0.7", default-features = false, features = ["all-keys"]}
 bdk-macros = "^0.4"
 structopt = "^0.3"
 serde_json = { version = "^1.0" }
