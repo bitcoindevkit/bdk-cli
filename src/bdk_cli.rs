@@ -407,6 +407,24 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
             // rl.save_history("history.txt").unwrap();
             "Exiting REPL".to_string()
         }
+        #[cfg(all(feature = "reserves", feature = "electrum"))]
+        CliSubCommand::ExternalReserves {
+            message,
+            psbt,
+            confirmations,
+            addresses,
+            electrum_opts,
+        } => {
+            let result = bdk_cli::handle_ext_reserves_subcommand(
+                network,
+                message,
+                psbt,
+                confirmations,
+                addresses,
+                electrum_opts,
+            )?;
+            serde_json::to_string_pretty(&result)?
+        }
     };
     Ok(result)
 }
