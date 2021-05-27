@@ -75,8 +75,8 @@
 //!
 //!     let config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
 //!                 url: wallet_opts.electrum_opts.electrum,
-//!                 socks5: wallet_opts.electrum_opts.proxy,
-//!                 retry: 3,
+//!                 socks5: wallet_opts.proxy_opts.proxy,
+//!                 retry: wallet_opts.proxy_opts.retries,
 //!                 timeout: None,
 //!             });
 //!
@@ -143,6 +143,10 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 /// # use bdk_cli::ElectrumOpts;
 /// # #[cfg(feature = "esplora")]
 /// # use bdk_cli::EsploraOpts;
+/// # #[cfg(feature = "compact_filters")]
+/// # use bdk_cli::CompactFilterOpts;
+/// # #[cfg(any(feature = "compact_filters", feature = "electrum"))]
+/// # use bdk_cli::ProxyOpts;
 /// # use bdk_cli::OnlineWalletSubCommand::Sync;
 ///
 /// let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
@@ -162,8 +166,6 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///                     change_descriptor: None,
 ///               #[cfg(feature = "electrum")]
 ///               electrum_opts: ElectrumOpts {
-///                   proxy: None,
-///                   retries: 5,
 ///                   timeout: None,
 ///                   electrum: "ssl://electrum.blockstream.info:60002".to_string(),
 ///               },
@@ -171,7 +173,19 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///               esplora_opts: EsploraOpts {               
 ///                   esplora: None,
 ///                   esplora_concurrency: 4,
-///               }
+///               },
+///                #[cfg(feature = "compact_filters")]
+///                compactfilter_opts: CompactFilterOpts{
+///                    address: vec!["127.0.0.1:18444".to_string()],
+///                    conn_count: 4,
+///                    skip_blocks: 0,
+///                },
+///                #[cfg(any(feature="compact_filters", feature="electrum"))]
+///                    proxy_opts: ProxyOpts{
+///                        proxy: None,
+///                        proxy_auth: None,
+///                        retries: 5,
+///                    },
 ///                 },
 ///                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync {
 ///                     max_addresses: Some(50)
@@ -273,6 +287,10 @@ pub enum WalletSubCommand {
 /// # use bdk_cli::ElectrumOpts;
 /// # #[cfg(feature = "esplora")]
 /// # use bdk_cli::EsploraOpts;
+/// # #[cfg(feature = "compact_filters")]
+/// # use bdk_cli::CompactFilterOpts;
+/// # #[cfg(any(feature = "compact_filters", feature = "electrum"))]
+/// # use bdk_cli::ProxyOpts;
 ///
 /// let cli_args = vec!["wallet",
 ///                     "--descriptor", "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)"];
@@ -288,8 +306,6 @@ pub enum WalletSubCommand {
 ///               change_descriptor: None,
 ///               #[cfg(feature = "electrum")]
 ///               electrum_opts: ElectrumOpts {
-///                   proxy: None,
-///                   retries: 5,
 ///                   timeout: None,
 ///                   electrum: "ssl://electrum.blockstream.info:60002".to_string(),
 ///               },
@@ -297,7 +313,19 @@ pub enum WalletSubCommand {
 ///               esplora_opts: EsploraOpts {               
 ///                   esplora: None,
 ///                   esplora_concurrency: 4,
-///               }
+///               },
+///                #[cfg(feature = "compact_filters")]
+///                compactfilter_opts: CompactFilterOpts{
+///                    address: vec!["127.0.0.1:18444".to_string()],
+///                    conn_count: 4,
+///                    skip_blocks: 0,
+///                },
+///               #[cfg(any(feature="compact_filters", feature="electrum"))]
+///                    proxy_opts: ProxyOpts{
+///                        proxy: None,
+///                        proxy_auth: None,
+///                        retries: 5,
+///               },
 /// };
 ///
 /// assert_eq!(expected_wallet_opts, wallet_opts);
@@ -327,7 +355,6 @@ pub struct WalletOpts {
     #[cfg(feature = "compact_filters")]
     #[structopt(flatten)]
     pub compactfilter_opts: CompactFilterOpts,
-
     #[cfg(any(feature = "compact_filters", feature = "electrum"))]
     #[structopt(flatten)]
     pub proxy_opts: ProxyOpts,
@@ -373,7 +400,7 @@ pub struct CompactFilterOpts {
     pub address: Vec<String>,
 
     /// Sets the number of parallel node connections
-    #[structopt(name = "CONNECTIONS", long = "conn_count", default_value = "4")]
+    #[structopt(name = "CONNECTIONS", long = "conn-count", default_value = "4")]
     pub conn_count: usize,
 
     /// Optionally skip initial `skip_blocks` blocks
@@ -637,6 +664,7 @@ fn parse_recipient(s: &str) -> Result<(Script, u64), String> {
     Ok((addr.unwrap().script_pubkey(), val.unwrap()))
 }
 
+#[cfg(any(feature = "electrum", feature = "compact_filters"))]
 fn parse_proxy_auth(s: &str) -> Result<(String, String), String> {
     let parts: Vec<_> = s.split(':').collect();
     if parts.len() != 2 {
@@ -1007,7 +1035,7 @@ mod test {
     use crate::EsploraOpts;
     use crate::OfflineWalletSubCommand::{CreateTx, GetNewAddress};
     use crate::OnlineWalletSubCommand::{Broadcast, Sync};
-    #[cfg(any(feature = "cpmpact_filters", feature = "electrum"))]
+    #[cfg(any(feature = "compact_filters", feature = "electrum"))]
     use crate::ProxyOpts;
     use crate::{handle_key_subcommand, CliSubCommand, KeySubCommand, WalletSubCommand};
 
@@ -1048,7 +1076,7 @@ mod test {
                         conn_count: 4,
                         skip_blocks: 0,
                     },
-                    #[cfg(any(feature="compact_filetrs", feature="electrum"))]
+                    #[cfg(any(feature="compact_filters", feature="electrum"))]
                     proxy_opts: ProxyOpts{
                         proxy: None,
                         proxy_auth: None,
@@ -1097,7 +1125,7 @@ mod test {
                         conn_count: 4,
                         skip_blocks: 0,
                     },
-                    #[cfg(any(feature="compact_filetrs", feature="electrum"))]
+                    #[cfg(any(feature="compact_filters", feature="electrum"))]
                     proxy_opts: ProxyOpts{
                         proxy: Some("127.0.0.1:9150".to_string()),
                         proxy_auth: None,
@@ -1146,7 +1174,7 @@ mod test {
                         skip_blocks: 0,
                         conn_count: 4,
                     },
-                    #[cfg(any(feature="compact_filetrs", feature="electrum"))]
+                    #[cfg(any(feature="compact_filters", feature="electrum"))]
                     proxy_opts: ProxyOpts{
                         proxy: None,
                         proxy_auth: None,
@@ -1198,7 +1226,7 @@ mod test {
                         conn_count: 4,
                         skip_blocks: 5,
                     },
-                    #[cfg(any(feature="compact_filetrs", feature="electrum"))]
+                    #[cfg(any(feature="compact_filters", feature="electrum"))]
                     proxy_opts: ProxyOpts{
                         proxy: Some("127.0.0.1:9005".to_string()),
                         proxy_auth: Some(("random_user".to_string(), "random_passwd".to_string())),
@@ -1243,7 +1271,7 @@ mod test {
                         conn_count: 4,
                         skip_blocks: 0,
                     },
-                    #[cfg(any(feature="compact_filetrs", feature="electrum"))]
+                    #[cfg(any(feature="compact_filters", feature="electrum"))]
                     proxy_opts: ProxyOpts{
                         proxy: None,
                         proxy_auth: None,
@@ -1308,7 +1336,7 @@ mod test {
                         conn_count: 4,
                         skip_blocks: 0,
                     },
-                    #[cfg(any(feature="compact_filetrs", feature="electrum"))]
+                    #[cfg(any(feature="compact_filters", feature="electrum"))]
                     proxy_opts: ProxyOpts{
                         proxy: None,
                         proxy_auth: None,
@@ -1364,7 +1392,7 @@ mod test {
                         conn_count: 4,
                         skip_blocks: 0,
                     },
-                    #[cfg(any(feature="compact_filetrs", feature="electrum"))]
+                    #[cfg(any(feature="compact_filters", feature="electrum"))]
                     proxy_opts: ProxyOpts{
                         proxy: None,
                         proxy_auth: None,
