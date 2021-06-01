@@ -400,7 +400,7 @@ pub struct CompactFilterOpts {
     pub address: Vec<String>,
 
     /// Sets the number of parallel node connections
-    #[structopt(name = "CONNECTIONS", long = "conn-count", default_value = "4")]
+    #[structopt(name = "CONNECTIONS", long = "conn_count", default_value = "4")]
     pub conn_count: usize,
 
     /// Optionally skip initial `skip_blocks` blocks
