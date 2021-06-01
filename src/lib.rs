@@ -371,7 +371,7 @@ pub struct ProxyOpts {
     pub proxy: Option<String>,
 
     /// Sets the SOCKS5 proxy credential
-    #[structopt(name="PRXOY_USER:PASSWD", long="proxy_auth", short="a", parse(try_from_str = parse_proxy_auth))]
+    #[structopt(name="PROXY_USER:PASSWD", long="proxy_auth", short="a", parse(try_from_str = parse_proxy_auth))]
     pub proxy_auth: Option<(String, String)>,
 
     /// Sets the SOCKS5 proxy retries for the Electrum client
