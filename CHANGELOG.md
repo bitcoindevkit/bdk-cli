@@ -10,14 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Added
 - `CliSubCommand::Compile` enum variant and `handle_compile_subcommand()` function
+
+#### Changed
 - Make repl and electrum default features
-- Remove unwraps while handling CLI commands
+- Upgrade to `bdk` v0.7.x
 
 ### `bdk-cli` bin
 
 #### Added
 - New top level command "Compile" which compiles a miniscript policy to an output descriptor
 - `CompactFilterOpts` to `WalletOpts` to enable compact-filter blockchain configuration 
+
+#### Changed
+- Remove unwraps while handling CLI commands
 
 ## [0.2.0]
 
