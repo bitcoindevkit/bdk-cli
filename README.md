@@ -8,7 +8,30 @@
 This project provides a command line interface (cli) Bitcoin wallet library and [`REPL`](https://en.wikipedia.org/wiki/Read%E2%80%93eval%E2%80%93print_loop)
 wallet tool based on the [bdk](https://github.com/bitcoindevkit/bdk) library.
 
-### bdk-cli bin usage examples
+## Install bdk-cli
+### From source
+To install dev version of `bdk-cli` from local git repo:
+
+```shell
+cd <bdk-cli git repo directory>
+cargo install --path .
+
+bdk-cli help # to verify it worked
+```
+
+By default an electrum backend is used, to use esplora instead the relative feature must be enabled and the esplora address must be specified. Note we are enabling logs to see the calls to esplora.
+
+```shell
+RUST_LOG=debug cargo run --features esplora -- wallet -e https://blockstream.info/api/ --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
+```
+
+### From crates.io
+You can the install the binaries for the latest tag of `bdk-cli` directly from [crates.io](https://crates.io/crates/bdk-cli) like so:
+```sh
+cargo install bdk-cli --features repl,electrum,esplora
+```
+
+## bdk-cli bin usage examples
 
 To get usage information for the `bdk-cli` bin use the below command which returns a list of
 available wallet options and commands:
@@ -42,19 +65,4 @@ To generate a new extended master key, suitable for using in a descriptor:
 
 ```shell
 cargo run -- key generate
-```
-
-To install dev version of `bdk-cli` from local git repo:
-
-```shell
-cd <bdk-cli git repo directory>
-cargo install --path .
-
-bdk-cli help # to verify it worked
-```
-
-By default an electrum backend is used, to use esplora instead the relative feature must be enabled and the esplora address must be specified. Note we are enabling logs to see the calls to esplora.
-
-```shell
-RUST_LOG=debug cargo run --features esplora -- wallet -e https://blockstream.info/api/ --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
 ```
