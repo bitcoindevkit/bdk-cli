@@ -342,6 +342,9 @@ pub struct WalletOpts {
         default_value = "main"
     )]
     pub wallet: String,
+    /// Adds verbosity, returns PSBT in JSON format alongside serialized
+    #[structopt(name = "VERBOSE", short = "v", long = "verbose")]
+    pub verbose: bool,
     /// Sets the descriptor to use for the external addresses
     #[structopt(name = "DESCRIPTOR", short = "d", long = "descriptor", required = true)]
     pub descriptor: String,
@@ -1064,6 +1067,7 @@ mod test {
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: "main".to_string(),
+                    verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     #[cfg(feature = "electrum")]
@@ -1113,6 +1117,7 @@ mod test {
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: "main".to_string(),
+                    verbose: false,
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     #[cfg(feature = "electrum")]
@@ -1259,6 +1264,7 @@ mod test {
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: "main".to_string(),
+                    verbose: false,
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: None,
                     #[cfg(feature = "electrum")]
@@ -1324,6 +1330,7 @@ mod test {
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: "main".to_string(),
+                    verbose: false,
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     #[cfg(feature = "electrum")]
@@ -1380,6 +1387,7 @@ mod test {
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: "main".to_string(),
+                    verbose: false,
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: None,
                     #[cfg(feature = "electrum")]
