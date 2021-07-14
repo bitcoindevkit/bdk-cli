@@ -691,6 +691,7 @@ fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
 /// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
 pub fn handle_offline_wallet_subcommand<T, D>(
     wallet: &Wallet<T, D>,
+    wallet_opts: &WalletOpts,
     offline_subcommand: OfflineWalletSubCommand,
 ) -> Result<serde_json::Value, Error>
 where
@@ -754,7 +755,13 @@ where
             }
 
             let (psbt, details) = tx_builder.finish()?;
-            Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"details": details,}))
+            if wallet_opts.verbose {
+                Ok(
+                    json!({"psbt": base64::encode(&serialize(&psbt)),"details": details, "serialized_psbt": psbt}),
+                )
+            } else {
+                Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"details": details}))
+            }
         }
         BumpFee {
             txid,
@@ -807,7 +814,13 @@ where
                 ..Default::default()
             };
             let finalized = wallet.sign(&mut psbt, signopt)?;
-            Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized,}))
+            if wallet_opts.verbose {
+                Ok(
+                    json!({"psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized, "serialized_psbt": psbt}),
+                )
+            } else {
+                Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized,}))
+            }
         }
         ExtractPsbt { psbt } => {
             let psbt = base64::decode(&psbt).unwrap();
@@ -826,7 +839,13 @@ where
                 ..Default::default()
             };
             let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
-            Ok(json!({ "psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized,}))
+            if wallet_opts.verbose {
+                Ok(
+                    json!({ "psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized, "serialized_psbt": psbt}),
+                )
+            } else {
+                Ok(json!({ "psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized,}))
+            }
         }
         CombinePsbt { psbt } => {
             let mut psbts = psbt

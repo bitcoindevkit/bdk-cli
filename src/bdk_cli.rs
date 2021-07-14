@@ -221,7 +221,11 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
         } => {
             let database = open_database(&wallet_opts);
             let wallet = new_offline_wallet(network, &wallet_opts, database)?;
-            let result = bdk_cli::handle_offline_wallet_subcommand(&wallet, offline_subcommand)?;
+            let result = bdk_cli::handle_offline_wallet_subcommand(
+                &wallet,
+                &wallet_opts,
+                offline_subcommand,
+            )?;
             serde_json::to_string_pretty(&result)?
         }
         CliSubCommand::Key {
@@ -290,6 +294,7 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
                             ReplSubCommand::OfflineWalletSubCommand(offline_subcommand) => {
                                 bdk_cli::handle_offline_wallet_subcommand(
                                     &online_wallet,
+                                    &wallet_opts,
                                     offline_subcommand,
                                 )
                             }
