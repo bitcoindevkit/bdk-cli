@@ -164,6 +164,7 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///             subcommand: CliSubCommand::Wallet {
 ///                 wallet_opts: WalletOpts {
 ///                     wallet: "main".to_string(),
+///                     verbose: false,
 ///                     descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
 ///                     change_descriptor: None,
 ///               #[cfg(feature = "electrum")]
@@ -304,6 +305,7 @@ pub enum WalletSubCommand {
 ///
 /// let expected_wallet_opts = WalletOpts {
 ///               wallet: "main".to_string(),
+///                     verbose: false,
 ///               descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
 ///               change_descriptor: None,
 ///               #[cfg(feature = "electrum")]
@@ -1186,6 +1188,7 @@ mod test {
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: "main".to_string(),
+                    verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     #[cfg(feature = "electrum")]
@@ -1238,6 +1241,7 @@ mod test {
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: "main".to_string(),
+                    verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     #[cfg(feature = "electrum")]
