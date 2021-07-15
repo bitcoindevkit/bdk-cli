@@ -750,7 +750,7 @@ where
                 internal_policy.map(|p| (p, KeychainKind::Internal)),
             ];
 
-            for (policy, keychain) in policies.into_iter().filter_map(|x| x) {
+            for (policy, keychain) in policies.into_iter().flatten() {
                 let policy = serde_json::from_str::<BTreeMap<String, Vec<usize>>>(&policy)
                     .map_err(|s| Error::Generic(s.to_string()))?;
                 tx_builder.policy_path(policy, keychain);

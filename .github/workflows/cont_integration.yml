@@ -41,7 +41,7 @@ jobs:
           override: true
           components: rustfmt, clippy
       - name: Build
-        run: cargo build --features ${{ matrix.features }} --no-default-features
+        run: cargo build --features ${{ matrix.features }} --no-default-features --locked
       - name: Clippy
         run: cargo clippy -- -D warnings
       - name: Test
