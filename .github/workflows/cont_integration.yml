@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         rust:
-          - 1.51.0 # STABLE
+          - 1.53.0 # STABLE
           - 1.46.0 # MSRV
         features:
           - default
@@ -53,11 +53,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-      - name: Set default toolchain
-        run: rustup default 1.50.0 # STABLE
-      - name: Set profile
-        run: rustup set profile minimal
-      - name: Add clippy
-        run: rustup component add rustfmt
+      - name: Setup Rust Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          components: rustfmt, clippy
       - name: Check fmt
         run: cargo fmt --all -- --check
