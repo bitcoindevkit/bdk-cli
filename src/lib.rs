@@ -344,7 +344,7 @@ pub struct WalletOpts {
         default_value = "main"
     )]
     pub wallet: String,
-    /// Adds verbosity, returns PSBT in JSON format alongside serialized
+    /// Adds verbosity, returns PSBT in JSON format alongside serialized, displays expanded objects
     #[structopt(name = "VERBOSE", short = "v", long = "verbose")]
     pub verbose: bool,
     /// Sets the descriptor to use for the external addresses
@@ -702,7 +702,9 @@ where
     match offline_subcommand {
         GetNewAddress => Ok(json!({"address": wallet.get_address(AddressIndex::New)?})),
         ListUnspent => Ok(serde_json::to_value(&wallet.list_unspent()?)?),
-        ListTransactions => Ok(serde_json::to_value(&wallet.list_transactions(false)?)?),
+        ListTransactions => Ok(serde_json::to_value(
+            &wallet.list_transactions(wallet_opts.verbose)?,
+        )?),
         GetBalance => Ok(json!({"satoshi": wallet.get_balance()?})),
         CreateTx {
             recipients,
