@@ -410,7 +410,7 @@ fn parse_blockchain_client(s: &str) -> Result<BlockchainClient, String> {
 #[cfg(any(feature = "compact_filters", feature = "electrum"))]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct ProxyOpts {
-    /// Blockchain client SOCKS5 proxy 
+    /// Blockchain client SOCKS5 proxy
     #[structopt(name = "PROXY_ADDRS:PORT", long = "proxy", short = "p")]
     pub proxy: Option<String>,
 
@@ -495,7 +495,7 @@ pub struct EsploraOpts {
         default_value = "https://blockstream.info/api/"
     )]
     pub esplora: String,
-    /// Esplora blockchain client request concurrency 
+    /// Esplora blockchain client request concurrency
     #[structopt(
         name = "ESPLORA_CONCURRENCY",
         long = "esplora_concurrency",
@@ -1111,7 +1111,7 @@ pub fn handle_compile_subcommand(
 
 #[cfg(test)]
 mod test {
-    use super::{CliOpts, WalletOpts, BlockchainClient};
+    use super::{BlockchainClient, CliOpts, WalletOpts};
     #[cfg(feature = "compiler")]
     use crate::handle_compile_subcommand;
     #[cfg(feature = "compact_filters")]
