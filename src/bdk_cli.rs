@@ -44,7 +44,7 @@ use bdk::sled;
 use bdk::sled::Tree;
 use bdk::Wallet;
 use bdk::{bitcoin, Error};
-use bdk_cli::WalletSubCommand;
+use bdk_cli::{BlockchainClient, WalletSubCommand};
 use bdk_cli::{
     CliOpts, CliSubCommand, KeySubCommand, OfflineWalletSubCommand, OnlineWalletSubCommand,
     WalletOpts,
@@ -104,57 +104,41 @@ fn new_online_wallet<D>(
 where
     D: BatchDatabase,
 {
-    // Try to use Esplora config if "esplora" feature is enabled
-    #[cfg(feature = "esplora")]
-    let config_esplora: Option<AnyBlockchainConfig> = {
-        let esplora_concurrency = wallet_opts.esplora_opts.esplora_concurrency;
-        wallet_opts.esplora_opts.esplora.clone().map(|base_url| {
-            AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
-                base_url,
-                concurrency: Some(esplora_concurrency),
-            })
-        })
-    };
-    #[cfg(not(feature = "esplora"))]
-    let config_esplora = None;
-
-    let config_electrum = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
-        url: wallet_opts.electrum_opts.electrum.clone(),
-        socks5: wallet_opts.proxy_opts.proxy.clone(),
-        retry: wallet_opts.proxy_opts.retries,
-        timeout: wallet_opts.electrum_opts.timeout,
-    });
-
-    #[cfg(feature = "compact_filters")]
-    let config_compact_filters: Option<AnyBlockchainConfig> = {
-        let mut peers = vec![];
-        for addrs in wallet_opts.compactfilter_opts.address.clone() {
-            for _ in 0..wallet_opts.compactfilter_opts.conn_count {
-                peers.push(BitcoinPeerConfig {
-                    address: addrs.clone(),
-                    socks5: wallet_opts.proxy_opts.proxy.clone(),
-                    socks5_credentials: wallet_opts.proxy_opts.proxy_auth.clone(),
-                })
+    // Create requested blockchain client config
+    let config = match wallet_opts.blockchain_client {
+        #[cfg(feature = "electrum")]
+        BlockchainClient::Electrum => AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
+            url: wallet_opts.electrum_opts.electrum.clone(),
+            socks5: wallet_opts.proxy_opts.proxy.clone(),
+            retry: wallet_opts.proxy_opts.retries,
+            timeout: wallet_opts.electrum_opts.timeout,
+        }),
+        #[cfg(feature = "esplora")]
+        BlockchainClient::Esplora => AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
+            base_url: wallet_opts.esplora_opts.esplora.clone(),
+            concurrency: Some(wallet_opts.esplora_opts.esplora_concurrency),
+        }),
+        #[cfg(feature = "compact_filters")]
+        BlockchainClient::CompactFilters => {
+            let mut peers = vec![];
+            for addrs in wallet_opts.compactfilter_opts.address.clone() {
+                for _ in 0..wallet_opts.compactfilter_opts.conn_count {
+                    peers.push(BitcoinPeerConfig {
+                        address: addrs.clone(),
+                        socks5: wallet_opts.proxy_opts.proxy.clone(),
+                        socks5_credentials: wallet_opts.proxy_opts.proxy_auth.clone(),
+                    })
+                }
             }
-        }
 
-        Some(AnyBlockchainConfig::CompactFilters(
-            CompactFiltersBlockchainConfig {
+            AnyBlockchainConfig::CompactFilters(CompactFiltersBlockchainConfig {
                 peers,
                 network,
                 storage_dir: prepare_home_dir().into_os_string().into_string().unwrap(),
                 skip_blocks: Some(wallet_opts.compactfilter_opts.skip_blocks),
-            },
-        ))
+            })
+        }
     };
-
-    #[cfg(not(feature = "compact_filters"))]
-    let config_compact_filters = None;
-
-    // Fall back to Electrum config if Esplora or Compact Filter config isn't provided
-    let config = config_esplora
-        .or(config_compact_filters)
-        .unwrap_or(config_electrum);
 
     let descriptor = wallet_opts.descriptor.as_str();
     let change_descriptor = wallet_opts.change_descriptor.as_deref();

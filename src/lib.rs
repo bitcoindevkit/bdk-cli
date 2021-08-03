@@ -140,7 +140,7 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 /// ```
 /// # use bdk::bitcoin::Network;
 /// # use structopt::StructOpt;
-/// # use bdk_cli::{CliOpts, WalletOpts, CliSubCommand, WalletSubCommand};
+/// # use bdk_cli::{CliOpts, WalletOpts, CliSubCommand, WalletSubCommand, BlockchainClient};
 /// # #[cfg(feature = "electrum")]
 /// # use bdk_cli::ElectrumOpts;
 /// # #[cfg(feature = "esplora")]
@@ -167,6 +167,7 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///                     verbose: false,
 ///                     descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
 ///                     change_descriptor: None,
+///                     blockchain_client: BlockchainClient::Electrum,
 ///               #[cfg(feature = "electrum")]
 ///               electrum_opts: ElectrumOpts {
 ///                   timeout: None,
@@ -174,7 +175,7 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///               },
 ///               #[cfg(feature = "esplora")]
 ///               esplora_opts: EsploraOpts {               
-///                   esplora: None,
+///                   esplora: "https://blockstream.info/api/".to_string(),
 ///                   esplora_concurrency: 4,
 ///               },
 ///                #[cfg(feature = "compact_filters")]
@@ -285,7 +286,7 @@ pub enum WalletSubCommand {
 /// ```
 /// # use bdk::bitcoin::Network;
 /// # use structopt::StructOpt;
-/// # use bdk_cli::WalletOpts;
+/// # use bdk_cli::{WalletOpts, BlockchainClient};
 /// # #[cfg(feature = "electrum")]
 /// # use bdk_cli::ElectrumOpts;
 /// # #[cfg(feature = "esplora")]
@@ -308,6 +309,7 @@ pub enum WalletSubCommand {
 ///                     verbose: false,
 ///               descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
 ///               change_descriptor: None,
+///               blockchain_client: BlockchainClient::Electrum,
 ///               #[cfg(feature = "electrum")]
 ///               electrum_opts: ElectrumOpts {
 ///                   timeout: None,
@@ -315,7 +317,7 @@ pub enum WalletSubCommand {
 ///               },
 ///               #[cfg(feature = "esplora")]
 ///               esplora_opts: EsploraOpts {               
-///                   esplora: None,
+///                   esplora: "https://blockstream.info/api/".to_string(),
 ///                   esplora_concurrency: 4,
 ///               },
 ///                #[cfg(feature = "compact_filters")]
@@ -353,6 +355,15 @@ pub struct WalletOpts {
     /// Sets the descriptor to use for internal addresses
     #[structopt(name = "CHANGE_DESCRIPTOR", short = "c", long = "change_descriptor")]
     pub change_descriptor: Option<String>,
+    /// Blockchain client protocol
+    #[structopt(name = "BLOCKCHAIN_CLIENT", 
+        short = "b", 
+        long = "blockchain_client",
+        default_value = "electrum",
+        possible_values = &["electrum", "esplora", "compact_filters"],
+        parse(try_from_str = parse_blockchain_client),
+    )]
+    pub blockchain_client: BlockchainClient,
     #[cfg(feature = "electrum")]
     #[structopt(flatten)]
     pub electrum_opts: ElectrumOpts,
@@ -367,21 +378,52 @@ pub struct WalletOpts {
     pub proxy_opts: ProxyOpts,
 }
 
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+#[structopt(rename_all = "snake")]
+pub enum BlockchainClient {
+    #[cfg(feature = "electrum")]
+    /// Electrum server
+    Electrum,
+    #[cfg(feature = "esplora")]
+    /// Esplora server
+    Esplora,
+    #[cfg(feature = "compact_filters")]
+    /// Bitcoin Peers serving compact filters
+    CompactFilters,
+}
+
+fn parse_blockchain_client(s: &str) -> Result<BlockchainClient, String> {
+    match s {
+        #[cfg(feature = "electrum")]
+        "electrum" => Ok(BlockchainClient::Electrum),
+        #[cfg(feature = "esplora")]
+        "esplora" => Ok(BlockchainClient::Esplora),
+        #[cfg(feature = "compact_filters")]
+        "compact_filters" => Ok(BlockchainClient::CompactFilters),
+        _ => Err("Invalid blockchain client name".to_string()),
+    }
+}
+
 /// Proxy Server options
 ///
 /// Only activated for `compact_filters` or `electrum`
 #[cfg(any(feature = "compact_filters", feature = "electrum"))]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct ProxyOpts {
-    /// Sets the SOCKS5 proxy for Blockchain backend
+    /// Blockchain client SOCKS5 proxy 
     #[structopt(name = "PROXY_ADDRS:PORT", long = "proxy", short = "p")]
     pub proxy: Option<String>,
 
-    /// Sets the SOCKS5 proxy credential
-    #[structopt(name="PROXY_USER:PASSWD", long="proxy_auth", short="a", parse(try_from_str = parse_proxy_auth))]
+    /// Blockchain client SOCKS5 proxy credential
+    #[structopt(name="PROXY_USER:PASSWD", 
+        long="proxy_auth", 
+        short="a",
+        hide_env_values = true,
+        parse(try_from_str = parse_proxy_auth),
+    )]
     pub proxy_auth: Option<(String, String)>,
 
-    /// Sets the SOCKS5 proxy retries for the Electrum client
+    /// Blockchain client SOCKS5 proxy retries
     #[structopt(
         name = "PROXY_RETRIES",
         short = "r",
@@ -397,7 +439,7 @@ pub struct ProxyOpts {
 #[cfg(feature = "compact_filters")]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct CompactFilterOpts {
-    /// Sets the full node network address
+    /// Compact filters blockchain client peer full node IP address:port
     #[structopt(
         name = "ADDRESS:PORT",
         short = "n",
@@ -406,11 +448,11 @@ pub struct CompactFilterOpts {
     )]
     pub address: Vec<String>,
 
-    /// Sets the number of parallel node connections
+    /// Compact filters blockchain client number of parallel node connections
     #[structopt(name = "CONNECTIONS", long = "conn_count", default_value = "4")]
     pub conn_count: usize,
 
-    /// Optionally skip initial `skip_blocks` blocks
+    /// Compact filters blockchain client skip initial blocks
     #[structopt(
         name = "SKIP_BLOCKS",
         short = "k",
@@ -426,10 +468,10 @@ pub struct CompactFilterOpts {
 #[cfg(feature = "electrum")]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct ElectrumOpts {
-    /// Sets the SOCKS5 proxy timeout for the Electrum client
+    /// Electrum blockchain client SOCKS5 proxy timeout
     #[structopt(name = "PROXY_TIMEOUT", short = "t", long = "timeout")]
     pub timeout: Option<u8>,
-    /// Sets the Electrum server to use
+    /// Electrum blockchain client server url
     #[structopt(
         name = "SERVER:PORT",
         short = "s",
@@ -445,10 +487,15 @@ pub struct ElectrumOpts {
 #[cfg(feature = "esplora")]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct EsploraOpts {
-    /// Use the esplora server if given as parameter
-    #[structopt(name = "ESPLORA_URL", short = "e", long = "esplora")]
-    pub esplora: Option<String>,
-    /// Concurrency of requests made to the esplora server
+    /// Esplora blockchain client server url
+    #[structopt(
+        name = "ESPLORA_URL",
+        short = "e",
+        long = "esplora",
+        default_value = "https://blockstream.info/api/"
+    )]
+    pub esplora: String,
+    /// Esplora blockchain client request concurrency 
     #[structopt(
         name = "ESPLORA_CONCURRENCY",
         long = "esplora_concurrency",
@@ -938,7 +985,12 @@ pub enum KeySubCommand {
         )]
         word_count: usize,
         /// Seed password
-        #[structopt(name = "PASSWORD", short = "p", long = "password")]
+        #[structopt(
+            name = "PASSWORD",
+            short = "p",
+            long = "password",
+            hide_env_values = true
+        )]
         password: Option<String>,
     },
     /// Restore a master extended key from seed backup mnemonic words
@@ -947,7 +999,12 @@ pub enum KeySubCommand {
         #[structopt(name = "MNEMONIC", short = "m", long = "mnemonic")]
         mnemonic: String,
         /// Seed password
-        #[structopt(name = "PASSWORD", short = "p", long = "password")]
+        #[structopt(
+            name = "PASSWORD",
+            short = "p",
+            long = "password",
+            hide_env_values = true
+        )]
         password: Option<String>,
     },
     /// Derive a child key pair from a master extended key and a derivation path string (eg. "m/84'/1'/0'/0" or "m/84h/1h/0h/0")
@@ -1054,7 +1111,7 @@ pub fn handle_compile_subcommand(
 
 #[cfg(test)]
 mod test {
-    use super::{CliOpts, WalletOpts};
+    use super::{CliOpts, WalletOpts, BlockchainClient};
     #[cfg(feature = "compiler")]
     use crate::handle_compile_subcommand;
     #[cfg(feature = "compact_filters")]
@@ -1091,6 +1148,7 @@ mod test {
                     verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
+                    blockchain_client: BlockchainClient::Electrum,
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: None,
@@ -1098,7 +1156,7 @@ mod test {
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        esplora: None,
+                        esplora: "https://blockstream.info/api/".to_string(),
                         esplora_concurrency: 4
                     },
                     #[cfg(feature = "compact_filters")]
@@ -1141,6 +1199,7 @@ mod test {
                     verbose: false,
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
+                    blockchain_client: BlockchainClient::Electrum,
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: Some(10),
@@ -1148,7 +1207,7 @@ mod test {
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        esplora: None,
+                        esplora: "https://blockstream.info/api/".to_string(),
                         esplora_concurrency: 4,
                     },
                     #[cfg(feature = "compact_filters")]
@@ -1177,7 +1236,7 @@ mod test {
         let cli_args = vec!["bdk-cli", "--network", "bitcoin", "wallet",
                             "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",             
-                            "--esplora", "https://blockstream.info/api/",
+                            "--blockchain_client", "esplora",
                             "--esplora_concurrency", "5",
                             "get_new_address"];
 
@@ -1191,6 +1250,7 @@ mod test {
                     verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
+                    blockchain_client: BlockchainClient::Esplora,
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: None,
@@ -1198,7 +1258,7 @@ mod test {
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        esplora: Some("https://blockstream.info/api/".to_string()),
+                        esplora: "https://blockstream.info/api/".to_string(),
                         esplora_concurrency: 5,
                     },
                     #[cfg(feature = "compact_filters")]
@@ -1244,6 +1304,7 @@ mod test {
                     verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
+                    blockchain_client: BlockchainClient::Electrum,
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: None,
@@ -1251,7 +1312,7 @@ mod test {
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        esplora: None,
+                        esplora: "https://blockstream.info/api/".to_string(),
                         esplora_concurrency: 4,
                     },
                     #[cfg(feature = "compact_filters")]
@@ -1290,6 +1351,7 @@ mod test {
                     verbose: false,
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: None,
+                    blockchain_client: BlockchainClient::Electrum,
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: None,
@@ -1297,7 +1359,7 @@ mod test {
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        esplora: None,
+                        esplora: "https://blockstream.info/api/".to_string(),
                         esplora_concurrency: 4,
                     },
                     #[cfg(feature = "compact_filters")]
@@ -1356,6 +1418,7 @@ mod test {
                     verbose: false,
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
+                    blockchain_client: BlockchainClient::Electrum,
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: None,
@@ -1363,7 +1426,7 @@ mod test {
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        esplora: None,
+                        esplora: "https://blockstream.info/api/".to_string(),
                         esplora_concurrency: 4,
                     },
                     #[cfg(feature = "compact_filters")]
@@ -1413,6 +1476,7 @@ mod test {
                     verbose: false,
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: None,
+                    blockchain_client: BlockchainClient::Electrum,
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: None,
@@ -1420,7 +1484,7 @@ mod test {
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        esplora: None,
+                        esplora: "https://blockstream.info/api/".to_string(),
                         esplora_concurrency: 4,
                     },
                     #[cfg(feature = "compact_filters")]
