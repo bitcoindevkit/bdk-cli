@@ -138,6 +138,8 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 /// # Example
 ///
 /// ```
+/// # #[cfg(feature = "electrum")]
+/// # {
 /// # use bdk::bitcoin::Network;
 /// # use structopt::StructOpt;
 /// # use bdk_cli::{CliOpts, WalletOpts, CliSubCommand, WalletSubCommand, BlockchainClient};
@@ -168,7 +170,6 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///                     descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
 ///                     change_descriptor: None,
 ///                     blockchain_client: BlockchainClient::Electrum,
-///               #[cfg(feature = "electrum")]
 ///               electrum_opts: ElectrumOpts {
 ///                   timeout: None,
 ///                   electrum: "ssl://electrum.blockstream.info:60002".to_string(),
@@ -184,7 +185,6 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///                    conn_count: 4,
 ///                    skip_blocks: 0,
 ///                },
-///                #[cfg(any(feature="compact_filters", feature="electrum"))]
 ///                    proxy_opts: ProxyOpts{
 ///                        proxy: None,
 ///                        proxy_auth: None,
@@ -198,6 +198,7 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///         };
 ///
 /// assert_eq!(expected_cli_opts, cli_opts);
+/// # }
 /// ```
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(name = "BDK CLI",
@@ -284,6 +285,8 @@ pub enum WalletSubCommand {
 /// # Example
 ///
 /// ```
+/// # #[cfg(feature = "electrum")]
+/// # {
 /// # use bdk::bitcoin::Network;
 /// # use structopt::StructOpt;
 /// # use bdk_cli::{WalletOpts, BlockchainClient};
@@ -310,7 +313,6 @@ pub enum WalletSubCommand {
 ///               descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
 ///               change_descriptor: None,
 ///               blockchain_client: BlockchainClient::Electrum,
-///               #[cfg(feature = "electrum")]
 ///               electrum_opts: ElectrumOpts {
 ///                   timeout: None,
 ///                   electrum: "ssl://electrum.blockstream.info:60002".to_string(),
@@ -326,7 +328,6 @@ pub enum WalletSubCommand {
 ///                    conn_count: 4,
 ///                    skip_blocks: 0,
 ///                },
-///               #[cfg(any(feature="compact_filters", feature="electrum"))]
 ///                    proxy_opts: ProxyOpts{
 ///                        proxy: None,
 ///                        proxy_auth: None,
@@ -335,6 +336,7 @@ pub enum WalletSubCommand {
 /// };
 ///
 /// assert_eq!(expected_wallet_opts, wallet_opts);
+/// # }
 /// ```
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct WalletOpts {
@@ -363,6 +365,7 @@ pub struct WalletOpts {
         possible_values = &["electrum", "esplora", "compact_filters"],
         parse(try_from_str = parse_blockchain_client),
     )]
+    #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
     pub blockchain_client: BlockchainClient,
     #[cfg(feature = "electrum")]
     #[structopt(flatten)]
@@ -1131,6 +1134,7 @@ mod test {
     use std::str::FromStr;
     use structopt::StructOpt;
 
+    #[cfg(feature = "electrum")]
     #[test]
     fn test_parse_wallet_get_new_address() {
         let cli_args = vec!["bdk-cli", "--network", "bitcoin", "wallet",
@@ -1286,7 +1290,8 @@ mod test {
     fn test_parse_wallet_compact_filters() {
         let cli_args = vec!["bdk-cli", "--network", "bitcoin", "wallet",
                             "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
-                            "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",             
+                            "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
+                            "--blockchain_client", "compact_filters",
                             "--proxy", "127.0.0.1:9005",
                             "--proxy_auth", "random_user:random_passwd",
                             "--node", "127.0.0.1:18444", "127.2.3.1:19695",
@@ -1304,7 +1309,7 @@ mod test {
                     verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
-                    blockchain_client: BlockchainClient::Electrum,
+                    blockchain_client: BlockchainClient::CompactFilters,
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: None,
@@ -1335,6 +1340,7 @@ mod test {
         assert_eq!(expected_cli_opts, cli_opts);
     }
 
+    #[cfg(feature = "electrum")]
     #[test]
     fn test_parse_wallet_sync() {
         let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
@@ -1384,6 +1390,7 @@ mod test {
         assert_eq!(expected_cli_opts, cli_opts);
     }
 
+    #[cfg(feature = "electrum")]
     #[test]
     fn test_parse_wallet_create_tx() {
         let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
@@ -1459,6 +1466,7 @@ mod test {
         assert_eq!(expected_cli_opts, cli_opts);
     }
 
+    #[cfg(feature = "electrum")]
     #[test]
     fn test_parse_wallet_broadcast() {
         let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
