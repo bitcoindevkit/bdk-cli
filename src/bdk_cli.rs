@@ -114,7 +114,7 @@ where
         feature = "electrum",
         any(feature = "esplora", feature = "compact_filters")
     ))]
-    compile_error!("Only one blockchain client feature can be enabled at a time. The 'electrum' feature can not be enabled with 'esplora' or 'compact_filters'.");
+    compile_error!("Only one blockchain client feature can be enabled at a time.");
 
     #[cfg(feature = "electrum")]
     let config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
@@ -128,7 +128,7 @@ where
         feature = "esplora",
         any(feature = "electrum", feature = "compact_filters")
     ))]
-    compile_error!("Only one blockchain client feature can be enabled at a time. The 'esplora' feature can not be enabled with 'electrum' or 'compact_filters'.");
+    compile_error!("Only one blockchain client feature can be enabled at a time.");
 
     #[cfg(feature = "esplora")]
     let config = AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
@@ -140,7 +140,7 @@ where
         feature = "compact_filters",
         any(feature = "electrum", feature = "esplora")
     ))]
-    compile_error!("Only one blockchain client feature can be enabled at a time. The 'esplora' feature can not be enabled with 'electrum' or 'compact_filters'.");
+    compile_error!("Only one blockchain client feature can be enabled at a time.");
 
     #[cfg(feature = "compact_filters")]
     let config = {

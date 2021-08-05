@@ -26,7 +26,7 @@ is an example of how to enable the `esplora` blockchain client feature instead o
 RUST_LOG=debug cargo run --no-default-features --features repl,esplora -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
 ```
 
-If no blockchain client features are enabled then online wallet commands are disabled.
+If no blockchain client feature is enabled then online wallet commands are disabled.
 
 ### From crates.io
 You can the install the binaries for the latest tag of `bdk-cli` directly from [crates.io](https://crates.io/crates/bdk-cli) like so:
