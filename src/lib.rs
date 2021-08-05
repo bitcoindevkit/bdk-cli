@@ -138,6 +138,8 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 /// # Example
 ///
 /// ```
+/// # #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+/// # {
 /// # use bdk::bitcoin::Network;
 /// # use structopt::StructOpt;
 /// # use bdk_cli::{CliOpts, WalletOpts, CliSubCommand, WalletSubCommand};
@@ -174,8 +176,8 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///               },
 ///               #[cfg(feature = "esplora")]
 ///               esplora_opts: EsploraOpts {               
-///                   esplora: None,
-///                   esplora_concurrency: 4,
+///                   server: "https://blockstream.info/api/".to_string(),
+///                   concurrency: 4,
 ///               },
 ///                #[cfg(feature = "compact_filters")]
 ///                compactfilter_opts: CompactFilterOpts{
@@ -197,6 +199,7 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///         };
 ///
 /// assert_eq!(expected_cli_opts, cli_opts);
+/// # }
 /// ```
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(name = "BDK CLI",
@@ -268,6 +271,7 @@ pub enum CliSubCommand {
 /// client and network connection and an [`OfflineWalletSubCommand`] does not.
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub enum WalletSubCommand {
+    #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
     #[structopt(flatten)]
     OnlineWalletSubCommand(OnlineWalletSubCommand),
     #[structopt(flatten)]
@@ -315,8 +319,8 @@ pub enum WalletSubCommand {
 ///               },
 ///               #[cfg(feature = "esplora")]
 ///               esplora_opts: EsploraOpts {               
-///                   esplora: None,
-///                   esplora_concurrency: 4,
+///                   server: "https://blockstream.info/api/".to_string(),
+///                   concurrency: 4,
 ///               },
 ///                #[cfg(feature = "compact_filters")]
 ///                compactfilter_opts: CompactFilterOpts{
@@ -431,7 +435,7 @@ pub struct ElectrumOpts {
     pub timeout: Option<u8>,
     /// Sets the Electrum server to use
     #[structopt(
-        name = "SERVER:PORT",
+        name = "ELECTRUM_URL",
         short = "s",
         long = "server",
         default_value = "ssl://electrum.blockstream.info:60002"
@@ -446,15 +450,20 @@ pub struct ElectrumOpts {
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct EsploraOpts {
     /// Use the esplora server if given as parameter
-    #[structopt(name = "ESPLORA_URL", short = "e", long = "esplora")]
-    pub esplora: Option<String>,
+    #[structopt(
+        name = "ESPLORA_URL",
+        short = "s",
+        long = "server",
+        default_value = "https://blockstream.info/api/"
+    )]
+    pub server: String,
     /// Concurrency of requests made to the esplora server
     #[structopt(
         name = "ESPLORA_CONCURRENCY",
-        long = "esplora_concurrency",
+        long = "concurrency",
         default_value = "4"
     )]
-    pub esplora_concurrency: u8,
+    pub concurrency: u8,
 }
 
 // This is a workaround for `structopt` issue #333, #391, #418; see https://github.com/TeXitoi/structopt/issues/333#issuecomment-712265332
@@ -1066,6 +1075,7 @@ mod test {
     #[cfg(feature = "esplora")]
     use crate::EsploraOpts;
     use crate::OfflineWalletSubCommand::{CreateTx, GetNewAddress};
+    #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
     use crate::OnlineWalletSubCommand::{Broadcast, Sync};
     #[cfg(any(feature = "compact_filters", feature = "electrum"))]
     use crate::ProxyOpts;
@@ -1100,8 +1110,8 @@ mod test {
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        esplora: None,
-                        esplora_concurrency: 4
+                        server: "https://blockstream.info/api/".to_string(),
+                        concurrency: 4
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
@@ -1150,8 +1160,8 @@ mod test {
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        esplora: None,
-                        esplora_concurrency: 4,
+                        server: "https://blockstream.info/api/".to_string(),
+                        concurrency: 4,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
@@ -1179,8 +1189,8 @@ mod test {
         let cli_args = vec!["bdk-cli", "--network", "bitcoin", "wallet",
                             "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",             
-                            "--esplora", "https://blockstream.info/api/",
-                            "--esplora_concurrency", "5",
+                            "--server", "https://blockstream.info/api/",
+                            "--concurrency", "5",
                             "get_new_address"];
 
         let cli_opts = CliOpts::from_iter(&cli_args);
@@ -1200,8 +1210,8 @@ mod test {
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        esplora: Some("https://blockstream.info/api/".to_string()),
-                        esplora_concurrency: 5,
+                        server: "https://blockstream.info/api/".to_string(),
+                        concurrency: 5,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
@@ -1253,8 +1263,8 @@ mod test {
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        esplora: None,
-                        esplora_concurrency: 4,
+                        server: "https://blockstream.info/api/".to_string(),
+                        concurrency: 4,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
@@ -1276,6 +1286,7 @@ mod test {
         assert_eq!(expected_cli_opts, cli_opts);
     }
 
+    #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
     #[test]
     fn test_parse_wallet_sync() {
         let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
@@ -1299,8 +1310,8 @@ mod test {
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        esplora: None,
-                        esplora_concurrency: 4,
+                        server: "https://blockstream.info/api/".to_string(),
+                        concurrency: 4,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
@@ -1365,8 +1376,8 @@ mod test {
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        esplora: None,
-                        esplora_concurrency: 4,
+                        server: "https://blockstream.info/api/".to_string(),
+                        concurrency: 4,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
@@ -1398,6 +1409,7 @@ mod test {
         assert_eq!(expected_cli_opts, cli_opts);
     }
 
+    #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
     #[test]
     fn test_parse_wallet_broadcast() {
         let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
@@ -1422,8 +1434,8 @@ mod test {
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        esplora: None,
-                        esplora_concurrency: 4,
+                        server: "https://blockstream.info/api/".to_string(),
+                        concurrency: 4,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{

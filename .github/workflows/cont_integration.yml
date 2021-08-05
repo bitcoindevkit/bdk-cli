@@ -19,7 +19,6 @@ jobs:
           - esplora
           - compiler
           - compact_filters
-          - repl,electrum,esplora,compiler
     steps:
       - name: Checkout
         uses: actions/checkout@v2

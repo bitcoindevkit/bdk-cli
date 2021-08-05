@@ -39,7 +39,7 @@ compact_filters = ["bdk/compact_filters"]
 [[bin]]
 name = "bdk-cli"
 path = "src/bdk_cli.rs"
-required-features = ["repl", "electrum"]
+required-features = ["repl"]
 
 [package.metadata.docs.rs]
-features = ["esplora", "compiler"]
+features = ["compiler"]

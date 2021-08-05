@@ -34,21 +34,25 @@ use structopt::StructOpt;
 
 #[cfg(feature = "compact_filters")]
 use bdk::blockchain::compact_filters::{BitcoinPeerConfig, CompactFiltersBlockchainConfig};
+#[cfg(feature = "electrum")]
+use bdk::blockchain::electrum::ElectrumBlockchainConfig;
 #[cfg(feature = "esplora")]
 use bdk::blockchain::esplora::EsploraBlockchainConfig;
-use bdk::blockchain::{
-    AnyBlockchain, AnyBlockchainConfig, ConfigurableBlockchain, ElectrumBlockchainConfig,
-};
+
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+use bdk::blockchain::{AnyBlockchain, AnyBlockchainConfig, ConfigurableBlockchain};
+
 use bdk::database::BatchDatabase;
 use bdk::sled;
 use bdk::sled::Tree;
 use bdk::Wallet;
 use bdk::{bitcoin, Error};
 use bdk_cli::WalletSubCommand;
-use bdk_cli::{
-    CliOpts, CliSubCommand, KeySubCommand, OfflineWalletSubCommand, OnlineWalletSubCommand,
-    WalletOpts,
-};
+use bdk_cli::{CliOpts, CliSubCommand, KeySubCommand, OfflineWalletSubCommand, WalletOpts};
+
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+use bdk_cli::OnlineWalletSubCommand;
+
 use regex::Regex;
 
 const REPL_LINE_SPLIT_REGEX: &str = r#""([^"]*)"|'([^']*)'|([\w\-]+)"#;
@@ -59,6 +63,7 @@ const REPL_LINE_SPLIT_REGEX: &str = r#""([^"]*)"|'([^']*)'|([\w\-]+)"#;
 version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
 pub enum ReplSubCommand {
+    #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
     #[structopt(flatten)]
     OnlineWalletSubCommand(OnlineWalletSubCommand),
     #[structopt(flatten)]
@@ -96,6 +101,7 @@ fn open_database(wallet_opts: &WalletOpts) -> Tree {
     tree
 }
 
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
 fn new_online_wallet<D>(
     network: Network,
     wallet_opts: &WalletOpts,
@@ -104,29 +110,40 @@ fn new_online_wallet<D>(
 where
     D: BatchDatabase,
 {
-    // Try to use Esplora config if "esplora" feature is enabled
-    #[cfg(feature = "esplora")]
-    let config_esplora: Option<AnyBlockchainConfig> = {
-        let esplora_concurrency = wallet_opts.esplora_opts.esplora_concurrency;
-        wallet_opts.esplora_opts.esplora.clone().map(|base_url| {
-            AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
-                base_url,
-                concurrency: Some(esplora_concurrency),
-            })
-        })
-    };
-    #[cfg(not(feature = "esplora"))]
-    let config_esplora = None;
+    #[cfg(all(
+        feature = "electrum",
+        any(feature = "esplora", feature = "compact_filters")
+    ))]
+    compile_error!("Only one blockchain client feature can be enabled at a time. The 'electrum' feature can not be enabled with 'esplora' or 'compact_filters'.");
 
-    let config_electrum = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
+    #[cfg(feature = "electrum")]
+    let config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
         url: wallet_opts.electrum_opts.electrum.clone(),
         socks5: wallet_opts.proxy_opts.proxy.clone(),
         retry: wallet_opts.proxy_opts.retries,
         timeout: wallet_opts.electrum_opts.timeout,
     });
 
+    #[cfg(all(
+        feature = "esplora",
+        any(feature = "electrum", feature = "compact_filters")
+    ))]
+    compile_error!("Only one blockchain client feature can be enabled at a time. The 'esplora' feature can not be enabled with 'electrum' or 'compact_filters'.");
+
+    #[cfg(feature = "esplora")]
+    let config = AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
+        base_url: wallet_opts.esplora_opts.server.clone(),
+        concurrency: Some(wallet_opts.esplora_opts.concurrency),
+    });
+
+    #[cfg(all(
+        feature = "compact_filters",
+        any(feature = "electrum", feature = "esplora")
+    ))]
+    compile_error!("Only one blockchain client feature can be enabled at a time. The 'esplora' feature can not be enabled with 'electrum' or 'compact_filters'.");
+
     #[cfg(feature = "compact_filters")]
-    let config_compact_filters: Option<AnyBlockchainConfig> = {
+    let config = {
         let mut peers = vec![];
         for addrs in wallet_opts.compactfilter_opts.address.clone() {
             for _ in 0..wallet_opts.compactfilter_opts.conn_count {
@@ -138,26 +155,17 @@ where
             }
         }
 
-        Some(AnyBlockchainConfig::CompactFilters(
-            CompactFiltersBlockchainConfig {
-                peers,
-                network,
-                storage_dir: prepare_home_dir().into_os_string().into_string().unwrap(),
-                skip_blocks: Some(wallet_opts.compactfilter_opts.skip_blocks),
-            },
-        ))
+        AnyBlockchainConfig::CompactFilters(CompactFiltersBlockchainConfig {
+            peers,
+            network,
+            storage_dir: prepare_home_dir().into_os_string().into_string().unwrap(),
+            skip_blocks: Some(wallet_opts.compactfilter_opts.skip_blocks),
+        })
     };
-
-    #[cfg(not(feature = "compact_filters"))]
-    let config_compact_filters = None;
-
-    // Fall back to Electrum config if Esplora or Compact Filter config isn't provided
-    let config = config_esplora
-        .or(config_compact_filters)
-        .unwrap_or(config_electrum);
 
     let descriptor = wallet_opts.descriptor.as_str();
     let change_descriptor = wallet_opts.change_descriptor.as_deref();
+
     let wallet = Wallet::new(
         descriptor,
         change_descriptor,
@@ -206,6 +214,7 @@ fn main() {
 
 fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> {
     let result = match cli_opts.subcommand {
+        #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
         CliSubCommand::Wallet {
             wallet_opts,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
@@ -244,7 +253,16 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
         }
         CliSubCommand::Repl { wallet_opts } => {
             let database = open_database(&wallet_opts);
-            let online_wallet = new_online_wallet(network, &wallet_opts, database)?;
+
+            #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+            let wallet = new_online_wallet(network, &wallet_opts, database)?;
+
+            #[cfg(not(any(
+                feature = "electrum",
+                feature = "esplora",
+                feature = "compact_filters"
+            )))]
+            let wallet = new_offline_wallet(network, &wallet_opts, database)?;
 
             let mut rl = Editor::<()>::new();
 
@@ -285,15 +303,17 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
                         let repl_subcommand = repl_subcommand.unwrap();
 
                         let result = match repl_subcommand {
+                            #[cfg(any(
+                                feature = "electrum",
+                                feature = "esplora",
+                                feature = "compact_filters"
+                            ))]
                             ReplSubCommand::OnlineWalletSubCommand(online_subcommand) => {
-                                bdk_cli::handle_online_wallet_subcommand(
-                                    &online_wallet,
-                                    online_subcommand,
-                                )
+                                bdk_cli::handle_online_wallet_subcommand(&wallet, online_subcommand)
                             }
                             ReplSubCommand::OfflineWalletSubCommand(offline_subcommand) => {
                                 bdk_cli::handle_offline_wallet_subcommand(
-                                    &online_wallet,
+                                    &wallet,
                                     &wallet_opts,
                                     offline_subcommand,
                                 )
