@@ -116,12 +116,6 @@ fn new_online_wallet<D>(
 where
     D: BatchDatabase,
 {
-    #[cfg(all(
-        feature = "electrum",
-        any(feature = "esplora", feature = "compact_filters")
-    ))]
-    compile_error!("Only one blockchain client feature can be enabled at a time.");
-
     #[cfg(feature = "electrum")]
     let config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
         url: wallet_opts.electrum_opts.electrum.clone(),
@@ -130,23 +124,11 @@ where
         timeout: wallet_opts.electrum_opts.timeout,
     });
 
-    #[cfg(all(
-        feature = "esplora",
-        any(feature = "electrum", feature = "compact_filters")
-    ))]
-    compile_error!("Only one blockchain client feature can be enabled at a time.");
-
     #[cfg(feature = "esplora")]
     let config = AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
         base_url: wallet_opts.esplora_opts.server.clone(),
         concurrency: Some(wallet_opts.esplora_opts.concurrency),
     });
-
-    #[cfg(all(
-        feature = "compact_filters",
-        any(feature = "electrum", feature = "esplora")
-    ))]
-    compile_error!("Only one blockchain client feature can be enabled at a time.");
 
     #[cfg(feature = "compact_filters")]
     let config = {

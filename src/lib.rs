@@ -107,13 +107,16 @@ pub use structopt;
 use structopt::StructOpt;
 
 use crate::OfflineWalletSubCommand::*;
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
 use crate::OnlineWalletSubCommand::*;
 use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
 use bdk::bitcoin::hashes::hex::FromHex;
 use bdk::bitcoin::secp256k1::Secp256k1;
 use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey, KeySource};
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Network, OutPoint, Script, Txid};
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
 use bdk::blockchain::{log_progress, Blockchain};
 use bdk::database::BatchDatabase;
 use bdk::descriptor::Segwitv0;
@@ -635,6 +638,7 @@ blockchain client and network connection.
 )]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(rename_all = "snake")]
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
 pub enum OnlineWalletSubCommand {
     /// Syncs with the chosen blockchain server
     Sync {
@@ -890,6 +894,7 @@ where
 ///
 /// Online wallet sub-commands are described in [`OnlineWalletSubCommand`]. See [`crate`] for
 /// example usage.
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
 #[maybe_async]
 pub fn handle_online_wallet_subcommand<C, D>(
     wallet: &Wallet<C, D>,
