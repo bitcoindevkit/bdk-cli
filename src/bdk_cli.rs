@@ -28,8 +28,12 @@ use std::path::PathBuf;
 use bitcoin::Network;
 use clap::AppSettings;
 use log::{debug, error, info, warn};
+
+#[cfg(feature = "repl")]
 use rustyline::error::ReadlineError;
+#[cfg(feature = "repl")]
 use rustyline::Editor;
+
 use structopt::StructOpt;
 
 #[cfg(feature = "compact_filters")]
@@ -53,8 +57,10 @@ use bdk_cli::{CliOpts, CliSubCommand, KeySubCommand, OfflineWalletSubCommand, Wa
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
 use bdk_cli::OnlineWalletSubCommand;
 
+#[cfg(feature = "repl")]
 use regex::Regex;
 
+#[cfg(feature = "repl")]
 const REPL_LINE_SPLIT_REGEX: &str = r#""([^"]*)"|'([^']*)'|([\w\-]+)"#;
 
 /// REPL mode
@@ -251,6 +257,7 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
             let result = bdk_cli::handle_compile_subcommand(network, policy, script_type)?;
             serde_json::to_string_pretty(&result)?
         }
+        #[cfg(feature = "repl")]
         CliSubCommand::Repl { wallet_opts } => {
             let database = open_database(&wallet_opts);
 

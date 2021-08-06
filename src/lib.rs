@@ -258,6 +258,7 @@ pub enum CliSubCommand {
         script_type: String,
     },
     /// Enter REPL command loop mode
+    #[cfg(feature = "repl")]
     #[structopt(long_about = "REPL command loop mode")]
     Repl {
         #[structopt(flatten)]

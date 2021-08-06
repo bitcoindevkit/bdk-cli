@@ -10,28 +10,31 @@ wallet tool based on the [bdk](https://github.com/bitcoindevkit/bdk) library.
 
 ## Install bdk-cli
 ### From source
-To install dev version of `bdk-cli` from local git repo:
+To install dev version of `bdk-cli` from local git repo with the `electrum` blockchain client enabled:
 
 ```shell
 cd <bdk-cli git repo directory>
-cargo install --path .
+cargo install --path . --features electrum
 bdk-cli help # to verify it worked
 ```
 
-By default the `electrum` client feature is enabled, to use the `esplora` or another blockchain backend
-client instead the default features must be disabled and the desired client feature enabled. Below
-is an example of how to enable the `esplora` blockchain client feature instead of `electrum`.
+If no blockchain client feature is enabled online wallet commands `sync` and `broadcast` will be 
+disabled. To enable these commands a blockchain client features such as `electrum` or another 
+blockchain backend feature must be enabled. Below is an example of how run the `bdk-cli` bin with 
+the `esplora` blockchain client feature.
 
 ```shell
-RUST_LOG=debug cargo run --no-default-features --features repl,esplora -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
+RUST_LOG=debug cargo run --features esplora -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
 ```
 
-If no blockchain client feature is enabled then online wallet commands are disabled.
+At most one blockchain feature can be enabled, available blockchain client features are:
+`electrum`, `esplora`, and `compact_filters`.
 
 ### From crates.io
-You can the install the binaries for the latest tag of `bdk-cli` directly from [crates.io](https://crates.io/crates/bdk-cli) like so:
+You can the install the binaries for the latest tag of `bdk-cli` with online wallet features 
+directly from [crates.io](https://crates.io/crates/bdk-cli) with a command as below:
 ```sh
-cargo install bdk-cli 
+cargo install bdk-cli --features `electrum`
 ```
 
 ### bdk-cli bin usage examples
@@ -46,7 +49,7 @@ cargo run
 To sync a wallet to the default electrum server:
 
 ```shell
-cargo run -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
+cargo run --features electrum -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
 ```
 
 To sync a wallet to Bitcoin Core node (assuming a regtest node at 127.0.0.1:18444) serving compact filters:
@@ -55,7 +58,7 @@ Note:
 - Bitcoin Core v0.21.0 or higher is required to serve compact filters.  
 
 ```shell
-cargo run --no-default-features --features repl,compact_filters -- --network regtest wallet --node 127.0.0.1:18444 --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
+cargo run --features compact_filters -- --network regtest wallet --node 127.0.0.1:18444 --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
 ```
 
 To get a wallet balance with customized logging:

@@ -14,7 +14,6 @@ jobs:
           - 1.46.0 # MSRV
         features:
           - default
-          - repl
           - electrum
           - esplora
           - compiler
@@ -40,11 +39,11 @@ jobs:
           override: true
           components: rustfmt, clippy
       - name: Build
-        run: cargo build --features ${{ matrix.features }} --no-default-features --locked
+        run: cargo build --features ${{ matrix.features }} --locked
       - name: Clippy
         run: cargo clippy -- -D warnings
       - name: Test
-        run: cargo test --features ${{ matrix.features }} --no-default-features
+        run: cargo test --features ${{ matrix.features }}
 
   fmt:
     name: Rust fmt
