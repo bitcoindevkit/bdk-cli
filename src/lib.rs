@@ -97,6 +97,8 @@
 pub extern crate bdk;
 #[macro_use]
 extern crate serde_json;
+
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
 #[macro_use]
 extern crate bdk_macros;
 
@@ -673,11 +675,11 @@ fn parse_recipient(s: &str) -> Result<(Script, u64), String> {
         return Err("Invalid format".to_string());
     }
 
-    let addr = Address::from_str(&parts[0]);
+    let addr = Address::from_str(parts[0]);
     if let Err(e) = addr {
         return Err(format!("{:?}", e));
     }
-    let val = u64::from_str(&parts[1]);
+    let val = u64::from_str(parts[1]);
     if let Err(e) = val {
         return Err(format!("{:?}", e));
     }
