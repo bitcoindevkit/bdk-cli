@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Update repl feature to not include electrum
+- Update default feature to not include electrum
 - Upgrade to `bdk` v0.7.x
 - Add top level command "Compile" which compiles a miniscript policy to an output descriptor
 - Add `CompactFilterOpts` to `WalletOpts` to enable compact-filter blockchain configuration

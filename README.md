@@ -34,7 +34,7 @@ At most one blockchain feature can be enabled, available blockchain client featu
 You can the install the binaries for the latest tag of `bdk-cli` with online wallet features 
 directly from [crates.io](https://crates.io/crates/bdk-cli) with a command as below:
 ```sh
-cargo install bdk-cli --features `electrum`
+cargo install bdk-cli --features electrum
 ```
 
 ### bdk-cli bin usage examples

@@ -43,4 +43,4 @@ path = "src/bdk_cli.rs"
 required-features = ["cli"]
 
 [package.metadata.docs.rs]
-features = ["compiler"]
+features = ["compiler", "electrum"]
