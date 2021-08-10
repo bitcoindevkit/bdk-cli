@@ -118,7 +118,7 @@ where
 {
     #[cfg(feature = "electrum")]
     let config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
-        url: wallet_opts.electrum_opts.electrum.clone(),
+        url: wallet_opts.electrum_opts.server.clone(),
         socks5: wallet_opts.proxy_opts.proxy.clone(),
         retry: wallet_opts.proxy_opts.retries,
         timeout: wallet_opts.electrum_opts.timeout,

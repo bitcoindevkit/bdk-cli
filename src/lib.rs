@@ -27,7 +27,7 @@
 //! This lib provides [`structopt`] structs and enums that parse CLI options and sub-commands from
 //! the command line or from a `String` vector that can be used to access features of the [`bdk`]
 //! library. Functions are also provided to handle subcommands and options and provide results via
-//! the [`bdk`] lib.  
+//! the [`bdk`] lib.
 //!
 //! See the [`bdk-cli`] example bin for how to use this lib to create a simple command line
 //! application that demonstrates [`bdk`] wallet and key management features.
@@ -74,7 +74,7 @@
 //!     let database = MemoryDatabase::new();
 //!
 //!     let config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
-//!                 url: wallet_opts.electrum_opts.electrum,
+//!                 url: wallet_opts.electrum_opts.server,
 //!                 socks5: wallet_opts.proxy_opts.proxy,
 //!                 retry: wallet_opts.proxy_opts.retries,
 //!                 timeout: None,
@@ -177,10 +177,10 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///               #[cfg(feature = "electrum")]
 ///               electrum_opts: ElectrumOpts {
 ///                   timeout: None,
-///                   electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+///                   server: "ssl://electrum.blockstream.info:60002".to_string(),
 ///               },
 ///               #[cfg(feature = "esplora")]
-///               esplora_opts: EsploraOpts {               
+///               esplora_opts: EsploraOpts {
 ///                   server: "https://blockstream.info/api/".to_string(),
 ///                   concurrency: 4,
 ///               },
@@ -288,7 +288,7 @@ pub enum WalletSubCommand {
 ///
 /// The wallet options required for all [`CliSubCommand::Wallet`] or [`CliSubCommand::Repl`]
 /// sub-commands. These options capture wallet descriptor and blockchain client information. The
-/// blockchain client details are only used for [`OnlineWalletSubCommand`]s.   
+/// blockchain client details are only used for [`OnlineWalletSubCommand`]s.
 ///
 /// # Example
 ///
@@ -321,10 +321,10 @@ pub enum WalletSubCommand {
 ///               #[cfg(feature = "electrum")]
 ///               electrum_opts: ElectrumOpts {
 ///                   timeout: None,
-///                   electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+///                   server: "ssl://electrum.blockstream.info:60002".to_string(),
 ///               },
 ///               #[cfg(feature = "esplora")]
-///               esplora_opts: EsploraOpts {               
+///               esplora_opts: EsploraOpts {
 ///                   server: "https://blockstream.info/api/".to_string(),
 ///                   concurrency: 4,
 ///               },
@@ -446,7 +446,7 @@ pub struct ElectrumOpts {
         long = "server",
         default_value = "ssl://electrum.blockstream.info:60002"
     )]
-    pub electrum: String,
+    pub server: String,
 }
 
 /// Esplora options
@@ -939,7 +939,7 @@ Provides basic key operations that are not related to a specific wallet such as 
 new random master extended key or restoring a master extended key from mnemonic words.
 
 These sub-commands are **EXPERIMENTAL** and should only be used for testing. Do not use this
-feature to create keys that secure actual funds on the Bitcoin mainnet.  
+feature to create keys that secure actual funds on the Bitcoin mainnet.
 "#
 )]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
@@ -1114,7 +1114,7 @@ mod test {
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: None,
-                        electrum: "ssl://electrum.blockstream.info:60002".to_string()
+                        server: "ssl://electrum.blockstream.info:60002".to_string()
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
@@ -1164,7 +1164,7 @@ mod test {
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: Some(10),
-                        electrum: "ssl://electrum.blockstream.info:50002".to_string(),
+                        server: "ssl://electrum.blockstream.info:50002".to_string(),
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
@@ -1196,7 +1196,7 @@ mod test {
     fn test_parse_wallet_esplora() {
         let cli_args = vec!["bdk-cli", "--network", "bitcoin", "wallet",
                             "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
-                            "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",             
+                            "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
                             "--server", "https://blockstream.info/api/",
                             "--concurrency", "5",
                             "get_new_address"];
@@ -1214,7 +1214,7 @@ mod test {
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: None,
-                        electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+                        server: "ssl://electrum.blockstream.info:60002".to_string(),
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
@@ -1246,7 +1246,7 @@ mod test {
     fn test_parse_wallet_compact_filters() {
         let cli_args = vec!["bdk-cli", "--network", "bitcoin", "wallet",
                             "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
-                            "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",             
+                            "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
                             "--proxy", "127.0.0.1:9005",
                             "--proxy_auth", "random_user:random_passwd",
                             "--node", "127.0.0.1:18444", "127.2.3.1:19695",
@@ -1267,7 +1267,7 @@ mod test {
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: None,
-                        electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+                        server: "ssl://electrum.blockstream.info:60002".to_string(),
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
@@ -1314,7 +1314,7 @@ mod test {
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: None,
-                        electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+                        server: "ssl://electrum.blockstream.info:60002".to_string(),
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
@@ -1380,7 +1380,7 @@ mod test {
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: None,
-                        electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+                        server: "ssl://electrum.blockstream.info:60002".to_string(),
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
@@ -1438,7 +1438,7 @@ mod test {
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: None,
-                        electrum: "ssl://electrum.blockstream.info:60002".to_string(),
+                        server: "ssl://electrum.blockstream.info:60002".to_string(),
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
