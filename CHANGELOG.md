@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Upgrade to `bdk` v0.7.x
 - Add top level command "Compile" which compiles a miniscript policy to an output descriptor
 - Add `CompactFilterOpts` to `WalletOpts` to enable compact-filter blockchain configuration
-- Add `verbose` option to `WalletOpts` to display PSBTs also in JSON format
+- Add `verbose` option to `WalletOpts` to display PSBTs and transaction details also in JSON format
 - Require at most one blockchain client feature be enabled at a time
 
 ## [0.2.0]
