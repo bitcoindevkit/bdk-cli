@@ -37,6 +37,7 @@ esplora-ureq = ["esplora", "bdk/use-esplora-ureq"]
 esplora-reqwest = ["esplora", "bdk/use-esplora-reqwest"]
 compiler = ["bdk/compiler"]
 compact_filters = ["bdk/compact_filters"]
+rpc = ["bdk/rpc"]
 
 [[bin]]
 name = "bdk-cli"

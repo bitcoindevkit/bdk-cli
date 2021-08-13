@@ -99,7 +99,12 @@ pub extern crate bdk;
 #[macro_use]
 extern crate serde_json;
 
-#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "compact_filters",
+    feature = "rpc"
+))]
 #[macro_use]
 extern crate bdk_macros;
 
@@ -110,16 +115,31 @@ pub use structopt;
 use structopt::StructOpt;
 
 use crate::OfflineWalletSubCommand::*;
-#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "compact_filters",
+    feature = "rpc"
+))]
 use crate::OnlineWalletSubCommand::*;
 use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
-#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "compact_filters",
+    feature = "rpc"
+))]
 use bdk::bitcoin::hashes::hex::FromHex;
 use bdk::bitcoin::secp256k1::Secp256k1;
 use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey, KeySource};
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Network, OutPoint, Script, Txid};
-#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "compact_filters",
+    feature = "rpc"
+))]
 use bdk::blockchain::{log_progress, Blockchain};
 use bdk::database::BatchDatabase;
 use bdk::descriptor::Segwitv0;
@@ -144,7 +164,7 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 /// # Example
 ///
 /// ```
-/// # #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+/// # #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters", feature = "rpc"))]
 /// # {
 /// # use bdk::bitcoin::Network;
 /// # use structopt::StructOpt;
@@ -153,6 +173,8 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 /// # use bdk_cli::ElectrumOpts;
 /// # #[cfg(feature = "esplora")]
 /// # use bdk_cli::EsploraOpts;
+/// # #[cfg(feature = "rpc")]
+/// # use bdk_cli::RpcOpts;
 /// # #[cfg(feature = "compact_filters")]
 /// # use bdk_cli::CompactFilterOpts;
 /// # #[cfg(any(feature = "compact_filters", feature = "electrum", feature="esplora"))]
@@ -194,6 +216,12 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///                   conc: 4,
 ///                   stop_gap: 10
 ///               },
+///                 #[cfg(feature = "rpc")]
+///                 rpc_opts: RpcOpts{
+///                    address: "127.0.0.1:18443".to_string(),
+///                    auth: ("user".to_string(), "password".to_string()),
+///                    skip_blocks: None,
+///                },
 ///                #[cfg(feature = "compact_filters")]
 ///                compactfilter_opts: CompactFilterOpts{
 ///                    address: vec!["127.0.0.1:18444".to_string()],
@@ -216,6 +244,7 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 /// assert_eq!(expected_cli_opts, cli_opts);
 /// # }
 /// ```
+
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(name = "BDK CLI",
 version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
@@ -287,7 +316,12 @@ pub enum CliSubCommand {
 /// client and network connection and an [`OfflineWalletSubCommand`] does not.
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub enum WalletSubCommand {
-    #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+    #[cfg(any(
+        feature = "electrum",
+        feature = "esplora",
+        feature = "compact_filters",
+        feature = "rpc"
+    ))]
     #[structopt(flatten)]
     OnlineWalletSubCommand(OnlineWalletSubCommand),
     #[structopt(flatten)]
@@ -312,6 +346,8 @@ pub enum WalletSubCommand {
 /// # use bdk_cli::EsploraOpts;
 /// # #[cfg(feature = "compact_filters")]
 /// # use bdk_cli::CompactFilterOpts;
+/// # #[cfg(feature = "rpc")]
+/// # use bdk_cli::RpcOpts;
 /// # #[cfg(any(feature = "compact_filters", feature = "electrum", feature="esplora"))]
 /// # use bdk_cli::ProxyOpts;
 ///
@@ -353,6 +389,12 @@ pub enum WalletSubCommand {
 ///                    conn_count: 4,
 ///                    skip_blocks: 0,
 ///                },
+///                 #[cfg(feature = "rpc")]
+///                 rpc_opts: RpcOpts{
+///                    address: "127.0.0.1:18443".to_string(),
+///                    auth: ("user".to_string(), "password".to_string()),
+///                    skip_blocks: None,
+///                },
 ///               #[cfg(any(feature="compact_filters", feature="electrum", feature="esplora"))]
 ///                    proxy_opts: ProxyOpts{
 ///                        proxy: None,
@@ -363,6 +405,7 @@ pub enum WalletSubCommand {
 ///
 /// assert_eq!(expected_wallet_opts, wallet_opts);
 /// ```
+
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct WalletOpts {
     /// Selects the wallet to use
@@ -391,6 +434,9 @@ pub struct WalletOpts {
     #[cfg(feature = "compact_filters")]
     #[structopt(flatten)]
     pub compactfilter_opts: CompactFilterOpts,
+    #[cfg(feature = "rpc")]
+    #[structopt(flatten)]
+    pub rpc_opts: RpcOpts,
     #[cfg(any(feature = "compact_filters", feature = "electrum", feature = "esplora"))]
     #[structopt(flatten)]
     pub proxy_opts: ProxyOpts,
@@ -447,6 +493,33 @@ pub struct CompactFilterOpts {
         default_value = "0"
     )]
     pub skip_blocks: usize,
+}
+
+#[cfg(feature = "rpc")]
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+pub struct RpcOpts {
+    /// Sets the full node address for rpc connection
+    #[structopt(
+        name = "ADDRESS:PORT",
+        short = "n",
+        long = "node",
+        default_value = "127.0.0.1:18443"
+    )]
+    pub address: String,
+
+    /// Sets the rpc authentication username:password
+    #[structopt(
+        name = "USER:PASSWD",
+        short = "a",
+        long = "auth",
+        parse(try_from_str = parse_proxy_auth),
+        default_value = "user:password",
+    )]
+    pub auth: (String, String),
+
+    /// Optionally skip initial `skip_blocks` blocks
+    #[structopt(name = "SKIP_BLOCKS", short = "s", long = "skip-blocks")]
+    pub skip_blocks: Option<u32>,
 }
 
 /// Electrum options
@@ -704,7 +777,12 @@ blockchain client and network connection.
 )]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(rename_all = "snake")]
-#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "compact_filters",
+    feature = "rpc"
+))]
 pub enum OnlineWalletSubCommand {
     /// Syncs with the chosen blockchain server
     Sync {
@@ -750,8 +828,12 @@ fn parse_recipient(s: &str) -> Result<(Script, u64), String> {
 
     Ok((addr.unwrap().script_pubkey(), val.unwrap()))
 }
-
-#[cfg(any(feature = "electrum", feature = "compact_filters", feature = "esplora"))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "compact_filters",
+    feature = "esplora",
+    feature = "rpc"
+))]
 fn parse_proxy_auth(s: &str) -> Result<(String, String), String> {
     let parts: Vec<_> = s.split(':').collect();
     if parts.len() != 2 {
@@ -959,7 +1041,12 @@ where
 ///
 /// Online wallet sub-commands are described in [`OnlineWalletSubCommand`]. See [`crate`] for
 /// example usage.
-#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "compact_filters",
+    feature = "rpc"
+))]
 #[maybe_async]
 pub fn handle_online_wallet_subcommand<C, D>(
     wallet: &Wallet<C, D>,
@@ -1144,10 +1231,17 @@ mod test {
     #[cfg(feature = "esplora")]
     use crate::EsploraOpts;
     use crate::OfflineWalletSubCommand::{CreateTx, GetNewAddress};
-    #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+    #[cfg(any(
+        feature = "electrum",
+        feature = "esplora",
+        feature = "compact_filters",
+        feature = "rpc"
+    ))]
     use crate::OnlineWalletSubCommand::{Broadcast, Sync};
     #[cfg(any(feature = "compact_filters", feature = "electrum", feature = "esplora"))]
     use crate::ProxyOpts;
+    #[cfg(feature = "rpc")]
+    use crate::RpcOpts;
     use crate::{handle_key_subcommand, CliSubCommand, KeySubCommand, WalletSubCommand};
 
     use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
@@ -1203,7 +1297,13 @@ mod test {
                         proxy: None,
                         proxy_auth: None,
                         retries: 5,
-                    }
+                    },
+                    #[cfg(feature = "rpc")]
+                    rpc_opts: RpcOpts {
+                        address: "127.0.0.1:18443".to_string(),
+                        auth: ("user".to_string(), "password".to_string()),
+                        skip_blocks: None,
+                    },
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
             },
@@ -1242,6 +1342,12 @@ mod test {
                         proxy: Some("127.0.0.1:9150".to_string()),
                         proxy_auth: None,
                         retries: 3,
+                    },
+                    #[cfg(feature = "rpc")]
+                    rpc_opts: RpcOpts {
+                        address: "127.0.0.1:18443".to_string(),
+                        auth: ("user".to_string(), "password".to_string()),
+                        skip_blocks: None,
                     }
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
@@ -1331,6 +1437,63 @@ mod test {
         assert_eq!(expected_cli_opts, cli_opts);
     }
 
+    #[cfg(feature = "rpc")]
+    #[test]
+    fn test_parse_wallet_rpc() {
+        let cli_args = vec!["bdk-cli", "--network", "bitcoin", "wallet",
+                            "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
+                            "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
+                            "--node", "125.67.89.101:56678",
+                            "--auth", "user:password",
+                            "--skip-blocks", "5",
+                            "get_new_address"];
+
+        let cli_opts = CliOpts::from_iter(&cli_args);
+
+        let expected_cli_opts = CliOpts {
+            network: Network::Bitcoin,
+            subcommand: CliSubCommand::Wallet {
+                wallet_opts: WalletOpts {
+                    wallet: "main".to_string(),
+                    verbose: false,
+                    descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
+                    change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
+                    #[cfg(feature = "electrum")]
+                    electrum_opts: ElectrumOpts {
+                        timeout: None,
+                        server: "ssl://electrum.blockstream.info:60002".to_string(),
+                    },
+                    #[cfg(feature = "esplora")]
+                    esplora_opts: EsploraOpts {
+                        server: "https://blockstream.info/api/".to_string(),
+                        concurrency: 5,
+                    },
+                    #[cfg(feature = "compact_filters")]
+                    compactfilter_opts: CompactFilterOpts{
+                        address: vec!["127.0.0.1:18444".to_string()],
+                        skip_blocks: 0,
+                        conn_count: 4,
+                    },
+                    #[cfg(any(feature="compact_filters", feature="electrum"))]
+                    proxy_opts: ProxyOpts{
+                        proxy: None,
+                        proxy_auth: None,
+                        retries: 5,
+                    },
+                    #[cfg(feature = "rpc")]
+                    rpc_opts: RpcOpts {
+                        address: "125.67.89.101:56678".to_string(),
+                        auth: ("user".to_string(), "password".to_string()),
+                        skip_blocks: Some(5),
+                    },
+                },
+                subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
+            },
+        };
+
+        assert_eq!(expected_cli_opts, cli_opts);
+    }
+
     #[cfg(feature = "compact_filters")]
     #[test]
     fn test_parse_wallet_compact_filters() {
@@ -1372,7 +1535,12 @@ mod test {
         assert_eq!(expected_cli_opts, cli_opts);
     }
 
-    #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+    #[cfg(any(
+        feature = "electrum",
+        feature = "esplora",
+        feature = "compact_filters",
+        feature = "rpc"
+    ))]
     #[test]
     fn test_parse_wallet_sync() {
         let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
@@ -1419,7 +1587,13 @@ mod test {
                         proxy: None,
                         proxy_auth: None,
                         retries: 5,
-                    }
+                    },
+                    #[cfg(feature = "rpc")]
+                    rpc_opts: RpcOpts {
+                        address: "127.0.0.1:18443".to_string(),
+                        auth: ("user".to_string(), "password".to_string()),
+                        skip_blocks: None,
+                    },
                 },
                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync {
                     max_addresses: Some(50)
@@ -1494,7 +1668,13 @@ mod test {
                         proxy: None,
                         proxy_auth: None,
                         retries: 5,
-                    }
+                    },
+                    #[cfg(feature = "rpc")]
+                    rpc_opts: RpcOpts {
+                        address: "127.0.0.1:18443".to_string(),
+                        auth: ("user".to_string(), "password".to_string()),
+                        skip_blocks: None,
+                    },
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(CreateTx {
                     recipients: vec![(script1, 123456), (script2, 78910)],
@@ -1513,7 +1693,12 @@ mod test {
         assert_eq!(expected_cli_opts, cli_opts);
     }
 
-    #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+    #[cfg(any(
+        feature = "electrum",
+        feature = "esplora",
+        feature = "compact_filters",
+        feature = "rpc"
+    ))]
     #[test]
     fn test_parse_wallet_broadcast() {
         let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
@@ -1561,7 +1746,13 @@ mod test {
                         proxy: None,
                         proxy_auth: None,
                         retries: 5,
-                    }
+                    },
+                    #[cfg(feature = "rpc")]
+                    rpc_opts: RpcOpts {
+                        address: "127.0.0.1:18443".to_string(),
+                        auth: ("user".to_string(), "password".to_string()),
+                        skip_blocks: None,
+                    },
                 },
                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Broadcast {
                     psbt: Some("cHNidP8BAEICAAAAASWhGE1AhvtO+2GjJHopssFmgfbq+WweHd8zN/DeaqmDAAAAAAD/////AQAAAAAAAAAABmoEAAECAwAAAAAAAAA=".to_string()),

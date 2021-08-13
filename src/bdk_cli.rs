@@ -25,6 +25,8 @@
 use std::fs;
 use std::path::PathBuf;
 
+#[cfg(feature = "rpc")]
+use bitcoin::secp256k1::Secp256k1;
 use bitcoin::Network;
 use clap::AppSettings;
 use log::{debug, error, info, warn};
@@ -43,8 +45,16 @@ use bdk::blockchain::electrum::ElectrumBlockchainConfig;
 #[cfg(feature = "esplora")]
 use bdk::blockchain::esplora::EsploraBlockchainConfig;
 
-#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "compact_filters",
+    feature = "rpc"
+))]
 use bdk::blockchain::{AnyBlockchain, AnyBlockchainConfig, ConfigurableBlockchain};
+
+#[cfg(feature = "rpc")]
+use bdk::blockchain::rpc::{wallet_name_from_descriptor, Auth, RpcConfig};
 
 use bdk::database::BatchDatabase;
 use bdk::sled;
@@ -54,7 +64,12 @@ use bdk::{bitcoin, Error};
 use bdk_cli::WalletSubCommand;
 use bdk_cli::{CliOpts, CliSubCommand, KeySubCommand, OfflineWalletSubCommand, WalletOpts};
 
-#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "compact_filters",
+    feature = "rpc"
+))]
 use bdk_cli::OnlineWalletSubCommand;
 
 #[cfg(feature = "repl")]
@@ -69,7 +84,12 @@ const REPL_LINE_SPLIT_REGEX: &str = r#""([^"]*)"|'([^']*)'|([\w\-]+)"#;
 version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
 pub enum ReplSubCommand {
-    #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+    #[cfg(any(
+        feature = "electrum",
+        feature = "esplora",
+        feature = "compact_filters",
+        feature = "rpc"
+    ))]
     #[structopt(flatten)]
     OnlineWalletSubCommand(OnlineWalletSubCommand),
     #[structopt(flatten)]
@@ -107,7 +127,12 @@ fn open_database(wallet_opts: &WalletOpts) -> Tree {
     tree
 }
 
-#[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "compact_filters",
+    feature = "rpc"
+))]
 fn new_online_wallet<D>(
     network: Network,
     wallet_opts: &WalletOpts,
@@ -163,6 +188,34 @@ where
         })
     };
 
+    #[cfg(feature = "rpc")]
+    let config: AnyBlockchainConfig = {
+        let auth = Auth::UserPass {
+            username: wallet_opts.rpc_opts.auth.0.clone(),
+            password: wallet_opts.rpc_opts.auth.1.clone(),
+        };
+
+        // Use deterministic wallet name derived from descriptor
+        let wallet_name = wallet_name_from_descriptor(
+            &wallet_opts.descriptor[..],
+            wallet_opts.change_descriptor.as_deref(),
+            network,
+            &Secp256k1::new(),
+        )?;
+
+        let mut rpc_url = "http://".to_string();
+        rpc_url.push_str(&wallet_opts.rpc_opts.address[..]);
+
+        let rpc_config = RpcConfig {
+            url: rpc_url,
+            auth,
+            network,
+            wallet_name,
+            skip_blocks: wallet_opts.rpc_opts.skip_blocks,
+        };
+
+        AnyBlockchainConfig::Rpc(rpc_config)
+    };
     let descriptor = wallet_opts.descriptor.as_str();
     let change_descriptor = wallet_opts.change_descriptor.as_deref();
 
@@ -214,7 +267,12 @@ fn main() {
 
 fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> {
     let result = match cli_opts.subcommand {
-        #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+        #[cfg(any(
+            feature = "electrum",
+            feature = "esplora",
+            feature = "compact_filters",
+            feature = "rpc"
+        ))]
         CliSubCommand::Wallet {
             wallet_opts,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
@@ -255,13 +313,19 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
         CliSubCommand::Repl { wallet_opts } => {
             let database = open_database(&wallet_opts);
 
-            #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters"))]
+            #[cfg(any(
+                feature = "electrum",
+                feature = "esplora",
+                feature = "compact_filters",
+                feature = "rpc"
+            ))]
             let wallet = new_online_wallet(network, &wallet_opts, database)?;
 
             #[cfg(not(any(
                 feature = "electrum",
                 feature = "esplora",
-                feature = "compact_filters"
+                feature = "compact_filters",
+                feature = "rpc"
             )))]
             let wallet = new_offline_wallet(network, &wallet_opts, database)?;
 
@@ -307,7 +371,8 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
                             #[cfg(any(
                                 feature = "electrum",
                                 feature = "esplora",
-                                feature = "compact_filters"
+                                feature = "compact_filters",
+                                feature = "rpc"
                             ))]
                             ReplSubCommand::OnlineWalletSubCommand(online_subcommand) => {
                                 bdk_cli::handle_online_wallet_subcommand(&wallet, online_subcommand)
