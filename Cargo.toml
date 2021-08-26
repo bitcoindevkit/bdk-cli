@@ -12,7 +12,7 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-bdk = { version = "^0.7", default-features = false, features = ["all-keys"]}
+bdk = { version = "0.10.0", default-features = false, features = ["all-keys"]}
 bdk-macros = "^0.4"
 structopt = "^0.3"
 serde_json = { version = "^1.0" }
@@ -32,7 +32,7 @@ default = ["cli", "repl"]
 cli = ["bdk/key-value-db", "clap", "dirs-next", "env_logger"]
 repl = ["regex", "rustyline"]
 electrum = ["bdk/electrum"]
-esplora = ["bdk/esplora"]
+esplora = ["bdk/use-esplora-ureq"]
 compiler = ["bdk/compiler"]
 async-interface = ["bdk/async-interface"]
 compact_filters = ["bdk/compact_filters"]

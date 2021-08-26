@@ -736,9 +736,7 @@ where
             let mut tx_builder = wallet.build_tx();
 
             if send_all {
-                tx_builder
-                    .drain_wallet()
-                    .set_single_recipient(recipients[0].0.clone());
+                tx_builder.drain_wallet().drain_to(recipients[0].0.clone());
             } else {
                 tx_builder.set_recipients(recipients);
             }
@@ -797,7 +795,8 @@ where
             tx_builder.fee_rate(FeeRate::from_sat_per_vb(fee_rate));
 
             if send_all {
-                tx_builder.maintain_single_recipient()?;
+                // TODO: Find a way to get the recipient scriptpubkey to allow shrinking
+                //tx_builder.allow_shrinking()
             }
 
             if offline_signer {
