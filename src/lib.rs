@@ -78,6 +78,7 @@
 //!                 socks5: wallet_opts.proxy_opts.proxy,
 //!                 retry: wallet_opts.proxy_opts.retries,
 //!                 timeout: None,
+//!                 stop_gap: 10
 //!             });
 //!
 //!     let wallet = Wallet::new(
@@ -178,6 +179,7 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///               electrum_opts: ElectrumOpts {
 ///                   timeout: None,
 ///                   server: "ssl://electrum.blockstream.info:60002".to_string(),
+///                   stop_gap: 10
 ///               },
 ///               #[cfg(feature = "esplora")]
 ///               esplora_opts: EsploraOpts {
@@ -322,6 +324,7 @@ pub enum WalletSubCommand {
 ///               electrum_opts: ElectrumOpts {
 ///                   timeout: None,
 ///                   server: "ssl://electrum.blockstream.info:60002".to_string(),
+///                   stop_gap: 10
 ///               },
 ///               #[cfg(feature = "esplora")]
 ///               esplora_opts: EsploraOpts {
@@ -447,6 +450,15 @@ pub struct ElectrumOpts {
         default_value = "ssl://electrum.blockstream.info:60002"
     )]
     pub server: String,
+
+    /// Stop searching addresses for transactions after finding an unused gap of this length.
+    #[structopt(
+        name = "STOP_GAP",
+        long = "stop_gap",
+        short = "g",
+        default_value = "10"
+    )]
+    pub stop_gap: usize,
 }
 
 /// Esplora options
@@ -1113,7 +1125,8 @@ mod test {
                     #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: None,
-                        server: "ssl://electrum.blockstream.info:60002".to_string()
+                        server: "ssl://electrum.blockstream.info:60002".to_string(),
+                        stop_gap: 10,
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
@@ -1148,6 +1161,7 @@ mod test {
                             "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "--change_descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
                             "--server","ssl://electrum.blockstream.info:50002",
+                            "--stop_gap", "20",
                             "get_new_address"];
 
         let cli_opts = CliOpts::from_iter(&cli_args);
@@ -1164,6 +1178,7 @@ mod test {
                     electrum_opts: ElectrumOpts {
                         timeout: Some(10),
                         server: "ssl://electrum.blockstream.info:50002".to_string(),
+                        stop_gap: 20
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
@@ -1314,6 +1329,7 @@ mod test {
                     electrum_opts: ElectrumOpts {
                         timeout: None,
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
+                        stop_gap: 10,
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
@@ -1380,6 +1396,7 @@ mod test {
                     electrum_opts: ElectrumOpts {
                         timeout: None,
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
+                        stop_gap: 10,
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
@@ -1438,6 +1455,7 @@ mod test {
                     electrum_opts: ElectrumOpts {
                         timeout: None,
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
+                        stop_gap: 10,
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {

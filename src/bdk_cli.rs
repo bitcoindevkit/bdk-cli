@@ -122,6 +122,7 @@ where
         socks5: wallet_opts.proxy_opts.proxy.clone(),
         retry: wallet_opts.proxy_opts.retries,
         timeout: wallet_opts.electrum_opts.timeout,
+        stop_gap: wallet_opts.electrum_opts.stop_gap,
     });
 
     #[cfg(feature = "esplora")]
