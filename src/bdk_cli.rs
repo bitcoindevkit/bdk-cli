@@ -128,7 +128,9 @@ where
     #[cfg(feature = "esplora")]
     let config = AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
         base_url: wallet_opts.esplora_opts.server.clone(),
-        concurrency: Some(wallet_opts.esplora_opts.concurrency),
+        timeout_read: wallet_opts.esplora_opts.read_timeout,
+        timeout_write: wallet_opts.esplora_opts.write_timeout,
+        stop_gap: wallet_opts.esplora_opts.stop_gap,
     });
 
     #[cfg(feature = "compact_filters")]

@@ -184,7 +184,9 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///               #[cfg(feature = "esplora")]
 ///               esplora_opts: EsploraOpts {
 ///                   server: "https://blockstream.info/api/".to_string(),
-///                   concurrency: 4,
+///                   read_timeout: 5,
+///                   write_timeout: 5,
+///                   stop_gap: 10
 ///               },
 ///                #[cfg(feature = "compact_filters")]
 ///                compactfilter_opts: CompactFilterOpts{
@@ -329,7 +331,9 @@ pub enum WalletSubCommand {
 ///               #[cfg(feature = "esplora")]
 ///               esplora_opts: EsploraOpts {
 ///                   server: "https://blockstream.info/api/".to_string(),
-///                   concurrency: 4,
+///                   read_timeout: 5,
+///                   write_timeout: 5,
+///                   stop_gap: 10
 ///               },
 ///                #[cfg(feature = "compact_filters")]
 ///                compactfilter_opts: CompactFilterOpts{
@@ -475,13 +479,23 @@ pub struct EsploraOpts {
         default_value = "https://blockstream.info/api/"
     )]
     pub server: String,
-    /// Concurrency of requests made to the esplora server
+
+    /// Socket read timeout
+    #[structopt(name = "READ_TIMEOUT", long = "read_timeout", default_value = "5")]
+    pub read_timeout: u64,
+
+    /// Socket write timeout
+    #[structopt(name = "WRITE_TIMEOUT", long = "write_timeout", default_value = "5")]
+    pub write_timeout: u64,
+
+    /// Stop searching addresses for transactions after finding an unused gap of this length.
     #[structopt(
-        name = "ESPLORA_CONCURRENCY",
-        long = "concurrency",
-        default_value = "4"
+        name = "STOP_GAP",
+        long = "stop_gap",
+        short = "g",
+        default_value = "10"
     )]
-    pub concurrency: u8,
+    pub stop_gap: usize,
 }
 
 // This is a workaround for `structopt` issue #333, #391, #418; see https://github.com/TeXitoi/structopt/issues/333#issuecomment-712265332
@@ -728,7 +742,7 @@ where
     D: BatchDatabase,
 {
     match offline_subcommand {
-        GetNewAddress => Ok(json!({"address": wallet.get_address(AddressIndex::New)?})),
+        GetNewAddress => Ok(json!({"address": wallet.get_address(AddressIndex::New)?.address})),
         ListUnspent => Ok(serde_json::to_value(&wallet.list_unspent()?)?),
         ListTransactions => Ok(serde_json::to_value(
             &wallet.list_transactions(wallet_opts.verbose)?,
@@ -1131,7 +1145,9 @@ mod test {
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/api/".to_string(),
-                        concurrency: 4
+                        read_timeout: 5,
+                        write_timeout: 5,
+                        stop_gap: 10,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
@@ -1212,7 +1228,9 @@ mod test {
                             "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
                             "--server", "https://blockstream.info/api/",
-                            "--concurrency", "5",
+                            "--read_timeout", "10",
+                            "--write_timeout", "10",
+                            "--stop_gap", "20",
                             "get_new_address"];
 
         let cli_opts = CliOpts::from_iter(&cli_args);
@@ -1233,7 +1251,9 @@ mod test {
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/api/".to_string(),
-                        concurrency: 5,
+                        read_timeout: 10,
+                        write_timeout: 10,
+                        stop_gap: 20
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
@@ -1334,7 +1354,9 @@ mod test {
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/api/".to_string(),
-                        concurrency: 4,
+                        read_timeout: 5,
+                        write_timeout: 5,
+                        stop_gap: 10,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
@@ -1401,7 +1423,9 @@ mod test {
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/api/".to_string(),
-                        concurrency: 4,
+                        read_timeout: 5,
+                        write_timeout: 5,
+                        stop_gap: 10,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
@@ -1460,7 +1484,9 @@ mod test {
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/api/".to_string(),
-                        concurrency: 4,
+                        read_timeout: 5,
+                        write_timeout: 5,
+                        stop_gap: 10,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
