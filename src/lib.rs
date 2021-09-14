@@ -181,11 +181,17 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///                   server: "ssl://electrum.blockstream.info:60002".to_string(),
 ///                   stop_gap: 10
 ///               },
-///               #[cfg(feature = "esplora")]
+///               #[cfg(feature = "esplora-ureq")]
 ///               esplora_opts: EsploraOpts {
 ///                   server: "https://blockstream.info/api/".to_string(),
 ///                   read_timeout: 5,
 ///                   write_timeout: 5,
+///                   stop_gap: 10
+///               },
+///               #[cfg(feature = "esplora-reqwest")]
+///               esplora_opts: EsploraOpts {
+///                   server: "https://blockstream.info/api/".to_string(),
+///                   conc: 4,
 ///                   stop_gap: 10
 ///               },
 ///                #[cfg(feature = "compact_filters")]
@@ -328,11 +334,17 @@ pub enum WalletSubCommand {
 ///                   server: "ssl://electrum.blockstream.info:60002".to_string(),
 ///                   stop_gap: 10
 ///               },
-///               #[cfg(feature = "esplora")]
+///               #[cfg(feature = "esplora-ureq")]
 ///               esplora_opts: EsploraOpts {
 ///                   server: "https://blockstream.info/api/".to_string(),
 ///                   read_timeout: 5,
 ///                   write_timeout: 5,
+///                   stop_gap: 10
+///               },
+///               #[cfg(feature = "esplora-reqwest")]
+///               esplora_opts: EsploraOpts {
+///                   server: "https://blockstream.info/api/".to_string(),
+///                   conc: 4,
 ///                   stop_gap: 10
 ///               },
 ///                #[cfg(feature = "compact_filters")]
@@ -468,7 +480,7 @@ pub struct ElectrumOpts {
 /// Esplora options
 ///
 /// Esplora blockchain client information used by [`OnlineWalletSubCommand`]s.
-#[cfg(feature = "esplora")]
+#[cfg(feature = "esplora-ureq")]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct EsploraOpts {
     /// Use the esplora server if given as parameter
@@ -487,6 +499,32 @@ pub struct EsploraOpts {
     /// Socket write timeout
     #[structopt(name = "WRITE_TIMEOUT", long = "write_timeout", default_value = "5")]
     pub write_timeout: u64,
+
+    /// Stop searching addresses for transactions after finding an unused gap of this length.
+    #[structopt(
+        name = "STOP_GAP",
+        long = "stop_gap",
+        short = "g",
+        default_value = "10"
+    )]
+    pub stop_gap: usize,
+}
+
+#[cfg(feature = "esplora-reqwest")]
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+pub struct EsploraOpts {
+    /// Use the esplora server if given as parameter
+    #[structopt(
+        name = "ESPLORA_URL",
+        short = "s",
+        long = "server",
+        default_value = "https://blockstream.info/api/"
+    )]
+    pub server: String,
+
+    /// Number of parallel requests sent to the esplora service (default: 4)
+    #[structopt(name = "CONCURRENCY", long = "conc", short = "p", default_value = "4")]
+    pub conc: u8,
 
     /// Stop searching addresses for transactions after finding an unused gap of this length.
     #[structopt(
@@ -1142,11 +1180,17 @@ mod test {
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
                         stop_gap: 10,
                     },
-                    #[cfg(feature = "esplora")]
+                    #[cfg(feature = "esplora-ureq")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/api/".to_string(),
                         read_timeout: 5,
                         write_timeout: 5,
+                        stop_gap: 10,
+                    },
+                    #[cfg(feature = "esplora-reqwest")]
+                    esplora_opts: EsploraOpts {
+                        server: "https://blockstream.info/api/".to_string(),
+                        conc: 4,
                         stop_gap: 10,
                     },
                     #[cfg(feature = "compact_filters")]
@@ -1221,7 +1265,7 @@ mod test {
         assert_eq!(expected_cli_opts, cli_opts);
     }
 
-    #[cfg(feature = "esplora")]
+    #[cfg(feature = "esplora-ureq")]
     #[test]
     fn test_parse_wallet_esplora() {
         let cli_args = vec!["bdk-cli", "--network", "bitcoin", "wallet",
@@ -1253,6 +1297,58 @@ mod test {
                         server: "https://blockstream.info/api/".to_string(),
                         read_timeout: 10,
                         write_timeout: 10,
+                        stop_gap: 20
+                    },
+                    #[cfg(feature = "compact_filters")]
+                    compactfilter_opts: CompactFilterOpts{
+                        address: vec!["127.0.0.1:18444".to_string()],
+                        skip_blocks: 0,
+                        conn_count: 4,
+                    },
+                    #[cfg(any(feature="compact_filters", feature="electrum"))]
+                    proxy_opts: ProxyOpts{
+                        proxy: None,
+                        proxy_auth: None,
+                        retries: 5,
+                    }
+                },
+                subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
+            },
+        };
+
+        assert_eq!(expected_cli_opts, cli_opts);
+    }
+
+    #[cfg(feature = "esplora-reqwest")]
+    #[test]
+    fn test_parse_wallet_esplora() {
+        let cli_args = vec!["bdk-cli", "--network", "bitcoin", "wallet",
+                            "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
+                            "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
+                            "--server", "https://blockstream.info/api/",
+                            "--conc", "10",
+                            "--stop_gap", "20",
+                            "get_new_address"];
+
+        let cli_opts = CliOpts::from_iter(&cli_args);
+
+        let expected_cli_opts = CliOpts {
+            network: Network::Bitcoin,
+            subcommand: CliSubCommand::Wallet {
+                wallet_opts: WalletOpts {
+                    wallet: "main".to_string(),
+                    verbose: false,
+                    descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
+                    change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
+                    #[cfg(feature = "electrum")]
+                    electrum_opts: ElectrumOpts {
+                        timeout: None,
+                        server: "ssl://electrum.blockstream.info:60002".to_string(),
+                    },
+                    #[cfg(feature = "esplora")]
+                    esplora_opts: EsploraOpts {
+                        server: "https://blockstream.info/api/".to_string(),
+                        conc: 10,
                         stop_gap: 20
                     },
                     #[cfg(feature = "compact_filters")]
@@ -1351,11 +1447,17 @@ mod test {
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
                         stop_gap: 10,
                     },
-                    #[cfg(feature = "esplora")]
+                    #[cfg(feature = "esplora-ureq")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/api/".to_string(),
                         read_timeout: 5,
                         write_timeout: 5,
+                        stop_gap: 10,
+                    },
+                    #[cfg(feature = "esplora-reqwest")]
+                    esplora_opts: EsploraOpts {
+                        server: "https://blockstream.info/api/".to_string(),
+                        conc: 4,
                         stop_gap: 10,
                     },
                     #[cfg(feature = "compact_filters")]
@@ -1420,11 +1522,17 @@ mod test {
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
                         stop_gap: 10,
                     },
-                    #[cfg(feature = "esplora")]
+                    #[cfg(feature = "esplora-ureq")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/api/".to_string(),
                         read_timeout: 5,
                         write_timeout: 5,
+                        stop_gap: 10,
+                    },
+                    #[cfg(feature = "esplora-reqwest")]
+                    esplora_opts: EsploraOpts {
+                        server: "https://blockstream.info/api/".to_string(),
+                        conc: 4,
                         stop_gap: 10,
                     },
                     #[cfg(feature = "compact_filters")]
@@ -1481,11 +1589,17 @@ mod test {
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
                         stop_gap: 10,
                     },
-                    #[cfg(feature = "esplora")]
+                    #[cfg(feature = "esplora-ureq")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/api/".to_string(),
                         read_timeout: 5,
                         write_timeout: 5,
+                        stop_gap: 10,
+                    },
+                    #[cfg(feature = "esplora-reqwest")]
+                    esplora_opts: EsploraOpts {
+                        server: "https://blockstream.info/api/".to_string(),
+                        conc: 4,
                         stop_gap: 10,
                     },
                     #[cfg(feature = "compact_filters")]

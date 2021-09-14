@@ -125,11 +125,18 @@ where
         stop_gap: wallet_opts.electrum_opts.stop_gap,
     });
 
-    #[cfg(feature = "esplora")]
+    #[cfg(feature = "esplora-ureq")]
     let config = AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
         base_url: wallet_opts.esplora_opts.server.clone(),
         timeout_read: wallet_opts.esplora_opts.read_timeout,
         timeout_write: wallet_opts.esplora_opts.write_timeout,
+        stop_gap: wallet_opts.esplora_opts.stop_gap,
+    });
+
+    #[cfg(feature = "esplora-reqwest")]
+    let config = AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
+        base_url: wallet_opts.esplora_opts.server.clone(),
+        concurrency: Some(wallet_opts.esplora_opts.conc),
         stop_gap: wallet_opts.esplora_opts.stop_gap,
     });
 
