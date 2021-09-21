@@ -973,10 +973,10 @@ pub enum KeySubCommand {
     Derive {
         /// Extended private key to derive from
         #[structopt(name = "XPRV", short = "x", long = "xprv")]
-        xprv: String,
+        xprv: ExtendedPrivKey,
         /// Path to use to derive extended public key from extended private key
         #[structopt(name = "PATH", short = "p", long = "path")]
-        path: String,
+        path: DerivationPath,
     },
 }
 
@@ -1021,14 +1021,12 @@ pub fn handle_key_subcommand(
             Ok(json!({ "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }))
         }
         KeySubCommand::Derive { xprv, path } => {
-            let xprv = ExtendedPrivKey::from_str(xprv.as_str())?;
             if xprv.network != network {
                 return Err(Error::Key(InvalidNetwork));
             }
-            let deriv_path: DerivationPath = DerivationPath::from_str(path.as_str())?;
-            let derived_xprv = &xprv.derive_priv(&secp, &deriv_path)?;
+            let derived_xprv = &xprv.derive_priv(&secp, &path)?;
 
-            let origin: KeySource = (xprv.fingerprint(&secp), deriv_path);
+            let origin: KeySource = (xprv.fingerprint(&secp), path);
 
             let derived_xprv_desc_key: DescriptorKey<Segwitv0> =
                 derived_xprv.into_descriptor_key(Some(origin), DerivationPath::default())?;
