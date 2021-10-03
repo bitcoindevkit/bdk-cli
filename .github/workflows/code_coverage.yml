@@ -18,7 +18,7 @@ jobs:
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin
       - name: Tarpaulin
-        run: cargo tarpaulin --features default,esplora --run-types Tests,Doctests --out Xml
+        run: cargo tarpaulin --features default --run-types Tests,Doctests --out Xml
 
       - name: Publish to codecov.io
         uses: codecov/codecov-action@v1.0.15

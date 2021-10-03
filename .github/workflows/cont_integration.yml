@@ -15,7 +15,8 @@ jobs:
         features:
           - default
           - electrum
-          - esplora
+          - esplora-ureq
+          - esplora-reqwest
           - compiler
           - compact_filters
     steps:
