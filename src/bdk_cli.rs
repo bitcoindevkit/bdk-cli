@@ -131,6 +131,7 @@ where
         timeout_read: wallet_opts.esplora_opts.read_timeout,
         timeout_write: wallet_opts.esplora_opts.write_timeout,
         stop_gap: wallet_opts.esplora_opts.stop_gap,
+        proxy: wallet_opts.proxy_opts.proxy.clone(),
     });
 
     #[cfg(feature = "esplora-reqwest")]
@@ -138,6 +139,7 @@ where
         base_url: wallet_opts.esplora_opts.server.clone(),
         concurrency: Some(wallet_opts.esplora_opts.conc),
         stop_gap: wallet_opts.esplora_opts.stop_gap,
+        proxy: wallet_opts.proxy_opts.proxy.clone(),
     });
 
     #[cfg(feature = "compact_filters")]
