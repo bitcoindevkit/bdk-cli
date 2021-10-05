@@ -1234,24 +1234,11 @@ mod test {
                     verbose: false,
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
-                    #[cfg(feature = "electrum")]
                     electrum_opts: ElectrumOpts {
                         timeout: Some(10),
                         server: "ssl://electrum.blockstream.info:50002".to_string(),
                         stop_gap: 20
                     },
-                    #[cfg(feature = "esplora")]
-                    esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/testnet/api/".to_string(),
-                        concurrency: 4,
-                    },
-                    #[cfg(feature = "compact_filters")]
-                    compactfilter_opts: CompactFilterOpts{
-                        address: vec!["127.0.0.1:18444".to_string()],
-                        conn_count: 4,
-                        skip_blocks: 0,
-                    },
-                    #[cfg(any(feature="compact_filters", feature="electrum"))]
                     proxy_opts: ProxyOpts{
                         proxy: Some("127.0.0.1:9150".to_string()),
                         proxy_auth: None,
