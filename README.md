@@ -21,14 +21,14 @@ bdk-cli help # to verify it worked
 If no blockchain client feature is enabled online wallet commands `sync` and `broadcast` will be 
 disabled. To enable these commands a blockchain client features such as `electrum` or another 
 blockchain backend feature must be enabled. Below is an example of how run the `bdk-cli` bin with 
-the `esplora` blockchain client feature.
+the `esplora-ureq` blockchain client feature.
 
 ```shell
-RUST_LOG=debug cargo run --features esplora -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
+RUST_LOG=debug cargo run --features esplora-ureq -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
 ```
 
 At most one blockchain feature can be enabled, available blockchain client features are:
-`electrum`, `esplora`, and `compact_filters`.
+`electrum`, `esplora-ureq` (blocking), `esplora-reqwest` (async), and `compact_filters`.
 
 ### From crates.io
 You can the install the binaries for the latest tag of `bdk-cli` with online wallet features 
