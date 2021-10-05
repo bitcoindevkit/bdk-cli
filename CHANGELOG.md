@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add RPC backend support, after bdk v0.12.0 release
 - Update default feature to not include electrum
 - Upgrade to `bdk` v0.12.x
 - Add top level command "Compile" which compiles a miniscript policy to an output descriptor
