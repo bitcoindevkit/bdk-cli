@@ -183,14 +183,14 @@ use bdk::{FeeRate, KeychainKind, Wallet};
 ///               },
 ///               #[cfg(feature = "esplora-ureq")]
 ///               esplora_opts: EsploraOpts {
-///                   server: "https://blockstream.info/api/".to_string(),
+///                   server: "https://blockstream.info/testnet/api/".to_string(),
 ///                   read_timeout: 5,
 ///                   write_timeout: 5,
 ///                   stop_gap: 10
 ///               },
 ///               #[cfg(feature = "esplora-reqwest")]
 ///               esplora_opts: EsploraOpts {
-///                   server: "https://blockstream.info/api/".to_string(),
+///                   server: "https://blockstream.info/testnet/api/".to_string(),
 ///                   conc: 4,
 ///                   stop_gap: 10
 ///               },
@@ -336,14 +336,14 @@ pub enum WalletSubCommand {
 ///               },
 ///               #[cfg(feature = "esplora-ureq")]
 ///               esplora_opts: EsploraOpts {
-///                   server: "https://blockstream.info/api/".to_string(),
+///                   server: "https://blockstream.info/testnet/api/".to_string(),
 ///                   read_timeout: 5,
 ///                   write_timeout: 5,
 ///                   stop_gap: 10
 ///               },
 ///               #[cfg(feature = "esplora-reqwest")]
 ///               esplora_opts: EsploraOpts {
-///                   server: "https://blockstream.info/api/".to_string(),
+///                   server: "https://blockstream.info/testnet/api/".to_string(),
 ///                   conc: 4,
 ///                   stop_gap: 10
 ///               },
@@ -488,7 +488,7 @@ pub struct EsploraOpts {
         name = "ESPLORA_URL",
         short = "s",
         long = "server",
-        default_value = "https://blockstream.info/api/"
+        default_value = "https://blockstream.info/testnet/api/"
     )]
     pub server: String,
 
@@ -518,7 +518,7 @@ pub struct EsploraOpts {
         name = "ESPLORA_URL",
         short = "s",
         long = "server",
-        default_value = "https://blockstream.info/api/"
+        default_value = "https://blockstream.info/testnet/api/"
     )]
     pub server: String,
 
@@ -1182,14 +1182,14 @@ mod test {
                     },
                     #[cfg(feature = "esplora-ureq")]
                     esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/api/".to_string(),
+                        server: "https://blockstream.info/testnet/api/".to_string(),
                         read_timeout: 5,
                         write_timeout: 5,
                         stop_gap: 10,
                     },
                     #[cfg(feature = "esplora-reqwest")]
                     esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/api/".to_string(),
+                        server: "https://blockstream.info/testnet/api/".to_string(),
                         conc: 4,
                         stop_gap: 10,
                     },
@@ -1242,7 +1242,7 @@ mod test {
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/api/".to_string(),
+                        server: "https://blockstream.info/testnet/api/".to_string(),
                         concurrency: 4,
                     },
                     #[cfg(feature = "compact_filters")]
@@ -1287,25 +1287,12 @@ mod test {
                     verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
-                    #[cfg(feature = "electrum")]
-                    electrum_opts: ElectrumOpts {
-                        timeout: None,
-                        server: "ssl://electrum.blockstream.info:60002".to_string(),
-                    },
-                    #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/api/".to_string(),
                         read_timeout: 10,
                         write_timeout: 10,
                         stop_gap: 20
                     },
-                    #[cfg(feature = "compact_filters")]
-                    compactfilter_opts: CompactFilterOpts{
-                        address: vec!["127.0.0.1:18444".to_string()],
-                        skip_blocks: 0,
-                        conn_count: 4,
-                    },
-                    #[cfg(any(feature="compact_filters", feature="electrum", feature="esplora"))]
                     proxy_opts: ProxyOpts{
                         proxy: None,
                         proxy_auth: None,
@@ -1340,24 +1327,11 @@ mod test {
                     verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
-                    #[cfg(feature = "electrum")]
-                    electrum_opts: ElectrumOpts {
-                        timeout: None,
-                        server: "ssl://electrum.blockstream.info:60002".to_string(),
-                    },
-                    #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/api/".to_string(),
                         conc: 10,
                         stop_gap: 20
                     },
-                    #[cfg(feature = "compact_filters")]
-                    compactfilter_opts: CompactFilterOpts{
-                        address: vec!["127.0.0.1:18444".to_string()],
-                        skip_blocks: 0,
-                        conn_count: 4,
-                    },
-                    #[cfg(any(feature="compact_filters", feature="electrum", feature="esplora"))]
                     proxy_opts: ProxyOpts{
                         proxy: None,
                         proxy_auth: None,
@@ -1394,23 +1368,11 @@ mod test {
                     verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
-                    #[cfg(feature = "electrum")]
-                    electrum_opts: ElectrumOpts {
-                        timeout: None,
-                        server: "ssl://electrum.blockstream.info:60002".to_string(),
-                    },
-                    #[cfg(feature = "esplora")]
-                    esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/api/".to_string(),
-                        concurrency: 4,
-                    },
-                    #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
                         address: vec!["127.0.0.1:18444".to_string(), "127.2.3.1:19695".to_string()],
                         conn_count: 4,
                         skip_blocks: 5,
                     },
-                    #[cfg(any(feature="compact_filters", feature="electrum"))]
                     proxy_opts: ProxyOpts{
                         proxy: Some("127.0.0.1:9005".to_string()),
                         proxy_auth: Some(("random_user".to_string(), "random_passwd".to_string())),
@@ -1449,14 +1411,14 @@ mod test {
                     },
                     #[cfg(feature = "esplora-ureq")]
                     esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/api/".to_string(),
+                        server: "https://blockstream.info/testnet/api/".to_string(),
                         read_timeout: 5,
                         write_timeout: 5,
                         stop_gap: 10,
                     },
                     #[cfg(feature = "esplora-reqwest")]
                     esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/api/".to_string(),
+                        server: "https://blockstream.info/testnet/api/".to_string(),
                         conc: 4,
                         stop_gap: 10,
                     },
@@ -1524,14 +1486,14 @@ mod test {
                     },
                     #[cfg(feature = "esplora-ureq")]
                     esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/api/".to_string(),
+                        server: "https://blockstream.info/testnet/api/".to_string(),
                         read_timeout: 5,
                         write_timeout: 5,
                         stop_gap: 10,
                     },
                     #[cfg(feature = "esplora-reqwest")]
                     esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/api/".to_string(),
+                        server: "https://blockstream.info/testnet/api/".to_string(),
                         conc: 4,
                         stop_gap: 10,
                     },
@@ -1591,14 +1553,14 @@ mod test {
                     },
                     #[cfg(feature = "esplora-ureq")]
                     esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/api/".to_string(),
+                        server: "https://blockstream.info/testnet/api/".to_string(),
                         read_timeout: 5,
                         write_timeout: 5,
                         stop_gap: 10,
                     },
                     #[cfg(feature = "esplora-reqwest")]
                     esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/api/".to_string(),
+                        server: "https://blockstream.info/testnet/api/".to_string(),
                         conc: 4,
                         stop_gap: 10,
                     },
