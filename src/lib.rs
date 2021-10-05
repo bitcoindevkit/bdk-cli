@@ -1036,10 +1036,10 @@ pub enum KeySubCommand {
     Derive {
         /// Extended private key to derive from
         #[structopt(name = "XPRV", short = "x", long = "xprv")]
-        xprv: String,
+        xprv: ExtendedPrivKey,
         /// Path to use to derive extended public key from extended private key
         #[structopt(name = "PATH", short = "p", long = "path")]
-        path: String,
+        path: DerivationPath,
     },
 }
 
@@ -1084,14 +1084,12 @@ pub fn handle_key_subcommand(
             Ok(json!({ "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }))
         }
         KeySubCommand::Derive { xprv, path } => {
-            let xprv = ExtendedPrivKey::from_str(xprv.as_str())?;
             if xprv.network != network {
                 return Err(Error::Key(InvalidNetwork));
             }
-            let deriv_path: DerivationPath = DerivationPath::from_str(path.as_str())?;
-            let derived_xprv = &xprv.derive_priv(&secp, &deriv_path)?;
+            let derived_xprv = &xprv.derive_priv(&secp, &path)?;
 
-            let origin: KeySource = (xprv.fingerprint(&secp), deriv_path);
+            let origin: KeySource = (xprv.fingerprint(&secp), path);
 
             let derived_xprv_desc_key: DescriptorKey<Segwitv0> =
                 derived_xprv.into_descriptor_key(Some(origin), DerivationPath::default())?;
@@ -1152,6 +1150,7 @@ mod test {
     use crate::ProxyOpts;
     use crate::{handle_key_subcommand, CliSubCommand, KeySubCommand, WalletSubCommand};
 
+    use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
     use bdk::bitcoin::{Address, Network, OutPoint};
     use bdk::miniscript::bitcoin::network::constants::Network::Testnet;
     use std::str::FromStr;
@@ -1626,9 +1625,8 @@ mod test {
     fn test_key_derive() {
         let network = Testnet;
         let key_generate_cmd = KeySubCommand::Derive {
-            xprv: "tprv8ZgxMBicQKsPfQjJy8ge2cvBfDjLxJSkvNLVQiw7BQ5gTjKadG2rrcQB5zjcdaaUTz5EDNJaS77q4DzjqjogQBfMsaXFFNP3UqoBnwt2kyT"
-                .to_string(),
-            path: "m/84'/1'/0'/0".to_string(),
+            xprv: ExtendedPrivKey::from_str("tprv8ZgxMBicQKsPfQjJy8ge2cvBfDjLxJSkvNLVQiw7BQ5gTjKadG2rrcQB5zjcdaaUTz5EDNJaS77q4DzjqjogQBfMsaXFFNP3UqoBnwt2kyT").unwrap(),
+            path: DerivationPath::from_str("m/84'/1'/0'/0").unwrap(),
         };
 
         let result = handle_key_subcommand(network, key_generate_cmd).unwrap();
