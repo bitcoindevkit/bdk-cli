@@ -1087,6 +1087,7 @@ mod test {
     use crate::ProxyOpts;
     use crate::{handle_key_subcommand, CliSubCommand, KeySubCommand, WalletSubCommand};
 
+    use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
     use bdk::bitcoin::{Address, Network, OutPoint};
     use bdk::miniscript::bitcoin::network::constants::Network::Testnet;
     use std::str::FromStr;
@@ -1518,9 +1519,8 @@ mod test {
     fn test_key_derive() {
         let network = Testnet;
         let key_generate_cmd = KeySubCommand::Derive {
-            xprv: "tprv8ZgxMBicQKsPfQjJy8ge2cvBfDjLxJSkvNLVQiw7BQ5gTjKadG2rrcQB5zjcdaaUTz5EDNJaS77q4DzjqjogQBfMsaXFFNP3UqoBnwt2kyT"
-                .to_string(),
-            path: "m/84'/1'/0'/0".to_string(),
+            xprv: ExtendedPrivKey::from_str("tprv8ZgxMBicQKsPfQjJy8ge2cvBfDjLxJSkvNLVQiw7BQ5gTjKadG2rrcQB5zjcdaaUTz5EDNJaS77q4DzjqjogQBfMsaXFFNP3UqoBnwt2kyT").unwrap(),
+            path: DerivationPath::from_str("m/84'/1'/0'/0").unwrap(),
         };
 
         let result = handle_key_subcommand(network, key_generate_cmd).unwrap();
