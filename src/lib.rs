@@ -639,6 +639,9 @@ pub enum OfflineWalletSubCommand {
         /// TXID of the transaction to update
         #[structopt(name = "TXID", short = "txid", long = "txid")]
         txid: String,
+        #[structopt(name = "CHANGE_VOUT", long = "vout")]
+        /// Change output index to reduce it's amount in order to bump fee
+        change_vout: u32,
         /// Allows the wallet to reduce the amount of the only output in order to increase fees. This is generally the expected behavior for transactions originally created with `send_all`
         #[structopt(short = "all", long = "send_all")]
         send_all: bool,
@@ -847,6 +850,7 @@ where
         }
         BumpFee {
             txid,
+            change_vout,
             send_all,
             offline_signer,
             utxos,
@@ -855,12 +859,17 @@ where
         } => {
             let txid = Txid::from_str(txid.as_str()).map_err(|s| Error::Generic(s.to_string()))?;
 
+            let outpoint = OutPoint::new(txid, change_vout);
+            let script_pubkey = match wallet.get_utxo(outpoint) {
+                Ok(Some(utxo)) => utxo.txout.script_pubkey,
+                _ => return Err(Error::UnknownUtxo),
+            };
+
             let mut tx_builder = wallet.build_fee_bump(txid)?;
             tx_builder.fee_rate(FeeRate::from_sat_per_vb(fee_rate));
 
             if send_all {
-                // TODO: Find a way to get the recipient scriptpubkey to allow shrinking
-                //tx_builder.allow_shrinking()
+                tx_builder.allow_shrinking(script_pubkey)?;
             }
 
             if offline_signer {
