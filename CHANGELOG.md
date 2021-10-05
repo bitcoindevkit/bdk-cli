@@ -7,11 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Update default feature to not include electrum
-- Upgrade to `bdk` v0.7.x
+- Upgrade to `bdk` v0.12.x
 - Add top level command "Compile" which compiles a miniscript policy to an output descriptor
 - Add `CompactFilterOpts` to `WalletOpts` to enable compact-filter blockchain configuration
 - Add `verbose` option to `WalletOpts` to display PSBTs and transaction details also in JSON format
 - Require at most one blockchain client feature be enabled at a time
+- Change default esplora server URL to https://blockstream.info/testnet/api/ to match default testnet network
 
 ## [0.2.0]
 
