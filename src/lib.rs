@@ -712,9 +712,9 @@ pub enum OfflineWalletSubCommand {
         /// TXID of the transaction to update
         #[structopt(name = "TXID", short = "txid", long = "txid")]
         txid: String,
-        /// Allows the wallet to reduce the amount of the only output in order to increase fees. This is generally the expected behavior for transactions originally created with `send_all`
-        #[structopt(short = "all", long = "send_all")]
-        send_all: bool,
+        /// Allows the wallet to reduce the amount to the specified address in order to increase fees.
+        #[structopt(name = "SHRINK_ADDRESS", short = "s", long = "shrink")]
+        shrink_address: Option<Address>,
         /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
         #[structopt(long = "offline_signer")]
         offline_signer: bool,
@@ -929,7 +929,7 @@ where
         }
         BumpFee {
             txid,
-            send_all,
+            shrink_address,
             offline_signer,
             utxos,
             unspendable,
@@ -940,9 +940,9 @@ where
             let mut tx_builder = wallet.build_fee_bump(txid)?;
             tx_builder.fee_rate(FeeRate::from_sat_per_vb(fee_rate));
 
-            if send_all {
-                // TODO: Find a way to get the recipient scriptpubkey to allow shrinking
-                //tx_builder.allow_shrinking()
+            if let Some(address) = shrink_address {
+                let script_pubkey = address.script_pubkey();
+                tx_builder.allow_shrinking(script_pubkey)?;
             }
 
             if offline_signer {
@@ -1230,7 +1230,7 @@ mod test {
     use crate::ElectrumOpts;
     #[cfg(feature = "esplora")]
     use crate::EsploraOpts;
-    use crate::OfflineWalletSubCommand::{CreateTx, GetNewAddress};
+    use crate::OfflineWalletSubCommand::{BumpFee, CreateTx, GetNewAddress};
     #[cfg(any(
         feature = "electrum",
         feature = "esplora",
@@ -1686,6 +1686,71 @@ mod test {
                     fee_rate: None,
                     external_policy: None,
                     internal_policy: None,
+                }),
+            },
+        };
+
+        assert_eq!(expected_cli_opts, cli_opts);
+    }
+
+    #[test]
+    fn test_parse_wallet_bump_fee() {
+        let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
+                            "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
+                            "--change_descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
+                            "bump_fee", "--fee_rate", "6.1",
+                            "--txid","35aab0d0213f8996f9e236a28630319b93109754819e8abf48a0835708d33506",
+                            "--shrink","tb1ql7w62elx9ucw4pj5lgw4l028hmuw80sndtntxt"];
+
+        let cli_opts = CliOpts::from_iter(&cli_args);
+
+        let expected_cli_opts = CliOpts {
+            network: Network::Testnet,
+            subcommand: CliSubCommand::Wallet {
+                wallet_opts: WalletOpts {
+                    wallet: "main".to_string(),
+                    verbose: false,
+                    descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
+                    change_descriptor: Some("wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
+                    #[cfg(feature = "electrum")]
+                    electrum_opts: ElectrumOpts {
+                        timeout: None,
+                        server: "ssl://electrum.blockstream.info:60002".to_string(),
+                        stop_gap: 10,
+                    },
+                    #[cfg(feature = "esplora-ureq")]
+                    esplora_opts: EsploraOpts {
+                        server: "https://blockstream.info/testnet/api/".to_string(),
+                        read_timeout: 5,
+                        write_timeout: 5,
+                        stop_gap: 10,
+                    },
+                    #[cfg(feature = "esplora-reqwest")]
+                    esplora_opts: EsploraOpts {
+                        server: "https://blockstream.info/testnet/api/".to_string(),
+                        conc: 4,
+                        stop_gap: 10,
+                    },
+                    #[cfg(feature = "compact_filters")]
+                    compactfilter_opts: CompactFilterOpts{
+                        address: vec!["127.0.0.1:18444".to_string()],
+                        conn_count: 4,
+                        skip_blocks: 0,
+                    },
+                    #[cfg(any(feature="compact_filters", feature="electrum", feature="esplora"))]
+                    proxy_opts: ProxyOpts{
+                        proxy: None,
+                        proxy_auth: None,
+                        retries: 5,
+                    }
+                },
+                subcommand: WalletSubCommand::OfflineWalletSubCommand(BumpFee {
+                    txid: "35aab0d0213f8996f9e236a28630319b93109754819e8abf48a0835708d33506".to_string(),
+                    shrink_address: Some(Address::from_str("tb1ql7w62elx9ucw4pj5lgw4l028hmuw80sndtntxt").unwrap()),
+                    offline_signer: false,
+                    utxos: None,
+                    unspendable: None,
+                    fee_rate: 6.1
                 }),
             },
         };

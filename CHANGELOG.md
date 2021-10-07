@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Replace `wallet bump_fee` command `--send_all` with new `--shrink` option
+
 ## [0.3.0]
 
 - Add RPC backend support, after bdk v0.12.0 release
