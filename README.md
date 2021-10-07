@@ -28,7 +28,7 @@ RUST_LOG=debug cargo run --features esplora-ureq -- wallet --descriptor "wpkh(tp
 ```
 
 At most one blockchain feature can be enabled, available blockchain client features are:
-`electrum`, `esplora-ureq` (blocking), `esplora-reqwest` (async), and `compact_filters`.
+`electrum`, `esplora-ureq` (blocking), `esplora-reqwest` (async), `compact_filters` and `rpc`.
 
 ### From crates.io
 You can the install the binaries for the latest tag of `bdk-cli` with online wallet features 
@@ -50,6 +50,12 @@ To sync a wallet to the default electrum server:
 
 ```shell
 cargo run --features electrum -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
+```
+
+To sync a wallet to Bitcoin Core node (assuming a regtest node at 127.0.0.1:18443) using the core rpc:
+
+```shell
+cargo run --features rpc -- --network regtest wallet --node 127.0.0.1:18443 --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
 ```
 
 To sync a wallet to Bitcoin Core node (assuming a regtest node at 127.0.0.1:18444) serving compact filters:
