@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0]
+
 - Add RPC backend support, after bdk v0.12.0 release
 - Update default feature to not include electrum
 - Upgrade to `bdk` v0.12.x
