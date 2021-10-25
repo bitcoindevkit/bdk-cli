@@ -21,7 +21,7 @@ jobs:
         run: cargo tarpaulin --features default --run-types Tests,Doctests --out Xml
 
       - name: Publish to codecov.io
-        uses: codecov/codecov-action@v1.0.15
+        uses: codecov/codecov-action@v2.1.0
         with:
           fail_ci_if_error: true
           file: ./cobertura.xml
