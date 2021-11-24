@@ -1549,12 +1549,6 @@ mod test {
                         proxy_auth: None,
                         retries: 3,
                     },
-                    #[cfg(feature = "rpc")]
-                    rpc_opts: RpcOpts {
-                        address: "127.0.0.1:18443".to_string(),
-                        auth: ("user".to_string(), "password".to_string()),
-                        skip_blocks: None,
-                    }
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
             },
@@ -1664,29 +1658,6 @@ mod test {
                     verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
-                    #[cfg(feature = "electrum")]
-                    electrum_opts: ElectrumOpts {
-                        timeout: None,
-                        server: "ssl://electrum.blockstream.info:60002".to_string(),
-                    },
-                    #[cfg(feature = "esplora")]
-                    esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/api/".to_string(),
-                        concurrency: 5,
-                    },
-                    #[cfg(feature = "compact_filters")]
-                    compactfilter_opts: CompactFilterOpts{
-                        address: vec!["127.0.0.1:18444".to_string()],
-                        skip_blocks: 0,
-                        conn_count: 4,
-                    },
-                    #[cfg(any(feature="compact_filters", feature="electrum"))]
-                    proxy_opts: ProxyOpts{
-                        proxy: None,
-                        proxy_auth: None,
-                        retries: 5,
-                    },
-                    #[cfg(feature = "rpc")]
                     rpc_opts: RpcOpts {
                         address: "125.67.89.101:56678".to_string(),
                         auth: ("user".to_string(), "password".to_string()),
