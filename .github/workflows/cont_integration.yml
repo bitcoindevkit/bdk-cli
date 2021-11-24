@@ -23,6 +23,7 @@ jobs:
           - reserves,electrum
           - reserves,esplora-ureq
           - reserves,compact_filters
+          - rpc
     steps:
       - name: Checkout
         uses: actions/checkout@v2
