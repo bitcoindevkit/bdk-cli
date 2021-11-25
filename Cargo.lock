@@ -80,9 +80,9 @@ dependencies = [
 
 [[package]]
 name = "bdk"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6ec4da3dbaa41bb6d6cffe40b113ea8651566da7f96beebe9c0e87fc92b9094"
+checksum = "90456af1a5ceb48721ce092d97bd37d2d932c2877a352f52c934d8a564f62e49"
 dependencies = [
  "async-trait",
  "bdk-macros",
@@ -139,9 +139,9 @@ dependencies = [
 
 [[package]]
 name = "bdk-reserves"
-version = "0.14.3"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af45ab67ba3a9e2bf44c0567a89b60cdcf3bcc21ae52938d98c8d2eaa1078a08"
+checksum = "6be281faf67beffdfbdb2b049dba1f97d58c7f46ff9d9586811c813d7abf9485"
 dependencies = [
  "base64 0.11.0",
  "bdk",

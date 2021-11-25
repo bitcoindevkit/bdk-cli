@@ -209,7 +209,7 @@ use bdk_reserves::reserves::ProofOfReserves;
 ///             network: Network::Testnet,
 ///             subcommand: CliSubCommand::Wallet {
 ///                 wallet_opts: WalletOpts {
-///                     wallet: "main".to_string(),
+///                     wallet: None,
 ///                     verbose: false,
 ///                     descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
 ///                     change_descriptor: None,
@@ -219,18 +219,12 @@ use bdk_reserves::reserves::ProofOfReserves;
 ///                   server: "ssl://electrum.blockstream.info:60002".to_string(),
 ///                   stop_gap: 10
 ///               },
-///               #[cfg(feature = "esplora-ureq")]
+///               #[cfg(feature = "esplora")]
 ///               esplora_opts: EsploraOpts {
 ///                   server: "https://blockstream.info/testnet/api/".to_string(),
-///                   read_timeout: 5,
-///                   write_timeout: 5,
-///                   stop_gap: 10
-///               },
-///               #[cfg(feature = "esplora-reqwest")]
-///               esplora_opts: EsploraOpts {
-///                   server: "https://blockstream.info/testnet/api/".to_string(),
-///                   conc: 4,
-///                   stop_gap: 10
+///                   timeout: 5,
+///                   stop_gap: 10,
+///                   conc: 4
 ///               },
 ///                 #[cfg(feature = "rpc")]
 ///                 rpc_opts: RpcOpts{
@@ -395,7 +389,7 @@ pub enum WalletSubCommand {
 /// let wallet_opts = WalletOpts::from_iter(&cli_args);
 ///
 /// let expected_wallet_opts = WalletOpts {
-///               wallet: "main".to_string(),
+///               wallet: None,
 ///                     verbose: false,
 ///               descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
 ///               change_descriptor: None,
@@ -405,18 +399,12 @@ pub enum WalletSubCommand {
 ///                   server: "ssl://electrum.blockstream.info:60002".to_string(),
 ///                   stop_gap: 10
 ///               },
-///               #[cfg(feature = "esplora-ureq")]
+///               #[cfg(feature = "esplora")]
 ///               esplora_opts: EsploraOpts {
 ///                   server: "https://blockstream.info/testnet/api/".to_string(),
-///                   read_timeout: 5,
-///                   write_timeout: 5,
-///                   stop_gap: 10
-///               },
-///               #[cfg(feature = "esplora-reqwest")]
-///               esplora_opts: EsploraOpts {
-///                   server: "https://blockstream.info/testnet/api/".to_string(),
-///                   conc: 4,
-///                   stop_gap: 10
+///                   timeout: 5,
+///                   stop_gap: 10,
+///                   conc: 4
 ///               },
 ///                #[cfg(feature = "compact_filters")]
 ///                compactfilter_opts: CompactFilterOpts{
@@ -444,13 +432,8 @@ pub enum WalletSubCommand {
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct WalletOpts {
     /// Selects the wallet to use
-    #[structopt(
-        name = "WALLET_NAME",
-        short = "w",
-        long = "wallet",
-        default_value = "main"
-    )]
-    pub wallet: String,
+    #[structopt(name = "WALLET_NAME", short = "w", long = "wallet")]
+    pub wallet: Option<String>,
     /// Adds verbosity, returns PSBT in JSON format alongside serialized, displays expanded objects
     #[structopt(name = "VERBOSE", short = "v", long = "verbose")]
     pub verbose: bool,
@@ -588,7 +571,7 @@ pub struct ElectrumOpts {
 /// Esplora options
 ///
 /// Esplora blockchain client information used by [`OnlineWalletSubCommand`]s.
-#[cfg(feature = "esplora-ureq")]
+#[cfg(feature = "esplora")]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct EsploraOpts {
     /// Use the esplora server if given as parameter
@@ -600,13 +583,9 @@ pub struct EsploraOpts {
     )]
     pub server: String,
 
-    /// Socket read timeout
-    #[structopt(name = "READ_TIMEOUT", long = "read_timeout", default_value = "5")]
-    pub read_timeout: u64,
-
-    /// Socket write timeout
-    #[structopt(name = "WRITE_TIMEOUT", long = "write_timeout", default_value = "5")]
-    pub write_timeout: u64,
+    /// Socket timeout
+    #[structopt(name = "TIMEOUT", long = "timeout", default_value = "5")]
+    pub timeout: u64,
 
     /// Stop searching addresses for transactions after finding an unused gap of this length.
     #[structopt(
@@ -616,32 +595,10 @@ pub struct EsploraOpts {
         default_value = "10"
     )]
     pub stop_gap: usize,
-}
-
-#[cfg(feature = "esplora-reqwest")]
-#[derive(Debug, StructOpt, Clone, PartialEq)]
-pub struct EsploraOpts {
-    /// Use the esplora server if given as parameter
-    #[structopt(
-        name = "ESPLORA_URL",
-        short = "s",
-        long = "server",
-        default_value = "https://blockstream.info/testnet/api/"
-    )]
-    pub server: String,
 
     /// Number of parallel requests sent to the esplora service (default: 4)
     #[structopt(name = "CONCURRENCY", long = "conc", default_value = "4")]
     pub conc: u8,
-
-    /// Stop searching addresses for transactions after finding an unused gap of this length.
-    #[structopt(
-        name = "STOP_GAP",
-        long = "stop_gap",
-        short = "g",
-        default_value = "10"
-    )]
-    pub stop_gap: usize,
 }
 
 // This is a workaround for `structopt` issue #333, #391, #418; see https://github.com/TeXitoi/structopt/issues/333#issuecomment-712265332
@@ -1467,7 +1424,7 @@ mod test {
             network: Network::Bitcoin,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
-                    wallet: "main".to_string(),
+                    wallet: None,
                     verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
@@ -1477,18 +1434,12 @@ mod test {
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
                         stop_gap: 10,
                     },
-                    #[cfg(feature = "esplora-ureq")]
+                    #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/testnet/api/".to_string(),
-                        read_timeout: 5,
-                        write_timeout: 5,
+                        timeout: 5,
                         stop_gap: 10,
-                    },
-                    #[cfg(feature = "esplora-reqwest")]
-                    esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/testnet/api/".to_string(),
                         conc: 4,
-                        stop_gap: 10,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
@@ -1533,7 +1484,7 @@ mod test {
             network: Network::Testnet,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
-                    wallet: "main".to_string(),
+                    wallet: None,
                     verbose: false,
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
@@ -1562,8 +1513,7 @@ mod test {
                             "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
                             "--server", "https://blockstream.info/api/",
-                            "--read_timeout", "10",
-                            "--write_timeout", "10",
+                            "--timeout", "10",
                             "--stop_gap", "20",
                             "get_new_address"];
 
@@ -1573,15 +1523,15 @@ mod test {
             network: Network::Bitcoin,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
-                    wallet: "main".to_string(),
+                    wallet: None,
                     verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/api/".to_string(),
-                        read_timeout: 10,
-                        write_timeout: 10,
-                        stop_gap: 20
+                        timeout: 10,
+                        stop_gap: 20,
+                        conc: 4,
                     },
                     proxy_opts: ProxyOpts{
                         proxy: None,
@@ -1613,14 +1563,15 @@ mod test {
             network: Network::Bitcoin,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
-                    wallet: "main".to_string(),
+                    wallet: None,
                     verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/api/".to_string(),
                         conc: 10,
-                        stop_gap: 20
+                        stop_gap: 20,
+                        timeout: 5,
                     },
                     proxy_opts: ProxyOpts{
                         proxy: None,
@@ -1652,7 +1603,7 @@ mod test {
             network: Network::Bitcoin,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
-                    wallet: "main".to_string(),
+                    wallet: None,
                     verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
@@ -1688,7 +1639,7 @@ mod test {
             network: Network::Bitcoin,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
-                    wallet: "main".to_string(),
+                    wallet: None,
                     verbose: false,
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
@@ -1728,7 +1679,7 @@ mod test {
             network: Network::Testnet,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
-                    wallet: "main".to_string(),
+                    wallet: None,
                     verbose: false,
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: None,
@@ -1738,18 +1689,12 @@ mod test {
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
                         stop_gap: 10,
                     },
-                    #[cfg(feature = "esplora-ureq")]
+                    #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/testnet/api/".to_string(),
-                        read_timeout: 5,
-                        write_timeout: 5,
+                        timeout: 5,
                         stop_gap: 10,
-                    },
-                    #[cfg(feature = "esplora-reqwest")]
-                    esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/testnet/api/".to_string(),
                         conc: 4,
-                        stop_gap: 10,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
@@ -1809,7 +1754,7 @@ mod test {
             network: Network::Testnet,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
-                    wallet: "main".to_string(),
+                    wallet: None,
                     verbose: false,
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
@@ -1819,18 +1764,12 @@ mod test {
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
                         stop_gap: 10,
                     },
-                    #[cfg(feature = "esplora-ureq")]
+                    #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/testnet/api/".to_string(),
-                        read_timeout: 5,
-                        write_timeout: 5,
+                        timeout: 5,
                         stop_gap: 10,
-                    },
-                    #[cfg(feature = "esplora-reqwest")]
-                    esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/testnet/api/".to_string(),
                         conc: 4,
-                        stop_gap: 10,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
@@ -1883,7 +1822,7 @@ mod test {
             network: Network::Testnet,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
-                    wallet: "main".to_string(),
+                    wallet: None,
                     verbose: false,
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
@@ -1893,18 +1832,12 @@ mod test {
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
                         stop_gap: 10,
                     },
-                    #[cfg(feature = "esplora-ureq")]
+                    #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/testnet/api/".to_string(),
-                        read_timeout: 5,
-                        write_timeout: 5,
+                        timeout: 5,
                         stop_gap: 10,
-                    },
-                    #[cfg(feature = "esplora-reqwest")]
-                    esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/testnet/api/".to_string(),
                         conc: 4,
-                        stop_gap: 10,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
@@ -1958,7 +1891,7 @@ mod test {
             network: Network::Testnet,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
-                    wallet: "main".to_string(),
+                    wallet: None,
                     verbose: false,
                     descriptor: "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: None,
@@ -1968,18 +1901,12 @@ mod test {
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
                         stop_gap: 10,
                     },
-                    #[cfg(feature = "esplora-ureq")]
+                    #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/testnet/api/".to_string(),
-                        read_timeout: 5,
-                        write_timeout: 5,
+                        timeout: 5,
                         stop_gap: 10,
-                    },
-                    #[cfg(feature = "esplora-reqwest")]
-                    esplora_opts: EsploraOpts {
-                        server: "https://blockstream.info/testnet/api/".to_string(),
                         conc: 4,
-                        stop_gap: 10,
                     },
                     #[cfg(feature = "compact_filters")]
                     compactfilter_opts: CompactFilterOpts{
@@ -2140,7 +2067,7 @@ mod test {
             network: Network::Bitcoin,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
-                    wallet: "main".to_string(),
+                    wallet: None,
                     verbose: false,
                     descriptor: "wpkh(cVpPVruEDdmutPzisEsYvtST1usBR3ntr8pXSyt6D2YYqXRyPcFW)"
                         .to_string(),
@@ -2190,16 +2117,16 @@ mod test {
             network: Network::Bitcoin,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
-                    wallet: "main".to_string(),
+                    wallet: None,
                     verbose: false,
                     descriptor: "wpkh(cVpPVruEDdmutPzisEsYvtST1usBR3ntr8pXSyt6D2YYqXRyPcFW)"
                         .to_string(),
                     change_descriptor: None,
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/testnet/api/".to_string(),
-                        read_timeout: 5,
-                        write_timeout: 5,
+                        timeout: 5,
                         stop_gap: 10,
+                        conc: 4,
                     },
                     proxy_opts: ProxyOpts {
                         proxy: None,
@@ -2245,16 +2172,16 @@ mod test {
             network: Network::Bitcoin,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
-                    wallet: "main".to_string(),
+                    wallet: None,
                     verbose: false,
                     descriptor: "wpkh(cVpPVruEDdmutPzisEsYvtST1usBR3ntr8pXSyt6D2YYqXRyPcFW)"
                         .to_string(),
                     change_descriptor: None,
                     esplora_opts: EsploraOpts {
                         server: "https://blockstream.info/testnet/api/".to_string(),
-                        read_timeout: 5,
-                        write_timeout: 5,
+                        timeout: 5,
                         stop_gap: 10,
+                        conc: 4,
                     },
                     proxy_opts: ProxyOpts {
                         proxy: None,
