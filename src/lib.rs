@@ -145,7 +145,7 @@ use bdk::database::BatchDatabase;
 use bdk::descriptor::Segwitv0;
 #[cfg(feature = "compiler")]
 use bdk::descriptor::{Descriptor, Legacy, Miniscript};
-use bdk::keys::bip39::{Language, Mnemonic, MnemonicType};
+use bdk::keys::bip39::{Language, Mnemonic, WordCount};
 use bdk::keys::DescriptorKey::Secret;
 use bdk::keys::KeyError::{InvalidNetwork, Message};
 use bdk::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
@@ -1073,7 +1073,7 @@ where
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
 
-            let txid = maybe_await!(wallet.broadcast(tx))?;
+            let txid = maybe_await!(wallet.broadcast(&tx))?;
             Ok(json!({ "txid": txid }))
         }
     }
@@ -1145,8 +1145,8 @@ pub fn handle_key_subcommand(
             password,
         } => {
             let mnemonic_type = match word_count {
-                12 => MnemonicType::Words12,
-                _ => MnemonicType::Words24,
+                12 => WordCount::Words12,
+                _ => WordCount::Words24,
             };
             let mnemonic: GeneratedKey<_, miniscript::BareCtx> =
                 Mnemonic::generate((mnemonic_type, Language::English)).unwrap();
@@ -1155,12 +1155,17 @@ pub fn handle_key_subcommand(
             let xkey: ExtendedKey = (mnemonic.clone(), password).into_extended_key()?;
             let xprv = xkey.into_xprv(network).unwrap();
             let fingerprint = xprv.fingerprint(&secp);
+            let phrase = mnemonic
+                .word_iter()
+                .fold("".to_string(), |phrase, w| phrase + w + " ")
+                .trim()
+                .to_string();
             Ok(
-                json!({ "mnemonic": mnemonic.phrase(), "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }),
+                json!({ "mnemonic": phrase, "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }),
             )
         }
         KeySubCommand::Restore { mnemonic, password } => {
-            let mnemonic = Mnemonic::from_phrase(mnemonic.as_ref(), Language::English).unwrap();
+            let mnemonic = Mnemonic::parse(mnemonic).unwrap();
             //     .map_err(|e| {
             //     KeyError::from(e.downcast::<bdk::keys::bip39::ErrorKind>().unwrap())
             // })?;
