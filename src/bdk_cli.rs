@@ -100,14 +100,16 @@ pub enum ReplSubCommand {
     Exit,
 }
 
-fn prepare_home_dir() -> PathBuf {
+fn prepare_home_dir() -> Result<PathBuf, Error> {
     let mut dir = PathBuf::new();
-    dir.push(&dirs_next::home_dir().unwrap());
+    dir.push(
+        &dirs_next::home_dir().ok_or_else(|| Error::Generic("home dir not found".to_string()))?,
+    );
     dir.push(".bdk-bitcoin");
 
     if !dir.exists() {
         info!("Creating home directory {}", dir.as_path().display());
-        fs::create_dir(&dir).unwrap();
+        fs::create_dir(&dir).map_err(|e| Error::Generic(e.to_string()))?;
     }
 
     #[cfg(not(feature = "compact_filters"))]
@@ -115,16 +117,16 @@ fn prepare_home_dir() -> PathBuf {
 
     #[cfg(feature = "compact_filters")]
     dir.push("compact_filters");
-    dir
+    Ok(dir)
 }
 
-fn open_database(wallet_opts: &WalletOpts) -> Tree {
-    let mut database_path = prepare_home_dir();
+fn open_database(wallet_opts: &WalletOpts) -> Result<Tree, Error> {
+    let mut database_path = prepare_home_dir()?;
     database_path.push(wallet_opts.wallet.clone());
-    let database = sled::open(database_path).unwrap();
-    let tree = database.open_tree(&wallet_opts.wallet).unwrap();
+    let database = sled::open(database_path)?;
+    let tree = database.open_tree(&wallet_opts.wallet)?;
     debug!("database opened successfully");
-    tree
+    Ok(tree)
 }
 
 #[cfg(any(
@@ -183,7 +185,10 @@ where
         AnyBlockchainConfig::CompactFilters(CompactFiltersBlockchainConfig {
             peers,
             network,
-            storage_dir: prepare_home_dir().into_os_string().into_string().unwrap(),
+            storage_dir: prepare_home_dir()?
+                .into_os_string()
+                .into_string()
+                .map_err(|_| Error::Generic("Internal OS_String conversion error".to_string()))?,
             skip_blocks: Some(wallet_opts.compactfilter_opts.skip_blocks),
         })
     };
@@ -277,7 +282,7 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
             wallet_opts,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
-            let database = open_database(&wallet_opts);
+            let database = open_database(&wallet_opts)?;
             let wallet = new_online_wallet(network, &wallet_opts, database)?;
             let result = bdk_cli::handle_online_wallet_subcommand(&wallet, online_subcommand)?;
             serde_json::to_string_pretty(&result)?
@@ -286,7 +291,7 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
             wallet_opts,
             subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
-            let database = open_database(&wallet_opts);
+            let database = open_database(&wallet_opts)?;
             let wallet = new_offline_wallet(network, &wallet_opts, database)?;
             let result = bdk_cli::handle_offline_wallet_subcommand(
                 &wallet,
@@ -311,7 +316,7 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
         }
         #[cfg(feature = "repl")]
         CliSubCommand::Repl { wallet_opts } => {
-            let database = open_database(&wallet_opts);
+            let database = open_database(&wallet_opts)?;
 
             #[cfg(any(
                 feature = "electrum",
@@ -349,23 +354,16 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
                         let split_line: Vec<&str> = split_regex
                             .captures_iter(&line)
                             .map(|c| {
-                                c.get(1)
+                                Ok(c.get(1)
                                     .or_else(|| c.get(2))
                                     .or_else(|| c.get(3))
-                                    .unwrap()
-                                    .as_str()
+                                    .ok_or_else(|| Error::Generic("Invalid commands".to_string()))?
+                                    .as_str())
                             })
-                            .collect();
-                        let repl_subcommand: Result<ReplSubCommand, clap::Error> =
-                            ReplSubCommand::from_iter_safe(split_line);
+                            .collect::<Result<Vec<_>, Error>>()?;
+                        let repl_subcommand = ReplSubCommand::from_iter_safe(split_line)
+                            .map_err(|e| Error::Generic(e.to_string()))?;
                         debug!("repl_subcommand = {:?}", repl_subcommand);
-
-                        if let Err(err) = repl_subcommand {
-                            println!("{}", err.message);
-                            continue;
-                        }
-
-                        let repl_subcommand = repl_subcommand.unwrap();
 
                         let result = match repl_subcommand {
                             #[cfg(any(
@@ -390,10 +388,7 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
                             ReplSubCommand::Exit => break,
                         };
 
-                        println!(
-                            "{}",
-                            serde_json::to_string_pretty(&result.unwrap()).unwrap()
-                        );
+                        println!("{}", serde_json::to_string_pretty(&result?)?);
                     }
                     Err(ReadlineError::Interrupted) => continue,
                     Err(ReadlineError::Eof) => break,
@@ -404,7 +399,6 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
                 }
             }
 
-            // rl.save_history("history.txt").unwrap();
             "Exiting REPL".to_string()
         }
         #[cfg(all(feature = "reserves", feature = "electrum"))]
