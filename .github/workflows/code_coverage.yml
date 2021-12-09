@@ -3,25 +3,53 @@ on: [push]
 name: Code Coverage
 
 jobs:
-  tarpaulin-codecov:
-    name: Tarpaulin to codecov.io
+
+  codecov:
+    name: Code Coverage
     runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: '0'
+      RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
+      RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Set default toolchain
-        run: rustup default nightly
+      - name: Install rustup
+        run: curl https://sh.rustup.rs -sSf | sh -s -- -y
       - name: Set profile
         run: rustup set profile minimal
+      - name: Update toolchain
+        run: rustup update
+      - name: Override the default toolchain
+        run: rustup override set nightly
 
-      - name: Install tarpaulin
-        run: cargo install cargo-tarpaulin
-      - name: Tarpaulin
-        run: cargo tarpaulin --features default --run-types Tests,Doctests --out Xml
 
-      - name: Publish to codecov.io
-        uses: codecov/codecov-action@v2.1.0
+      - name: Test Compiler
+        run: cargo test --features compiler
+
+      - name: Test Electrum
+        run: cargo test --features electrum
+
+      - name: Test Esplora-Ureq
+        run: cargo test --features esplora-ureq
+
+      - name: Test Esplora-reqwest
+        run: cargo test --features esplora-reqwest
+
+      - name: Test Compact Filters
+        run: cargo test --features compact_filters
+
+      - name: Test RPC
+        run: cargo test --features rpc
+
+      - id: coverage
+        name: Generate coverage
+        uses: actions-rs/grcov@v0.1.5
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v2
         with:
-          fail_ci_if_error: true
-          file: ./cobertura.xml
+          file: ${{ steps.coverage.outputs.report }}
+          directory: ./coverage/reports/
