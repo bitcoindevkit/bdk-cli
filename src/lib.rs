@@ -877,17 +877,10 @@ fn parse_recipient(s: &str) -> Result<(Script, u64), String> {
     if parts.len() != 2 {
         return Err("Invalid format".to_string());
     }
+    let addr = Address::from_str(parts[0]).map_err(|e| e.to_string())?;
+    let val = u64::from_str(parts[1]).map_err(|e| e.to_string())?;
 
-    let addr = Address::from_str(parts[0]);
-    if let Err(e) = addr {
-        return Err(format!("{:?}", e));
-    }
-    let val = u64::from_str(parts[1]);
-    if let Err(e) = val {
-        return Err(format!("{:?}", e));
-    }
-
-    Ok((addr.unwrap().script_pubkey(), val.unwrap()))
+    Ok((addr.script_pubkey(), val))
 }
 #[cfg(any(
     feature = "electrum",
@@ -908,7 +901,7 @@ fn parse_proxy_auth(s: &str) -> Result<(String, String), String> {
 }
 
 fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
-    OutPoint::from_str(s).map_err(|e| format!("{:?}", e))
+    OutPoint::from_str(s).map_err(|e| e.to_string())
 }
 
 /// Execute an offline wallet sub-command
@@ -1034,8 +1027,7 @@ where
             assume_height,
             trust_witness_utxo,
         } => {
-            let psbt = base64::decode(&psbt)
-                .map_err(|e| Error::Generic(format!("Base64 decode error: {:?}", e)))?;
+            let psbt = base64::decode(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
             let mut psbt: PartiallySignedTransaction = deserialize(&psbt)?;
             let signopt = SignOptions {
                 assume_height,
@@ -1052,8 +1044,8 @@ where
             }
         }
         ExtractPsbt { psbt } => {
-            let psbt = base64::decode(&psbt).unwrap();
-            let psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
+            let psbt = base64::decode(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
+            let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
             Ok(json!({"raw_tx": serialize_hex(&psbt.extract_tx()),}))
         }
         FinalizePsbt {
@@ -1061,8 +1053,8 @@ where
             assume_height,
             trust_witness_utxo,
         } => {
-            let psbt = base64::decode(&psbt).unwrap();
-            let mut psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
+            let psbt = base64::decode(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
+            let mut psbt: PartiallySignedTransaction = deserialize(&psbt)?;
 
             let signopt = SignOptions {
                 assume_height,
@@ -1082,13 +1074,15 @@ where
             let mut psbts = psbt
                 .iter()
                 .map(|s| {
-                    let psbt = base64::decode(&s).unwrap();
-                    let psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
-                    psbt
+                    let psbt = base64::decode(&s).map_err(|e| Error::Generic(e.to_string()))?;
+                    let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
+                    Ok(psbt)
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, Error>>()?;
 
-            let init_psbt = psbts.pop().unwrap();
+            let init_psbt = psbts
+                .pop()
+                .ok_or_else(|| Error::Generic("Invalid PSBT input".to_string()))?;
             let final_psbt = psbts
                 .into_iter()
                 .try_fold::<_, _, Result<PartiallySignedTransaction, Error>>(
@@ -1130,11 +1124,11 @@ where
         Broadcast { psbt, tx } => {
             let tx = match (psbt, tx) {
                 (Some(psbt), None) => {
-                    let psbt = base64::decode(&psbt).unwrap();
-                    let psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
+                    let psbt = base64::decode(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
+                    let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
                     psbt.extract_tx()
                 }
-                (None, Some(tx)) => deserialize(&Vec::<u8>::from_hex(&tx).unwrap()).unwrap(),
+                (None, Some(tx)) => deserialize(&Vec::<u8>::from_hex(&tx)?)?,
                 (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
@@ -1261,11 +1255,13 @@ pub fn handle_key_subcommand(
                 _ => WordCount::Words24,
             };
             let mnemonic: GeneratedKey<_, miniscript::BareCtx> =
-                Mnemonic::generate((mnemonic_type, Language::English)).unwrap();
-            //.map_err(|e| KeyError::from(e.unwrap()))?;
+                Mnemonic::generate((mnemonic_type, Language::English))
+                    .map_err(|_| Error::Generic("Mnemonic generation error".to_string()))?;
             let mnemonic = mnemonic.into_key();
             let xkey: ExtendedKey = (mnemonic.clone(), password).into_extended_key()?;
-            let xprv = xkey.into_xprv(network).unwrap();
+            let xprv = xkey.into_xprv(network).ok_or_else(|| {
+                Error::Generic("Privatekey info not found (should not happen)".to_string())
+            })?;
             let fingerprint = xprv.fingerprint(&secp);
             let phrase = mnemonic
                 .word_iter()
@@ -1277,12 +1273,12 @@ pub fn handle_key_subcommand(
             )
         }
         KeySubCommand::Restore { mnemonic, password } => {
-            let mnemonic = Mnemonic::parse(mnemonic).unwrap();
-            //     .map_err(|e| {
-            //     KeyError::from(e.downcast::<bdk::keys::bip39::ErrorKind>().unwrap())
-            // })?;
+            let mnemonic = Mnemonic::parse_in(Language::English, mnemonic)
+                .map_err(|e| Error::Generic(e.to_string()))?;
             let xkey: ExtendedKey = (mnemonic, password).into_extended_key()?;
-            let xprv = xkey.into_xprv(network).unwrap();
+            let xprv = xkey.into_xprv(network).ok_or_else(|| {
+                Error::Generic("Privatekey info not found (should not happen)".to_string())
+            })?;
             let fingerprint = xprv.fingerprint(&secp);
 
             Ok(json!({ "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }))
@@ -1299,7 +1295,9 @@ pub fn handle_key_subcommand(
                 derived_xprv.into_descriptor_key(Some(origin), DerivationPath::default())?;
 
             if let Secret(desc_seckey, _, _) = derived_xprv_desc_key {
-                let desc_pubkey = desc_seckey.as_public(&secp).unwrap();
+                let desc_pubkey = desc_seckey
+                    .as_public(&secp)
+                    .map_err(|e| Error::Generic(e.to_string()))?;
                 Ok(json!({"xpub": desc_pubkey.to_string(), "xprv": desc_seckey.to_string()}))
             } else {
                 Err(Error::Key(Message("Invalid key variant".to_string())))
