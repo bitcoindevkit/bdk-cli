@@ -191,9 +191,15 @@ where
 
     #[cfg(feature = "rpc")]
     let config: AnyBlockchainConfig = {
-        let auth = Auth::UserPass {
-            username: wallet_opts.rpc_opts.auth.0.clone(),
-            password: wallet_opts.rpc_opts.auth.1.clone(),
+        let auth = if let Some(cookie) = &wallet_opts.rpc_opts.cookie {
+            Auth::Cookie {
+                file: cookie.into(),
+            }
+        } else {
+            Auth::UserPass {
+                username: wallet_opts.rpc_opts.basic_auth.0.clone(),
+                password: wallet_opts.rpc_opts.basic_auth.1.clone(),
+            }
         };
 
         // Use deterministic wallet name derived from descriptor
