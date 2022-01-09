@@ -28,6 +28,7 @@ env_logger = { version = "0.7", optional = true }
 clap = { version = "2.33", optional = true }
 regex = { version = "1", optional = true }
 bdk-reserves = { version = "0.17", optional = true}
+electrsd = { version= "0.12", features = ["trigger", "bitcoind_22_0"], optional = true}
 
 [features]
 default = ["cli", "repl"]
@@ -42,6 +43,11 @@ compact_filters = ["bdk/compact_filters"]
 rpc = ["bdk/rpc"]
 reserves = ["bdk-reserves"]
 verify = ["bdk/verify"]
+regtest-node = []
+regtest-bitcoin = ["regtest-node" , "rpc", "electrsd"]
+regtest-electrum = ["regtest-node", "electrum", "electrsd/electrs_0_8_10"]
+regtest-esplora-ureq = ["regtest-node", "esplora-ureq", "electrsd/esplora_a33e97e1"]
+regtest-esplora-reqwest = ["regtest-node", "esplora-reqwest", "electrsd/esplora_a33e97e1"]
 
 [[bin]]
 name = "bdk-cli"
