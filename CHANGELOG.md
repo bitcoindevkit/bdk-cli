@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replace `wallet bump_fee` command `--send_all` with new `--shrink` option
 - Add 'reserve' feature to enable proof of reserve
+- If no wallet name is provided, derive one from the descriptor instead of using "main"
 
 ## [0.3.0]
 

@@ -22,12 +22,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+use bitcoin::secp256k1::Secp256k1;
+use bitcoin::Network;
 use std::fs;
 use std::path::PathBuf;
 
-#[cfg(feature = "rpc")]
-use bitcoin::secp256k1::Secp256k1;
-use bitcoin::Network;
 use clap::AppSettings;
 use log::{debug, error, info, warn};
 
@@ -54,11 +53,12 @@ use bdk::blockchain::esplora::EsploraBlockchainConfig;
 use bdk::blockchain::{AnyBlockchain, AnyBlockchainConfig, ConfigurableBlockchain};
 
 #[cfg(feature = "rpc")]
-use bdk::blockchain::rpc::{wallet_name_from_descriptor, Auth, RpcConfig};
+use bdk::blockchain::rpc::{Auth, RpcConfig};
 
 use bdk::database::BatchDatabase;
 use bdk::sled;
 use bdk::sled::Tree;
+use bdk::wallet::wallet_name_from_descriptor;
 use bdk::Wallet;
 use bdk::{bitcoin, Error};
 use bdk_cli::WalletSubCommand;
@@ -122,9 +122,13 @@ fn prepare_home_dir() -> Result<PathBuf, Error> {
 
 fn open_database(wallet_opts: &WalletOpts) -> Result<Tree, Error> {
     let mut database_path = prepare_home_dir()?;
-    database_path.push(wallet_opts.wallet.clone());
+    let wallet_name = wallet_opts
+        .wallet
+        .as_deref()
+        .expect("We should always have a wallet name at this point");
+    database_path.push(wallet_name);
     let database = sled::open(database_path)?;
-    let tree = database.open_tree(&wallet_opts.wallet)?;
+    let tree = database.open_tree(&wallet_name)?;
     debug!("database opened successfully");
     Ok(tree)
 }
@@ -152,18 +156,10 @@ where
         stop_gap: wallet_opts.electrum_opts.stop_gap,
     });
 
-    #[cfg(feature = "esplora-ureq")]
+    #[cfg(feature = "esplora")]
     let config = AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
         base_url: wallet_opts.esplora_opts.server.clone(),
-        timeout_read: wallet_opts.esplora_opts.read_timeout,
-        timeout_write: wallet_opts.esplora_opts.write_timeout,
-        stop_gap: wallet_opts.esplora_opts.stop_gap,
-        proxy: wallet_opts.proxy_opts.proxy.clone(),
-    });
-
-    #[cfg(feature = "esplora-reqwest")]
-    let config = AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
-        base_url: wallet_opts.esplora_opts.server.clone(),
+        timeout: Some(wallet_opts.esplora_opts.timeout),
         concurrency: Some(wallet_opts.esplora_opts.conc),
         stop_gap: wallet_opts.esplora_opts.stop_gap,
         proxy: wallet_opts.proxy_opts.proxy.clone(),
@@ -263,11 +259,31 @@ fn main() {
         Ok(result) => println!("{}", result),
         Err(e) => {
             match e {
-                Error::ChecksumMismatch => error!("Descriptor checksum mismatch. Are you using a different descriptor for an already defined wallet name? (if you are not specifying the wallet name it defaults to 'main')"),
+                Error::ChecksumMismatch => error!("Descriptor checksum mismatch. Are you using a different descriptor for an already defined wallet name? (if you are not specifying the wallet name it is automatically named based on the descriptor)"),
                 e => error!("{}", e.to_string()),
             }
         },
     }
+}
+
+fn maybe_descriptor_wallet_name(
+    wallet_opts: WalletOpts,
+    network: Network,
+) -> Result<WalletOpts, Error> {
+    if wallet_opts.wallet.is_some() {
+        return Ok(wallet_opts);
+    }
+    // Use deterministic wallet name derived from descriptor
+    let wallet_name = wallet_name_from_descriptor(
+        &wallet_opts.descriptor[..],
+        wallet_opts.change_descriptor.as_deref(),
+        network,
+        &Secp256k1::new(),
+    )?;
+    let mut wallet_opts = wallet_opts;
+    wallet_opts.wallet = Some(wallet_name);
+
+    Ok(wallet_opts)
 }
 
 fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> {
@@ -282,6 +298,7 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
             wallet_opts,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
+            let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, network)?;
             let database = open_database(&wallet_opts)?;
             let wallet = new_online_wallet(network, &wallet_opts, database)?;
             let result = bdk_cli::handle_online_wallet_subcommand(&wallet, online_subcommand)?;
@@ -291,6 +308,7 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
             wallet_opts,
             subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
+            let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, network)?;
             let database = open_database(&wallet_opts)?;
             let wallet = new_offline_wallet(network, &wallet_opts, database)?;
             let result = bdk_cli::handle_offline_wallet_subcommand(
