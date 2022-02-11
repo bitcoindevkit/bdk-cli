@@ -416,18 +416,18 @@ let expected_wallet_opts = WalletOpts {
                    stop_gap: 10,
                    conc: 4
                },
-                #[cfg(feature = "compact_filters")]
-                compactfilter_opts: CompactFilterOpts{
+               #[cfg(feature = "compact_filters")]
+               compactfilter_opts: CompactFilterOpts{
                     address: vec!["127.0.0.1:18444".to_string()],
                     conn_count: 4,
                     skip_blocks: 0,
-                },
-                 #[cfg(feature = "rpc")]
-                 rpc_opts: RpcOpts{
+               },
+               #[cfg(feature = "rpc")]
+               rpc_opts: RpcOpts{
                     address: "127.0.0.1:18443".to_string(),
                     auth: ("user".to_string(), "password".to_string()),
                     skip_blocks: None,
-                },
+               },
                #[cfg(any(feature="compact_filters", feature="electrum", feature="esplora"))]
                     proxy_opts: ProxyOpts{
                         proxy: None,
