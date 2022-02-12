@@ -426,8 +426,9 @@ let expected_wallet_opts = WalletOpts {
                #[cfg(feature = "rpc")]
                rpc_opts: RpcOpts{
                     address: "127.0.0.1:18443".to_string(),
-                    auth: ("user".to_string(), "password".to_string()),
+                    basic_auth: ("user".to_string(), "password".to_string()),
                     skip_blocks: None,
+                    cookie: None,
                },
                #[cfg(any(feature="compact_filters", feature="electrum", feature="esplora"))]
                     proxy_opts: ProxyOpts{
