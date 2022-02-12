@@ -229,8 +229,9 @@ use bdk_reserves::reserves::ProofOfReserves;
 ///                 #[cfg(feature = "rpc")]
 ///                 rpc_opts: RpcOpts{
 ///                    address: "127.0.0.1:18443".to_string(),
-///                    auth: ("user".to_string(), "password".to_string()),
+///                    basic_auth: ("user".to_string(), "password".to_string()),
 ///                    skip_blocks: None,
+///                    cookie: None,
 ///                },
 ///                #[cfg(feature = "compact_filters")]
 ///                compactfilter_opts: CompactFilterOpts{
@@ -425,8 +426,9 @@ let expected_wallet_opts = WalletOpts {
                #[cfg(feature = "rpc")]
                rpc_opts: RpcOpts{
                     address: "127.0.0.1:18443".to_string(),
-                    auth: ("user".to_string(), "password".to_string()),
+                    basic_auth: ("user".to_string(), "password".to_string()),
                     skip_blocks: None,
+                    cookie: None,
                },
                #[cfg(any(feature="compact_filters", feature="electrum", feature="esplora"))]
                     proxy_opts: ProxyOpts{
@@ -542,15 +544,19 @@ pub struct RpcOpts {
     )]
     pub address: String,
 
-    /// Sets the rpc authentication username:password
+    /// Sets the rpc basic authentication
     #[structopt(
         name = "USER:PASSWD",
         short = "a",
-        long = "auth",
+        long = "basic-auth",
         parse(try_from_str = parse_proxy_auth),
         default_value = "user:password",
     )]
-    pub auth: (String, String),
+    pub basic_auth: (String, String),
+
+    /// Sets an optional cookie authentication
+    #[structopt(name = "COOKIE", long = "cookie")]
+    pub cookie: Option<String>,
 
     /// Optionally skip initial `skip_blocks` blocks
     #[structopt(name = "SKIP_BLOCKS", short = "s", long = "skip-blocks")]
@@ -1479,7 +1485,8 @@ mod test {
                     #[cfg(feature = "rpc")]
                     rpc_opts: RpcOpts {
                         address: "127.0.0.1:18443".to_string(),
-                        auth: ("user".to_string(), "password".to_string()),
+                        basic_auth: ("user".to_string(), "password".to_string()),
+                        cookie: None,
                         skip_blocks: None,
                     },
                 },
@@ -1616,7 +1623,8 @@ mod test {
                             "--descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
                             "--node", "125.67.89.101:56678",
-                            "--auth", "user:password",
+                            "--basic-auth", "user:password",
+                            "--cookie", "/home/user/.bitcoin/regtest/.cookie",
                             "--skip-blocks", "5",
                             "get_new_address"];
 
@@ -1632,7 +1640,8 @@ mod test {
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     rpc_opts: RpcOpts {
                         address: "125.67.89.101:56678".to_string(),
-                        auth: ("user".to_string(), "password".to_string()),
+                        basic_auth: ("user".to_string(), "password".to_string()),
+                        cookie: Some("/home/user/.bitcoin/regtest/.cookie".to_string()),
                         skip_blocks: Some(5),
                     },
                 },
@@ -1734,7 +1743,8 @@ mod test {
                     #[cfg(feature = "rpc")]
                     rpc_opts: RpcOpts {
                         address: "127.0.0.1:18443".to_string(),
-                        auth: ("user".to_string(), "password".to_string()),
+                        basic_auth: ("user".to_string(), "password".to_string()),
+                        cookie: None,
                         skip_blocks: None,
                     },
                 },
@@ -1809,7 +1819,8 @@ mod test {
                     #[cfg(feature = "rpc")]
                     rpc_opts: RpcOpts {
                         address: "127.0.0.1:18443".to_string(),
-                        auth: ("user".to_string(), "password".to_string()),
+                        basic_auth: ("user".to_string(), "password".to_string()),
+                        cookie: None,
                         skip_blocks: None,
                     },
                 },
@@ -1871,7 +1882,8 @@ mod test {
                     #[cfg(feature = "rpc")]
                     rpc_opts: RpcOpts {
                         address: "127.0.0.1:18443".to_string(),
-                        auth: ("user".to_string(), "password".to_string()),
+                        basic_auth: ("user".to_string(), "password".to_string()),
+                        cookie: None,
                         skip_blocks: None,
                     },
                     #[cfg(any(feature="compact_filters", feature="electrum", feature="esplora"))]
@@ -1946,7 +1958,8 @@ mod test {
                     #[cfg(feature = "rpc")]
                     rpc_opts: RpcOpts {
                         address: "127.0.0.1:18443".to_string(),
-                        auth: ("user".to_string(), "password".to_string()),
+                        basic_auth: ("user".to_string(), "password".to_string()),
+                        cookie: None,
                         skip_blocks: None,
                     },
                 },
