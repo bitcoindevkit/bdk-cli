@@ -339,10 +339,16 @@ pub enum CliSubCommand {
     },
 }
 
-/// Wallet sub-commands
-///
-/// Can use either an online or offline wallet. An [`OnlineWalletSubCommand`] requires a blockchain
-/// client and network connection and an [`OfflineWalletSubCommand`] does not.
+#[cfg_attr(not(doc), allow(missing_docs))]
+#[cfg_attr(
+    doc,
+    doc = r#"
+Wallet sub-commands
+
+Can use either an online or offline wallet. An [`OnlineWalletSubCommand`] requires a blockchain
+client and network connection and an [`OfflineWalletSubCommand`] does not.
+"#
+)]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub enum WalletSubCommand {
     #[cfg(any(
@@ -357,78 +363,83 @@ pub enum WalletSubCommand {
     OfflineWalletSubCommand(OfflineWalletSubCommand),
 }
 
-/// Wallet options
-///
-/// The wallet options required for all [`CliSubCommand::Wallet`] or [`CliSubCommand::Repl`]
-/// sub-commands. These options capture wallet descriptor and blockchain client information. The
-/// blockchain client details are only used for [`OnlineWalletSubCommand`]s.
-///
-/// # Example
-///
-/// ```
-/// # use bdk::bitcoin::Network;
-/// # use structopt::StructOpt;
-/// # use bdk_cli::WalletOpts;
-/// # #[cfg(feature = "electrum")]
-/// # use bdk_cli::ElectrumOpts;
-/// # #[cfg(feature = "esplora")]
-/// # use bdk_cli::EsploraOpts;
-/// # #[cfg(feature = "compact_filters")]
-/// # use bdk_cli::CompactFilterOpts;
-/// # #[cfg(feature = "rpc")]
-/// # use bdk_cli::RpcOpts;
-/// # #[cfg(any(feature = "compact_filters", feature = "electrum", feature="esplora"))]
-/// # use bdk_cli::ProxyOpts;
-///
-/// let cli_args = vec!["wallet",
-///                     "--descriptor", "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)"];
-///
-/// // to get WalletOpt from OS command line args use:
-/// // let wallet_opt = WalletOpt::from_args();
-///
-/// let wallet_opts = WalletOpts::from_iter(&cli_args);
-///
-/// let expected_wallet_opts = WalletOpts {
-///               wallet: None,
-///                     verbose: false,
-///               descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
-///               change_descriptor: None,
-///               #[cfg(feature = "electrum")]
-///               electrum_opts: ElectrumOpts {
-///                   timeout: None,
-///                   server: "ssl://electrum.blockstream.info:60002".to_string(),
-///                   stop_gap: 10
-///               },
-///               #[cfg(feature = "esplora")]
-///               esplora_opts: EsploraOpts {
-///                   server: "https://blockstream.info/testnet/api/".to_string(),
-///                   timeout: 5,
-///                   stop_gap: 10,
-///                   conc: 4
-///               },
-///                #[cfg(feature = "compact_filters")]
-///                compactfilter_opts: CompactFilterOpts{
-///                    address: vec!["127.0.0.1:18444".to_string()],
-///                    conn_count: 4,
-///                    skip_blocks: 0,
-///                },
-///                 #[cfg(feature = "rpc")]
-///                 rpc_opts: RpcOpts{
-///                    address: "127.0.0.1:18443".to_string(),
-///                    auth: ("user".to_string(), "password".to_string()),
-///                    skip_blocks: None,
-///                },
-///               #[cfg(any(feature="compact_filters", feature="electrum", feature="esplora"))]
-///                    proxy_opts: ProxyOpts{
-///                        proxy: None,
-///                        proxy_auth: None,
-///                        retries: 5,
-///               },
-/// };
-///
-/// assert_eq!(expected_wallet_opts, wallet_opts);
-/// ```
+#[cfg_attr(not(doc), allow(missing_docs))]
+#[cfg_attr(
+    doc,
+    doc = r#"
+Wallet options
 
+The wallet options required for all [`CliSubCommand::Wallet`] or [`CliSubCommand::Repl`]
+sub-commands. These options capture wallet descriptor and blockchain client information. The
+blockchain client details are only used for [`OnlineWalletSubCommand`]s.
+
+# Example
+
+```
+# use bdk::bitcoin::Network;
+# use structopt::StructOpt;
+# use bdk_cli::WalletOpts;
+# #[cfg(feature = "electrum")]
+# use bdk_cli::ElectrumOpts;
+# #[cfg(feature = "esplora")]
+# use bdk_cli::EsploraOpts;
+# #[cfg(feature = "compact_filters")]
+# use bdk_cli::CompactFilterOpts;
+# #[cfg(feature = "rpc")]
+# use bdk_cli::RpcOpts;
+# #[cfg(any(feature = "compact_filters", feature = "electrum", feature="esplora"))]
+# use bdk_cli::ProxyOpts;
+
+let cli_args = vec!["wallet",
+                     "--descriptor", "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)"];
+
+// to get WalletOpt from OS command line args use:
+// let wallet_opt = WalletOpt::from_args();
+
+let wallet_opts = WalletOpts::from_iter(&cli_args);
+
+let expected_wallet_opts = WalletOpts {
+               wallet: None,
+                    verbose: false,
+               descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
+               change_descriptor: None,
+               #[cfg(feature = "electrum")]
+               electrum_opts: ElectrumOpts {
+                   timeout: None,
+                   server: "ssl://electrum.blockstream.info:60002".to_string(),
+                   stop_gap: 10
+               },
+               #[cfg(feature = "esplora")]
+               esplora_opts: EsploraOpts {
+                   server: "https://blockstream.info/testnet/api/".to_string(),
+                   timeout: 5,
+                   stop_gap: 10,
+                   conc: 4
+               },
+               #[cfg(feature = "compact_filters")]
+               compactfilter_opts: CompactFilterOpts{
+                    address: vec!["127.0.0.1:18444".to_string()],
+                    conn_count: 4,
+                    skip_blocks: 0,
+               },
+               #[cfg(feature = "rpc")]
+               rpc_opts: RpcOpts{
+                    address: "127.0.0.1:18443".to_string(),
+                    auth: ("user".to_string(), "password".to_string()),
+                    skip_blocks: None,
+               },
+               #[cfg(any(feature="compact_filters", feature="electrum", feature="esplora"))]
+                    proxy_opts: ProxyOpts{
+                        proxy: None,
+                        proxy_auth: None,
+                        retries: 5,
+               },
+ };
+
+assert_eq!(expected_wallet_opts, wallet_opts);
+```
+"#
+)]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct WalletOpts {
     /// Selects the wallet to use
@@ -460,9 +471,15 @@ pub struct WalletOpts {
     pub proxy_opts: ProxyOpts,
 }
 
-/// Proxy Server options
-///
-/// Only activated for `compact_filters` or `electrum`
+#[cfg_attr(not(doc), allow(missing_docs))]
+#[cfg_attr(
+    doc,
+    doc = r#"
+Proxy Server options
+
+Only activated for `compact_filters` or `electrum`
+"#
+)]
 #[cfg(any(feature = "compact_filters", feature = "electrum", feature = "esplora"))]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct ProxyOpts {
@@ -568,9 +585,15 @@ pub struct ElectrumOpts {
     pub stop_gap: usize,
 }
 
-/// Esplora options
-///
-/// Esplora blockchain client information used by [`OnlineWalletSubCommand`]s.
+#[cfg_attr(not(doc), allow(missing_docs))]
+#[cfg_attr(
+    doc,
+    doc = r#"
+Esplora options
+
+Esplora blockchain client information used by [`OnlineWalletSubCommand`]s.
+"#
+)]
 #[cfg(feature = "esplora")]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct EsploraOpts {
