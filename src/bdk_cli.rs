@@ -91,7 +91,7 @@ enum ReplSubCommand {
 }
 
 /// prepare bdk_cli home and wallet directory
-fn prepare_home_wallet_dir(wallet_name: &String) -> Result<PathBuf, Error> {
+fn prepare_home_wallet_dir(wallet_name: &str) -> Result<PathBuf, Error> {
     let mut dir = PathBuf::new();
     dir.push(
         &dirs_next::home_dir().ok_or_else(|| Error::Generic("home dir not found".to_string()))?,
@@ -114,7 +114,7 @@ fn prepare_home_wallet_dir(wallet_name: &String) -> Result<PathBuf, Error> {
 }
 
 /// Prepare wallet database directory
-fn prepare_wallet_db_dir(wallet_name: &String) -> Result<PathBuf, Error> {
+fn prepare_wallet_db_dir(wallet_name: &str) -> Result<PathBuf, Error> {
     let mut db_dir = prepare_home_wallet_dir(wallet_name)?;
 
     #[cfg(feature = "key-value-db")]
@@ -134,7 +134,7 @@ fn prepare_wallet_db_dir(wallet_name: &String) -> Result<PathBuf, Error> {
 
 /// Prepare blockchain data directory (for compact filters)
 #[cfg(feature = "compact_filters")]
-fn prepare_bc_dir(wallet_name: &String) -> Result<PathBuf, Error> {
+fn prepare_bc_dir(wallet_name: &str) -> Result<PathBuf, Error> {
     let mut bc_dir = prepare_home_wallet_dir(wallet_name)?;
 
     bc_dir.push("compact_filters");
