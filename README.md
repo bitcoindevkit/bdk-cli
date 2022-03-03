@@ -78,3 +78,7 @@ To generate a new extended master key, suitable for using in a descriptor:
 ```shell
 cargo run -- key generate
 ```
+
+## Resources
+Docs: [bitcoindevkit.org CLI Section](https://bitcoindevkit.org/bdk-cli/installation/)  
+Video Tutorials: [Youtube Playlist](https://www.youtube.com/playlist?list=PLmyfVqsSelG3jSobvpY3GoNKDtAumsrg3)
