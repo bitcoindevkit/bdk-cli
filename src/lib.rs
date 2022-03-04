@@ -61,23 +61,23 @@
 //!
 //!     let database = MemoryDatabase::new();
 //!
-//!     let config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
-//!                 url: wallet_opts.electrum_opts.server,
-//!                 socks5: wallet_opts.proxy_opts.proxy,
-//!                 retry: wallet_opts.proxy_opts.retries,
-//!                 timeout: None,
-//!                 stop_gap: 10
-//!             });
+//!     let blockchain_config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
+//!         url: wallet_opts.electrum_opts.server.clone(),
+//!         socks5: wallet_opts.proxy_opts.proxy.clone(),
+//!         retry: wallet_opts.proxy_opts.retries,
+//!         timeout: wallet_opts.electrum_opts.timeout,
+//!         stop_gap: wallet_opts.electrum_opts.stop_gap,
+//!     });
+//!     let blockchain = AnyBlockchain::from_config(&blockchain_config).expect("blockchain");
 //!
 //!     let wallet = Wallet::new(
 //!         descriptor,
 //!         change_descriptor,
 //!         network,
 //!         database,
-//!         AnyBlockchain::from_config(&config).unwrap(),
-//!     ).unwrap();
+//!     ).expect("wallet");
 //!
-//!     let result = bdk_cli::handle_online_wallet_subcommand(&wallet, online_subcommand).unwrap();
+//!     let result = bdk_cli::handle_online_wallet_subcommand(&wallet, &blockchain, online_subcommand).expect("result");
 //!     println!("{}", serde_json::to_string_pretty(&result).unwrap());
 //! }
 //! # }
@@ -881,8 +881,8 @@ fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
 /// Execute an offline wallet sub-command
 ///
 /// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
-pub fn handle_offline_wallet_subcommand<T, D>(
-    wallet: &Wallet<T, D>,
+pub fn handle_offline_wallet_subcommand<D>(
+    wallet: &Wallet<D>,
     wallet_opts: &WalletOpts,
     offline_subcommand: OfflineWalletSubCommand,
 ) -> Result<serde_json::Value, Error>
@@ -1082,17 +1082,26 @@ where
     feature = "rpc"
 ))]
 #[maybe_async]
-pub fn handle_online_wallet_subcommand<C, D>(
-    wallet: &Wallet<C, D>,
+pub fn handle_online_wallet_subcommand<B, D>(
+    wallet: &Wallet<D>,
+    blockchain: &B,
     online_subcommand: OnlineWalletSubCommand,
 ) -> Result<serde_json::Value, Error>
 where
-    C: Blockchain,
+    B: Blockchain,
     D: BatchDatabase,
 {
+    use bdk::SyncOptions;
+
     match online_subcommand {
         Sync { max_addresses } => {
-            maybe_await!(wallet.sync(log_progress(), max_addresses))?;
+            maybe_await!(wallet.sync(
+                blockchain,
+                SyncOptions {
+                    progress: Some(Box::new(log_progress())),
+                    max_addresses,
+                }
+            ))?;
             Ok(json!({}))
         }
         Broadcast { psbt, tx } => {
@@ -1106,8 +1115,7 @@ where
                 (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
-
-            let txid = maybe_await!(wallet.broadcast(&tx))?;
+            let txid = maybe_await!(blockchain.broadcast(&tx))?;
             Ok(json!({ "txid": txid }))
         }
         #[cfg(feature = "reserves")]

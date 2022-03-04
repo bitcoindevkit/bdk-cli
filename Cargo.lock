@@ -86,6 +86,23 @@ checksum = "3face7de38293a2f7e2a9f69a48b442f28e864da0fc7a6a977388e31bdc367d7"
 dependencies = [
  "async-trait",
  "bdk-macros",
+ "bitcoin",
+ "js-sys",
+ "log",
+ "miniscript",
+ "rand",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "bdk"
+version = "0.16.2-dev"
+source = "git+https://github.com/LLFourn/bdk.git?branch=remove-blockchain-from-wallet#0cc4700bd67be84bb5cb0814bf5c8aa9fc3f3cdc"
+dependencies = [
+ "async-trait",
+ "bdk-macros",
  "bip39",
  "bitcoin",
  "bitcoincore-rpc",
@@ -112,7 +129,7 @@ name = "bdk-cli"
 version = "0.4.0"
 dependencies = [
  "base64 0.11.0",
- "bdk",
+ "bdk 0.16.2-dev",
  "bdk-macros",
  "bdk-reserves",
  "clap",
@@ -145,7 +162,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85397162a769b6162033c4ed8edc6285d347006eac5299dd186dee7bd77e8c88"
 dependencies = [
  "base64 0.11.0",
- "bdk",
+ "bdk 0.16.1",
  "bitcoinconsensus",
  "log",
 ]
