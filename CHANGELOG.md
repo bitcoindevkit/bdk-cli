@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Re-license to dual MIT and Apache 2.0 and update project name to "Bitcoin Dev Kit"
+
 ## [0.4.0]
 
 - Replace `wallet bump_fee` command `--send_all` with new `--shrink` option
