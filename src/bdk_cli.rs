@@ -328,6 +328,7 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
         }
         #[cfg(feature = "repl")]
         CliSubCommand::Repl { wallet_opts } => {
+            let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, network)?;
             let database = open_database(&wallet_opts)?;
 
             #[cfg(any(
