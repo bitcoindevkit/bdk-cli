@@ -41,6 +41,7 @@ compiler = ["bdk/compiler"]
 compact_filters = ["bdk/compact_filters"]
 rpc = ["bdk/rpc"]
 reserves = ["bdk-reserves"]
+verify = ["bdk/verify"]
 
 [[bin]]
 name = "bdk-cli"
