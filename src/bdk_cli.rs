@@ -328,6 +328,7 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
         }
         #[cfg(feature = "repl")]
         CliSubCommand::Repl { wallet_opts } => {
+            let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, network)?;
             let database = open_database(&wallet_opts)?;
 
             #[cfg(any(
@@ -373,8 +374,13 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
                                     .as_str())
                             })
                             .collect::<Result<Vec<_>, Error>>()?;
-                        let repl_subcommand = ReplSubCommand::from_iter_safe(split_line)
-                            .map_err(|e| Error::Generic(e.to_string()))?;
+                        let repl_subcommand = ReplSubCommand::from_iter_safe(split_line);
+                        if let Err(err) = repl_subcommand {
+                            println!("{}", err.to_string());
+                            continue;
+                        }
+                        // if error will be printed above
+                        let repl_subcommand = repl_subcommand.unwrap();
                         debug!("repl_subcommand = {:?}", repl_subcommand);
 
                         let result = match repl_subcommand {
