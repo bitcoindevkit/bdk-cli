@@ -12,7 +12,7 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-bdk = { git = "https://github.com/LLFourn/bdk.git", branch = "remove-blockchain-from-wallet", default-features = false, features = ["all-keys"]}
+bdk = { version = "0.17", default-features = false, features = ["all-keys"]}
 bdk-macros = "0.6"
 structopt = "^0.3"
 serde_json = { version = "^1.0" }
