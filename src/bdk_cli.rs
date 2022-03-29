@@ -374,8 +374,13 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
                                     .as_str())
                             })
                             .collect::<Result<Vec<_>, Error>>()?;
-                        let repl_subcommand = ReplSubCommand::from_iter_safe(split_line)
-                            .map_err(|e| Error::Generic(e.to_string()))?;
+                        let repl_subcommand = ReplSubCommand::from_iter_safe(split_line);
+                        if let Err(err) = repl_subcommand {
+                            println!("{}", err.to_string());
+                            continue;
+                        }
+                        // if error will be printed above
+                        let repl_subcommand = repl_subcommand.unwrap();
                         debug!("repl_subcommand = {:?}", repl_subcommand);
 
                         let result = match repl_subcommand {
