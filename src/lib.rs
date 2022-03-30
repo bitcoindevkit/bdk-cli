@@ -46,7 +46,7 @@
 //!
 //! let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet", "--descriptor",
 //!                     "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)",
-//!                     "sync", "--max_addresses", "50"];
+//!                     "sync"];
 //!
 //! let cli_opts = CliOpts::from_iter(&cli_args);
 //! let network = cli_opts.network;
@@ -187,7 +187,7 @@ use bdk_reserves::reserves::ProofOfReserves;
 ///
 /// let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
 ///                     "--descriptor", "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)",
-///                     "sync", "--max_addresses", "50"];
+///                     "sync"];
 ///
 /// // to get CliOpts from the OS command line args use:
 /// // let cli_opts = CliOpts::from_args();
@@ -234,9 +234,7 @@ use bdk_reserves::reserves::ProofOfReserves;
 ///                        retries: 5,
 ///                    },
 ///                 },
-///                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync {
-///                     max_addresses: Some(50)
-///                 }),
+///                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync),
 ///             },
 ///         };
 ///
@@ -1694,7 +1692,7 @@ mod test {
     fn test_parse_wallet_sync() {
         let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
                             "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
-                            "sync", "--max_addresses", "50"];
+                            "sync"];
 
         let cli_opts = CliOpts::from_iter(&cli_args);
 
@@ -1739,9 +1737,7 @@ mod test {
                         skip_blocks: None,
                     },
                 },
-                subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync {
-                    max_addresses: Some(50)
-                }),
+                subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync),
             },
         };
 
@@ -1968,7 +1964,7 @@ mod test {
     fn test_parse_wrong_network() {
         let cli_args = vec!["repl", "--network", "badnet", "wallet",
                             "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
-                            "sync", "--max_addresses", "50"];
+                            "sync"];
 
         let cli_opts = CliOpts::from_iter_safe(&cli_args);
         assert!(cli_opts.is_err());
