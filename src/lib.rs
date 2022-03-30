@@ -800,11 +800,7 @@ blockchain client and network connection.
 ))]
 pub enum OnlineWalletSubCommand {
     /// Syncs with the chosen blockchain server
-    Sync {
-        /// max addresses to consider
-        #[structopt(short = "v", long = "max_addresses")]
-        max_addresses: Option<u32>,
-    },
+    Sync,
     /// Broadcasts a transaction to the network. Takes either a raw transaction or a PSBT to extract
     Broadcast {
         /// Sets the PSBT to sign
@@ -1094,12 +1090,11 @@ where
     use bdk::SyncOptions;
 
     match online_subcommand {
-        Sync { max_addresses } => {
+        Sync => {
             maybe_await!(wallet.sync(
                 blockchain,
                 SyncOptions {
                     progress: Some(Box::new(log_progress())),
-                    max_addresses,
                 }
             ))?;
             Ok(json!({}))
@@ -1115,8 +1110,8 @@ where
                 (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
-            let txid = maybe_await!(blockchain.broadcast(&tx))?;
-            Ok(json!({ "txid": txid }))
+            maybe_await!(blockchain.broadcast(&tx))?;
+            Ok(json!({ "txid": tx.txid() }))
         }
         #[cfg(feature = "reserves")]
         ProduceProof { msg } => {
