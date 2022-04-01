@@ -19,11 +19,11 @@ jobs:
           - esplora-reqwest
           - compiler
           - compact_filters
-#          - reserves
-#          - reserves,electrum
-#          - reserves,esplora-ureq
-#          - reserves,compact_filters
-#          - reserves,rpc
+          - reserves
+          - reserves,electrum
+          - reserves,esplora-ureq
+          - reserves,compact_filters
+          - reserves,rpc
           - rpc
           - electrum,verify
     steps:

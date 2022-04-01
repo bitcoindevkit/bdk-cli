@@ -124,7 +124,15 @@ use bdk::bitcoin::secp256k1::Secp256k1;
 use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey, KeySource};
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Network, OutPoint, Script, Txid};
-#[cfg(feature = "reserves")]
+#[cfg(all(
+    feature = "reserves",
+    any(
+        feature = "electrum",
+        feature = "esplora",
+        feature = "compact_filters",
+        feature = "rpc"
+    )
+))]
 use bdk::blockchain::Capability;
 #[cfg(any(
     feature = "electrum",
@@ -1136,12 +1144,11 @@ where
         } => {
             let psbt = base64::decode(&psbt).unwrap();
             let psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
-            let current_height = wallet.client().get_height()?;
+            let current_height = blockchain.get_height()?;
             let max_confirmation_height = if confirmations == 0 {
                 None
             } else {
-                if !wallet
-                    .client()
+                if !blockchain
                     .get_capabilities()
                     .contains(&Capability::GetAnyTx)
                 {
@@ -1421,13 +1428,13 @@ mod test {
     use bdk::miniscript::bitcoin::network::constants::Network::Testnet;
     #[cfg(all(feature = "reserves", feature = "electrum"))]
     use bdk::{
-        blockchain::{noop_progress, ElectrumBlockchain},
-        database::MemoryDatabase,
-        electrum_client::Client,
-        Wallet,
+        blockchain::ElectrumBlockchain, database::MemoryDatabase, electrum_client::Client, Wallet,
     };
     use std::str::{self, FromStr};
     use structopt::StructOpt;
+
+    #[cfg(all(feature = "reserves", feature = "electrum",))]
+    use crate::bdk::SyncOptions;
 
     #[test]
     fn test_parse_wallet_get_new_address() {
@@ -2279,16 +2286,16 @@ mod test {
         let message = "Those coins belong to Satoshi Nakamoto";
 
         let client = Client::new("ssl://electrum.blockstream.info:60002").unwrap();
+        let blockchain = ElectrumBlockchain::from(client);
         let wallet = Wallet::new(
             &descriptor,
             None,
             Network::Testnet,
             MemoryDatabase::default(),
-            ElectrumBlockchain::from(client),
         )
         .unwrap();
 
-        wallet.sync(noop_progress(), None).unwrap();
+        wallet.sync(&blockchain, SyncOptions::default()).unwrap();
         let balance = wallet.get_balance().unwrap();
 
         let addr = wallet.get_address(bdk::wallet::AddressIndex::New).unwrap();
@@ -2317,7 +2324,7 @@ mod test {
             } => online_subcommand,
             _ => panic!("unexpected subcommand"),
         };
-        let result = handle_online_wallet_subcommand(&wallet, wallet_subcmd).unwrap();
+        let result = handle_online_wallet_subcommand(&wallet, &blockchain, wallet_subcmd).unwrap();
         let psbt: PartiallySignedTransaction =
             serde_json::from_str(&result.as_object().unwrap().get("psbt").unwrap().to_string())
                 .unwrap();
@@ -2355,7 +2362,7 @@ mod test {
             } => online_subcommand,
             _ => panic!("unexpected subcommand"),
         };
-        let result = handle_online_wallet_subcommand(&wallet, wallet_subcmd).unwrap();
+        let result = handle_online_wallet_subcommand(&wallet, &blockchain, wallet_subcmd).unwrap();
         let spendable = result
             .as_object()
             .unwrap()
