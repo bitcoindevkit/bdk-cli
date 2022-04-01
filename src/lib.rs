@@ -1428,13 +1428,11 @@ mod test {
     use bdk::miniscript::bitcoin::network::constants::Network::Testnet;
     #[cfg(all(feature = "reserves", feature = "electrum"))]
     use bdk::{
-        blockchain::ElectrumBlockchain, database::MemoryDatabase, electrum_client::Client, Wallet,
+        blockchain::ElectrumBlockchain, database::MemoryDatabase, electrum_client::Client,
+        SyncOptions, Wallet,
     };
     use std::str::{self, FromStr};
     use structopt::StructOpt;
-
-    #[cfg(all(feature = "reserves", feature = "electrum",))]
-    use crate::bdk::SyncOptions;
 
     #[test]
     fn test_parse_wallet_get_new_address() {

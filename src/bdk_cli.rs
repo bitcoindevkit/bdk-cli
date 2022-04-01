@@ -71,7 +71,7 @@ const REPL_LINE_SPLIT_REGEX: &str = r#""([^"]*)"|'([^']*)'|([\w\-]+)"#;
 #[structopt(name = "", setting = AppSettings::NoBinaryName,
 version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
-pub enum ReplSubCommand {
+enum ReplSubCommand {
     #[cfg(any(
         feature = "electrum",
         feature = "esplora",
@@ -127,7 +127,7 @@ fn open_database(wallet_opts: &WalletOpts) -> Result<Tree, Error> {
     feature = "compact_filters",
     feature = "rpc"
 ))]
-pub fn new_blockchain(_network: Network, wallet_opts: &WalletOpts) -> Result<AnyBlockchain, Error> {
+fn new_blockchain(_network: Network, wallet_opts: &WalletOpts) -> Result<AnyBlockchain, Error> {
     #[cfg(feature = "electrum")]
     let config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
         url: wallet_opts.electrum_opts.server.clone(),
@@ -208,7 +208,7 @@ pub fn new_blockchain(_network: Network, wallet_opts: &WalletOpts) -> Result<Any
     Ok(AnyBlockchain::from_config(&config)?)
 }
 
-pub fn new_wallet<D>(
+fn new_wallet<D>(
     network: Network,
     wallet_opts: &WalletOpts,
     database: D,
