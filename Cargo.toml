@@ -1,6 +1,6 @@
 [package]
 name = "bdk-cli"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2018"
 authors = ["Alekos Filini <alekos.filini@gmail.com>", "Riccardo Casatta <riccardo@casatta.it>", "Steve Myers <steve@notmandatory.org>"]
 homepage = "https://bitcoindevkit.org"
@@ -12,7 +12,7 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-bdk = { version = "0.16", default-features = false, features = ["all-keys"]}
+bdk = { version = "0.17", default-features = false, features = ["all-keys"]}
 bdk-macros = "0.6"
 structopt = "^0.3"
 serde_json = { version = "^1.0" }
@@ -27,7 +27,7 @@ dirs-next = { version = "2.0", optional = true }
 env_logger = { version = "0.7", optional = true }
 clap = { version = "2.33", optional = true }
 regex = { version = "1", optional = true }
-bdk-reserves = { version = "0.16", optional = true}
+bdk-reserves = { version = "0.17", optional = true}
 
 [features]
 default = ["cli", "repl"]
@@ -41,6 +41,7 @@ compiler = ["bdk/compiler"]
 compact_filters = ["bdk/compact_filters"]
 rpc = ["bdk/rpc"]
 reserves = ["bdk-reserves"]
+verify = ["bdk/verify"]
 
 [[bin]]
 name = "bdk-cli"

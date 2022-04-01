@@ -23,7 +23,9 @@ jobs:
           - reserves,electrum
           - reserves,esplora-ureq
           - reserves,compact_filters
+          - reserves,rpc
           - rpc
+          - electrum,verify
     steps:
       - name: Checkout
         uses: actions/checkout@v2

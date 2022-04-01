@@ -71,7 +71,7 @@ const REPL_LINE_SPLIT_REGEX: &str = r#""([^"]*)"|'([^']*)'|([\w\-]+)"#;
 #[structopt(name = "", setting = AppSettings::NoBinaryName,
 version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
-pub enum ReplSubCommand {
+enum ReplSubCommand {
     #[cfg(any(
         feature = "electrum",
         feature = "esplora",
@@ -127,14 +127,7 @@ fn open_database(wallet_opts: &WalletOpts) -> Result<Tree, Error> {
     feature = "compact_filters",
     feature = "rpc"
 ))]
-fn new_online_wallet<D>(
-    network: Network,
-    wallet_opts: &WalletOpts,
-    database: D,
-) -> Result<Wallet<AnyBlockchain, D>, Error>
-where
-    D: BatchDatabase,
-{
+fn new_blockchain(_network: Network, wallet_opts: &WalletOpts) -> Result<AnyBlockchain, Error> {
     #[cfg(feature = "electrum")]
     let config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
         url: wallet_opts.electrum_opts.server.clone(),
@@ -168,7 +161,7 @@ where
 
         AnyBlockchainConfig::CompactFilters(CompactFiltersBlockchainConfig {
             peers,
-            network,
+            network: _network,
             storage_dir: prepare_home_dir()?
                 .into_os_string()
                 .into_string()
@@ -194,7 +187,7 @@ where
         let wallet_name = wallet_name_from_descriptor(
             &wallet_opts.descriptor[..],
             wallet_opts.change_descriptor.as_deref(),
-            network,
+            _network,
             &Secp256k1::new(),
         )?;
 
@@ -204,37 +197,28 @@ where
         let rpc_config = RpcConfig {
             url: rpc_url,
             auth,
-            network,
+            network: _network,
             wallet_name,
             skip_blocks: wallet_opts.rpc_opts.skip_blocks,
         };
 
         AnyBlockchainConfig::Rpc(rpc_config)
     };
-    let descriptor = wallet_opts.descriptor.as_str();
-    let change_descriptor = wallet_opts.change_descriptor.as_deref();
 
-    let wallet = Wallet::new(
-        descriptor,
-        change_descriptor,
-        network,
-        database,
-        AnyBlockchain::from_config(&config)?,
-    )?;
-    Ok(wallet)
+    Ok(AnyBlockchain::from_config(&config)?)
 }
 
-fn new_offline_wallet<D>(
+fn new_wallet<D>(
     network: Network,
     wallet_opts: &WalletOpts,
     database: D,
-) -> Result<Wallet<(), D>, Error>
+) -> Result<Wallet<D>, Error>
 where
     D: BatchDatabase,
 {
     let descriptor = wallet_opts.descriptor.as_str();
     let change_descriptor = wallet_opts.change_descriptor.as_deref();
-    let wallet = Wallet::new_offline(descriptor, change_descriptor, network, database)?;
+    let wallet = Wallet::new(descriptor, change_descriptor, network, database)?;
     Ok(wallet)
 }
 
@@ -294,8 +278,10 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
         } => {
             let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, network)?;
             let database = open_database(&wallet_opts)?;
-            let wallet = new_online_wallet(network, &wallet_opts, database)?;
-            let result = bdk_cli::handle_online_wallet_subcommand(&wallet, online_subcommand)?;
+            let blockchain = new_blockchain(network, &wallet_opts)?;
+            let wallet = new_wallet(network, &wallet_opts, database)?;
+            let result =
+                bdk_cli::handle_online_wallet_subcommand(&wallet, &blockchain, online_subcommand)?;
             serde_json::to_string_pretty(&result)?
         }
         CliSubCommand::Wallet {
@@ -304,7 +290,7 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
         } => {
             let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, network)?;
             let database = open_database(&wallet_opts)?;
-            let wallet = new_offline_wallet(network, &wallet_opts, database)?;
+            let wallet = new_wallet(network, &wallet_opts, database)?;
             let result = bdk_cli::handle_offline_wallet_subcommand(
                 &wallet,
                 &wallet_opts,
@@ -337,7 +323,7 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
                 feature = "compact_filters",
                 feature = "rpc"
             ))]
-            let wallet = new_online_wallet(network, &wallet_opts, database)?;
+            let wallet = new_wallet(network, &wallet_opts, database)?;
 
             #[cfg(not(any(
                 feature = "electrum",
@@ -345,7 +331,7 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
                 feature = "compact_filters",
                 feature = "rpc"
             )))]
-            let wallet = new_offline_wallet(network, &wallet_opts, database)?;
+            let wallet = new_wallet(network, &wallet_opts, database)?;
 
             let mut rl = Editor::<()>::new();
 
@@ -391,7 +377,12 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
                                 feature = "rpc"
                             ))]
                             ReplSubCommand::OnlineWalletSubCommand(online_subcommand) => {
-                                bdk_cli::handle_online_wallet_subcommand(&wallet, online_subcommand)
+                                let blockchain = new_blockchain(network, &wallet_opts)?;
+                                bdk_cli::handle_online_wallet_subcommand(
+                                    &wallet,
+                                    &blockchain,
+                                    online_subcommand,
+                                )
                             }
                             ReplSubCommand::OfflineWalletSubCommand(offline_subcommand) => {
                                 bdk_cli::handle_offline_wallet_subcommand(

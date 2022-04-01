@@ -46,7 +46,7 @@
 //!
 //! let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet", "--descriptor",
 //!                     "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)",
-//!                     "sync", "--max_addresses", "50"];
+//!                     "sync"];
 //!
 //! let cli_opts = CliOpts::from_iter(&cli_args);
 //! let network = cli_opts.network;
@@ -61,23 +61,23 @@
 //!
 //!     let database = MemoryDatabase::new();
 //!
-//!     let config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
-//!                 url: wallet_opts.electrum_opts.server,
-//!                 socks5: wallet_opts.proxy_opts.proxy,
-//!                 retry: wallet_opts.proxy_opts.retries,
-//!                 timeout: None,
-//!                 stop_gap: 10
-//!             });
+//!     let blockchain_config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
+//!         url: wallet_opts.electrum_opts.server.clone(),
+//!         socks5: wallet_opts.proxy_opts.proxy.clone(),
+//!         retry: wallet_opts.proxy_opts.retries,
+//!         timeout: wallet_opts.electrum_opts.timeout,
+//!         stop_gap: wallet_opts.electrum_opts.stop_gap,
+//!     });
+//!     let blockchain = AnyBlockchain::from_config(&blockchain_config).expect("blockchain");
 //!
 //!     let wallet = Wallet::new(
 //!         descriptor,
 //!         change_descriptor,
 //!         network,
 //!         database,
-//!         AnyBlockchain::from_config(&config).unwrap(),
-//!     ).unwrap();
+//!     ).expect("wallet");
 //!
-//!     let result = bdk_cli::handle_online_wallet_subcommand(&wallet, online_subcommand).unwrap();
+//!     let result = bdk_cli::handle_online_wallet_subcommand(&wallet, &blockchain, online_subcommand).expect("result");
 //!     println!("{}", serde_json::to_string_pretty(&result).unwrap());
 //! }
 //! # }
@@ -124,7 +124,15 @@ use bdk::bitcoin::secp256k1::Secp256k1;
 use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey, KeySource};
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Network, OutPoint, Script, Txid};
-#[cfg(feature = "reserves")]
+#[cfg(all(
+    feature = "reserves",
+    any(
+        feature = "electrum",
+        feature = "esplora",
+        feature = "compact_filters",
+        feature = "rpc"
+    )
+))]
 use bdk::blockchain::Capability;
 #[cfg(any(
     feature = "electrum",
@@ -187,7 +195,7 @@ use bdk_reserves::reserves::ProofOfReserves;
 ///
 /// let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
 ///                     "--descriptor", "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)",
-///                     "sync", "--max_addresses", "50"];
+///                     "sync"];
 ///
 /// // to get CliOpts from the OS command line args use:
 /// // let cli_opts = CliOpts::from_args();
@@ -234,9 +242,7 @@ use bdk_reserves::reserves::ProofOfReserves;
 ///                        retries: 5,
 ///                    },
 ///                 },
-///                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync {
-///                     max_addresses: Some(50)
-///                 }),
+///                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync),
 ///             },
 ///         };
 ///
@@ -800,11 +806,7 @@ blockchain client and network connection.
 ))]
 pub enum OnlineWalletSubCommand {
     /// Syncs with the chosen blockchain server
-    Sync {
-        /// max addresses to consider
-        #[structopt(short = "v", long = "max_addresses")]
-        max_addresses: Option<u32>,
-    },
+    Sync,
     /// Broadcasts a transaction to the network. Takes either a raw transaction or a PSBT to extract
     Broadcast {
         /// Sets the PSBT to sign
@@ -881,8 +883,8 @@ fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
 /// Execute an offline wallet sub-command
 ///
 /// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
-pub fn handle_offline_wallet_subcommand<T, D>(
-    wallet: &Wallet<T, D>,
+pub fn handle_offline_wallet_subcommand<D>(
+    wallet: &Wallet<D>,
     wallet_opts: &WalletOpts,
     offline_subcommand: OfflineWalletSubCommand,
 ) -> Result<serde_json::Value, Error>
@@ -1082,17 +1084,25 @@ where
     feature = "rpc"
 ))]
 #[maybe_async]
-pub fn handle_online_wallet_subcommand<C, D>(
-    wallet: &Wallet<C, D>,
+pub fn handle_online_wallet_subcommand<B, D>(
+    wallet: &Wallet<D>,
+    blockchain: &B,
     online_subcommand: OnlineWalletSubCommand,
 ) -> Result<serde_json::Value, Error>
 where
-    C: Blockchain,
+    B: Blockchain,
     D: BatchDatabase,
 {
+    use bdk::SyncOptions;
+
     match online_subcommand {
-        Sync { max_addresses } => {
-            maybe_await!(wallet.sync(log_progress(), max_addresses))?;
+        Sync => {
+            maybe_await!(wallet.sync(
+                blockchain,
+                SyncOptions {
+                    progress: Some(Box::new(log_progress())),
+                }
+            ))?;
             Ok(json!({}))
         }
         Broadcast { psbt, tx } => {
@@ -1106,9 +1116,8 @@ where
                 (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
-
-            let txid = maybe_await!(wallet.broadcast(&tx))?;
-            Ok(json!({ "txid": txid }))
+            maybe_await!(blockchain.broadcast(&tx))?;
+            Ok(json!({ "txid": tx.txid() }))
         }
         #[cfg(feature = "reserves")]
         ProduceProof { msg } => {
@@ -1135,12 +1144,11 @@ where
         } => {
             let psbt = base64::decode(&psbt).unwrap();
             let psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
-            let current_height = wallet.client().get_height()?;
+            let current_height = blockchain.get_height()?;
             let max_confirmation_height = if confirmations == 0 {
                 None
             } else {
-                if !wallet
-                    .client()
+                if !blockchain
                     .get_capabilities()
                     .contains(&Capability::GetAnyTx)
                 {
@@ -1420,10 +1428,8 @@ mod test {
     use bdk::miniscript::bitcoin::network::constants::Network::Testnet;
     #[cfg(all(feature = "reserves", feature = "electrum"))]
     use bdk::{
-        blockchain::{noop_progress, ElectrumBlockchain},
-        database::MemoryDatabase,
-        electrum_client::Client,
-        Wallet,
+        blockchain::ElectrumBlockchain, database::MemoryDatabase, electrum_client::Client,
+        SyncOptions, Wallet,
     };
     use std::str::{self, FromStr};
     use structopt::StructOpt;
@@ -1691,7 +1697,7 @@ mod test {
     fn test_parse_wallet_sync() {
         let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
                             "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
-                            "sync", "--max_addresses", "50"];
+                            "sync"];
 
         let cli_opts = CliOpts::from_iter(&cli_args);
 
@@ -1736,9 +1742,7 @@ mod test {
                         skip_blocks: None,
                     },
                 },
-                subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync {
-                    max_addresses: Some(50)
-                }),
+                subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync),
             },
         };
 
@@ -1965,7 +1969,7 @@ mod test {
     fn test_parse_wrong_network() {
         let cli_args = vec!["repl", "--network", "badnet", "wallet",
                             "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
-                            "sync", "--max_addresses", "50"];
+                            "sync"];
 
         let cli_opts = CliOpts::from_iter_safe(&cli_args);
         assert!(cli_opts.is_err());
@@ -2280,16 +2284,16 @@ mod test {
         let message = "Those coins belong to Satoshi Nakamoto";
 
         let client = Client::new("ssl://electrum.blockstream.info:60002").unwrap();
+        let blockchain = ElectrumBlockchain::from(client);
         let wallet = Wallet::new(
             &descriptor,
             None,
             Network::Testnet,
             MemoryDatabase::default(),
-            ElectrumBlockchain::from(client),
         )
         .unwrap();
 
-        wallet.sync(noop_progress(), None).unwrap();
+        wallet.sync(&blockchain, SyncOptions::default()).unwrap();
         let balance = wallet.get_balance().unwrap();
 
         let addr = wallet.get_address(bdk::wallet::AddressIndex::New).unwrap();
@@ -2318,7 +2322,7 @@ mod test {
             } => online_subcommand,
             _ => panic!("unexpected subcommand"),
         };
-        let result = handle_online_wallet_subcommand(&wallet, wallet_subcmd).unwrap();
+        let result = handle_online_wallet_subcommand(&wallet, &blockchain, wallet_subcmd).unwrap();
         let psbt: PartiallySignedTransaction =
             serde_json::from_str(&result.as_object().unwrap().get("psbt").unwrap().to_string())
                 .unwrap();
@@ -2356,7 +2360,7 @@ mod test {
             } => online_subcommand,
             _ => panic!("unexpected subcommand"),
         };
-        let result = handle_online_wallet_subcommand(&wallet, wallet_subcmd).unwrap();
+        let result = handle_online_wallet_subcommand(&wallet, &blockchain, wallet_subcmd).unwrap();
         let spendable = result
             .as_object()
             .unwrap()
