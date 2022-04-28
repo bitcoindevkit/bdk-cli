@@ -892,7 +892,19 @@ where
     D: BatchDatabase,
 {
     match offline_subcommand {
-        GetNewAddress => Ok(json!({"address": wallet.get_address(AddressIndex::New)?.address})),
+        GetNewAddress => {
+            let addr = wallet.get_address(AddressIndex::New)?;
+            if wallet_opts.verbose {
+                Ok(json!({
+                    "address": addr.address,
+                    "index": addr.index
+                }))
+            } else {
+                Ok(json!({
+                    "address": addr.address,
+                }))
+            }
+        }
         ListUnspent => Ok(serde_json::to_value(&wallet.list_unspent()?)?),
         ListTransactions => Ok(serde_json::to_value(
             &wallet.list_transactions(wallet_opts.verbose)?,
