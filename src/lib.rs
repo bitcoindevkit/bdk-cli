@@ -2081,7 +2081,7 @@ mod test {
         let descriptor = result_obj.get("descriptor").unwrap().as_str().unwrap();
         assert_eq!(
             &descriptor,
-            &"sh(wsh(thresh(3,pk(Alice),s:pk(Bob),s:pk(Carol),sdv:older(2))))#l4qaawgv"
+            &"sh(wsh(thresh(3,pk(Alice),s:pk(Bob),s:pk(Carol),snl:older(2))))#rmef3s78"
         );
     }
 
