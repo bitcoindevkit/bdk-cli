@@ -121,21 +121,42 @@ fn open_database(wallet_opts: &WalletOpts) -> Result<Tree, Error> {
     Ok(tree)
 }
 
+#[allow(dead_code)]
+// Different Backend types activated with `regtest-*` mode.
+// If `regtest-*` feature not activated, then default is `None`.
+enum Backend {
+    None,
+    Bitcoin { rpc_url: String, rpc_auth: String },
+    Electrum { electrum_url: String },
+    Esplora { esplora_url: String },
+}
+
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
     feature = "compact_filters",
     feature = "rpc"
 ))]
-fn new_blockchain(_network: Network, wallet_opts: &WalletOpts) -> Result<AnyBlockchain, Error> {
+fn new_blockchain(
+    _network: Network,
+    wallet_opts: &WalletOpts,
+    _backend: &Backend,
+) -> Result<AnyBlockchain, Error> {
     #[cfg(feature = "electrum")]
-    let config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
-        url: wallet_opts.electrum_opts.server.clone(),
-        socks5: wallet_opts.proxy_opts.proxy.clone(),
-        retry: wallet_opts.proxy_opts.retries,
-        timeout: wallet_opts.electrum_opts.timeout,
-        stop_gap: wallet_opts.electrum_opts.stop_gap,
-    });
+    let config = {
+        let url = match _backend {
+            Backend::Electrum { electrum_url } => electrum_url.to_owned(),
+            _ => wallet_opts.electrum_opts.server.clone(),
+        };
+
+        AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
+            url,
+            socks5: wallet_opts.proxy_opts.proxy.clone(),
+            retry: wallet_opts.proxy_opts.retries,
+            timeout: wallet_opts.electrum_opts.timeout,
+            stop_gap: wallet_opts.electrum_opts.stop_gap,
+        })
+    };
 
     #[cfg(feature = "esplora")]
     let config = AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
@@ -172,17 +193,27 @@ fn new_blockchain(_network: Network, wallet_opts: &WalletOpts) -> Result<AnyBloc
 
     #[cfg(feature = "rpc")]
     let config: AnyBlockchainConfig = {
-        let auth = if let Some(cookie) = &wallet_opts.rpc_opts.cookie {
-            Auth::Cookie {
-                file: cookie.into(),
-            }
-        } else {
-            Auth::UserPass {
-                username: wallet_opts.rpc_opts.basic_auth.0.clone(),
-                password: wallet_opts.rpc_opts.basic_auth.1.clone(),
+        let (url, auth) = match _backend {
+            Backend::Bitcoin { rpc_url, rpc_auth } => (
+                rpc_url,
+                Auth::Cookie {
+                    file: rpc_auth.into(),
+                },
+            ),
+            _ => {
+                let auth = if let Some(cookie) = &wallet_opts.rpc_opts.cookie {
+                    Auth::Cookie {
+                        file: cookie.into(),
+                    }
+                } else {
+                    Auth::UserPass {
+                        username: wallet_opts.rpc_opts.basic_auth.0.clone(),
+                        password: wallet_opts.rpc_opts.basic_auth.1.clone(),
+                    }
+                };
+                (&wallet_opts.rpc_opts.address, auth)
             }
         };
-
         // Use deterministic wallet name derived from descriptor
         let wallet_name = wallet_name_from_descriptor(
             &wallet_opts.descriptor[..],
@@ -191,8 +222,7 @@ fn new_blockchain(_network: Network, wallet_opts: &WalletOpts) -> Result<AnyBloc
             &Secp256k1::new(),
         )?;
 
-        let mut rpc_url = "http://".to_string();
-        rpc_url.push_str(&wallet_opts.rpc_opts.address[..]);
+        let rpc_url = "http://".to_string() + &url;
 
         let rpc_config = RpcConfig {
             url: rpc_url,
@@ -233,7 +263,63 @@ fn main() {
         warn!("This is experimental software and not currently recommended for use on Bitcoin mainnet, proceed with caution.")
     }
 
-    match handle_command(cli_opts, network) {
+    #[cfg(feature = "regtest-node")]
+    let bitcoind = {
+        if network != Network::Regtest {
+            error!("Do not override default network value for `regtest-node` features");
+        }
+        let bitcoind_conf = electrsd::bitcoind::Conf::default();
+        let bitcoind_exe = electrsd::bitcoind::downloaded_exe_path()
+            .expect("We should always have downloaded path");
+        electrsd::bitcoind::BitcoinD::with_conf(bitcoind_exe, &bitcoind_conf).unwrap()
+    };
+
+    #[cfg(feature = "regtest-bitcoin")]
+    let backend = {
+        Backend::Bitcoin {
+            rpc_url: bitcoind.params.rpc_socket.to_string(),
+            rpc_auth: bitcoind
+                .params
+                .cookie_file
+                .clone()
+                .into_os_string()
+                .into_string()
+                .unwrap(),
+        }
+    };
+
+    #[cfg(feature = "regtest-electrum")]
+    let (_electrsd, backend) = {
+        let elect_conf = electrsd::Conf::default();
+        let elect_exe =
+            electrsd::downloaded_exe_path().expect("We should always have downloaded path");
+        let electrsd = electrsd::ElectrsD::with_conf(elect_exe, &bitcoind, &elect_conf).unwrap();
+        let backend = Backend::Electrum {
+            electrum_url: electrsd.electrum_url.clone(),
+        };
+        (electrsd, backend)
+    };
+
+    #[cfg(any(feature = "regtest-esplora-ureq", feature = "regtest-esplora-reqwest"))]
+    let (_electrsd, backend) = {
+        let mut elect_conf = electrsd::Conf::default();
+        elect_conf.http_enabled = true;
+        let elect_exe =
+            electrsd::downloaded_exe_path().expect("Electrsd downloaded binaries not found");
+        let electrsd = electrsd::ElectrsD::with_conf(elect_exe, &bitcoind, &elect_conf).unwrap();
+        let backend = Backend::Esplora {
+            esplora_url: electrsd
+                .esplora_url
+                .clone()
+                .expect("Esplora port not open in electrum"),
+        };
+        (electrsd, backend)
+    };
+
+    #[cfg(not(feature = "regtest-node"))]
+    let backend = Backend::None;
+
+    match handle_command(cli_opts, network, backend) {
         Ok(result) => println!("{}", result),
         Err(e) => {
             match e {
@@ -264,7 +350,7 @@ fn maybe_descriptor_wallet_name(
     Ok(wallet_opts)
 }
 
-fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> {
+fn handle_command(cli_opts: CliOpts, network: Network, _backend: Backend) -> Result<String, Error> {
     let result = match cli_opts.subcommand {
         #[cfg(any(
             feature = "electrum",
@@ -278,7 +364,7 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
         } => {
             let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, network)?;
             let database = open_database(&wallet_opts)?;
-            let blockchain = new_blockchain(network, &wallet_opts)?;
+            let blockchain = new_blockchain(network, &wallet_opts, &_backend)?;
             let wallet = new_wallet(network, &wallet_opts, database)?;
             let result =
                 bdk_cli::handle_online_wallet_subcommand(&wallet, &blockchain, online_subcommand)?;
@@ -317,20 +403,6 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
             let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, network)?;
             let database = open_database(&wallet_opts)?;
 
-            #[cfg(any(
-                feature = "electrum",
-                feature = "esplora",
-                feature = "compact_filters",
-                feature = "rpc"
-            ))]
-            let wallet = new_wallet(network, &wallet_opts, database)?;
-
-            #[cfg(not(any(
-                feature = "electrum",
-                feature = "esplora",
-                feature = "compact_filters",
-                feature = "rpc"
-            )))]
             let wallet = new_wallet(network, &wallet_opts, database)?;
 
             let mut rl = Editor::<()>::new();
@@ -377,7 +449,7 @@ fn handle_command(cli_opts: CliOpts, network: Network) -> Result<String, Error> 
                                 feature = "rpc"
                             ))]
                             ReplSubCommand::OnlineWalletSubCommand(online_subcommand) => {
-                                let blockchain = new_blockchain(network, &wallet_opts)?;
+                                let blockchain = new_blockchain(network, &wallet_opts, &_backend)?;
                                 bdk_cli::handle_online_wallet_subcommand(
                                     &wallet,
                                     &blockchain,
