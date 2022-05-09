@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Re-license to dual MIT and Apache 2.0 and update project name to "Bitcoin Dev Kit"
-- Update to bdk and bdk-reserves to `0.17.0`
+- Update to bdk and bdk-reserves to `0.18.0`
 - Add 'verify' feature flag which enables transaction verification against consensus rules during sync.
 - Make `regtest` the default network.
 - Add experimental `regtest-*` features to automatically deploy local regtest nodes
