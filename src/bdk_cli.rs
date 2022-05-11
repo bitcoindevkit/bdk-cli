@@ -560,9 +560,12 @@ fn handle_command(cli_opts: CliOpts, network: Network, _backend: Backend) -> Res
 
 #[cfg(test)]
 mod test {
+    #[cfg(feature = "repl")]
     use crate::REPL_LINE_SPLIT_REGEX;
+    #[cfg(feature = "repl")]
     use regex::Regex;
 
+    #[cfg(feature = "repl")]
     #[test]
     fn test_regex_double_quotes() {
         let split_regex = Regex::new(REPL_LINE_SPLIT_REGEX).unwrap();
@@ -589,6 +592,7 @@ mod test {
         );
     }
 
+    #[cfg(feature = "repl")]
     #[test]
     fn test_regex_single_quotes() {
         let split_regex = Regex::new(REPL_LINE_SPLIT_REGEX).unwrap();
