@@ -9,8 +9,7 @@ fn main() {
 
     let blockchain_features: Vec<String> = vec![electrum, esplora, compact_filters, rpc]
         .iter()
-        .map(|f| f.to_owned())
-        .flatten()
+        .filter_map(|f| f.to_owned())
         .collect();
 
     if blockchain_features.len() > 1 {

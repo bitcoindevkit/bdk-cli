@@ -434,7 +434,7 @@ fn handle_command(cli_opts: CliOpts, network: Network, _backend: Backend) -> Res
                             .collect::<Result<Vec<_>, Error>>()?;
                         let repl_subcommand = ReplSubCommand::from_iter_safe(split_line);
                         if let Err(err) = repl_subcommand {
-                            println!("{}", err.to_string());
+                            println!("{}", err);
                             continue;
                         }
                         // if error will be printed above
