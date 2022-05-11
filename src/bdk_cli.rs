@@ -43,9 +43,11 @@ use bdk::blockchain::{AnyBlockchain, AnyBlockchainConfig, ConfigurableBlockchain
 #[cfg(feature = "rpc")]
 use bdk::blockchain::rpc::{Auth, RpcConfig};
 
-use bdk::database::BatchDatabase;
-use bdk::sled;
-use bdk::sled::Tree;
+#[cfg(feature = "key-value-db")]
+use bdk::database::any::SledDbConfiguration;
+#[cfg(feature = "sqlite-db")]
+use bdk::database::any::SqliteDbConfiguration;
+use bdk::database::{AnyDatabase, AnyDatabaseConfig, BatchDatabase, ConfigurableDatabase};
 use bdk::wallet::wallet_name_from_descriptor;
 use bdk::Wallet;
 use bdk::{bitcoin, Error};
@@ -88,7 +90,8 @@ enum ReplSubCommand {
     Exit,
 }
 
-fn prepare_home_dir() -> Result<PathBuf, Error> {
+/// prepare bdk_cli home and wallet directory
+fn prepare_home_wallet_dir(wallet_name: &str) -> Result<PathBuf, Error> {
     let mut dir = PathBuf::new();
     dir.push(
         &dirs_next::home_dir().ok_or_else(|| Error::Generic("home dir not found".to_string()))?,
@@ -100,25 +103,75 @@ fn prepare_home_dir() -> Result<PathBuf, Error> {
         fs::create_dir(&dir).map_err(|e| Error::Generic(e.to_string()))?;
     }
 
-    #[cfg(not(feature = "compact_filters"))]
-    dir.push("database.sled");
+    dir.push(wallet_name);
 
-    #[cfg(feature = "compact_filters")]
-    dir.push("compact_filters");
+    if !dir.exists() {
+        info!("Creating wallet directory {}", dir.as_path().display());
+        fs::create_dir(&dir).map_err(|e| Error::Generic(e.to_string()))?;
+    }
+
     Ok(dir)
 }
 
-fn open_database(wallet_opts: &WalletOpts) -> Result<Tree, Error> {
-    let mut database_path = prepare_home_dir()?;
-    let wallet_name = wallet_opts
-        .wallet
-        .as_deref()
-        .expect("We should always have a wallet name at this point");
-    database_path.push(wallet_name);
-    let database = sled::open(database_path)?;
-    let tree = database.open_tree(&wallet_name)?;
+/// Prepare wallet database directory
+fn prepare_wallet_db_dir(wallet_name: &str) -> Result<PathBuf, Error> {
+    let mut db_dir = prepare_home_wallet_dir(wallet_name)?;
+
+    #[cfg(feature = "key-value-db")]
+    db_dir.push("wallet.sled");
+
+    #[cfg(feature = "sqlite-db")]
+    db_dir.push("wallet.sqlite");
+
+    #[cfg(not(feature = "sqlite-db"))]
+    if !db_dir.exists() {
+        info!("Creating database directory {}", db_dir.as_path().display());
+        fs::create_dir(&db_dir).map_err(|e| Error::Generic(e.to_string()))?;
+    }
+
+    Ok(db_dir)
+}
+
+/// Prepare blockchain data directory (for compact filters)
+#[cfg(feature = "compact_filters")]
+fn prepare_bc_dir(wallet_name: &str) -> Result<PathBuf, Error> {
+    let mut bc_dir = prepare_home_wallet_dir(wallet_name)?;
+
+    bc_dir.push("compact_filters");
+
+    if !bc_dir.exists() {
+        info!(
+            "Creating blockchain directory {}",
+            bc_dir.as_path().display()
+        );
+        fs::create_dir(&bc_dir).map_err(|e| Error::Generic(e.to_string()))?;
+    }
+
+    Ok(bc_dir)
+}
+
+fn open_database(wallet_opts: &WalletOpts) -> Result<AnyDatabase, Error> {
+    let wallet_name = wallet_opts.wallet.as_ref().expect("wallet name");
+    let database_path = prepare_wallet_db_dir(wallet_name)?;
+
+    #[cfg(feature = "key-value-db")]
+    let config = AnyDatabaseConfig::Sled(SledDbConfiguration {
+        path: database_path
+            .into_os_string()
+            .into_string()
+            .expect("path string"),
+        tree_name: wallet_name.to_string(),
+    });
+    #[cfg(feature = "sqlite-db")]
+    let config = AnyDatabaseConfig::Sqlite(SqliteDbConfiguration {
+        path: database_path
+            .into_os_string()
+            .into_string()
+            .expect("path string"),
+    });
+    let database = AnyDatabase::from_config(&config)?;
     debug!("database opened successfully");
-    Ok(tree)
+    Ok(database)
 }
 
 #[allow(dead_code)]
@@ -180,10 +233,11 @@ fn new_blockchain(
             }
         }
 
+        let wallet_name = wallet_opts.wallet.as_ref().expect("wallet name");
         AnyBlockchainConfig::CompactFilters(CompactFiltersBlockchainConfig {
             peers,
             network: _network,
-            storage_dir: prepare_home_dir()?
+            storage_dir: prepare_bc_dir(wallet_name)?
                 .into_os_string()
                 .into_string()
                 .map_err(|_| Error::Generic("Internal OS_String conversion error".to_string()))?,

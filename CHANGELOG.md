@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Make `regtest` the default network.
 - Add experimental `regtest-*` features to automatically deploy local regtest nodes
 (bitcoind, and electrs) while running cli commands.
+- Put cached wallet data in separate directories: ~/.bdk-bitcoin/<wallet_name>
+- Add distinct `key-value-db` and `sqlite-db` features, keep default as `key-value-db`
 
 ## [0.4.0]
 

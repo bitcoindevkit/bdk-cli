@@ -31,9 +31,11 @@ bdk-reserves = { version = "0.18", optional = true}
 electrsd = { version= "0.12", features = ["trigger", "bitcoind_22_0"], optional = true}
 
 [features]
-default = ["cli", "repl"]
-cli = ["bdk/key-value-db", "clap", "dirs-next", "env_logger"]
+default = ["cli", "repl", "key-value-db"]
+cli = ["clap", "dirs-next", "env_logger"]
 repl = ["regex", "rustyline", "fd-lock"]
+key-value-db = ["bdk/key-value-db"]
+sqlite-db = ["bdk/sqlite"]
 electrum = ["bdk/electrum"]
 esplora = []
 esplora-ureq = ["esplora", "bdk/use-esplora-ureq"]

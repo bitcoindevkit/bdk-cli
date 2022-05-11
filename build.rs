@@ -15,4 +15,21 @@ fn main() {
     if blockchain_features.len() > 1 {
         panic!("At most one blockchain client feature can be enabled but these features were enabled: {:?}", blockchain_features)
     }
+
+    let key_value_db =
+        env::var_os("CARGO_FEATURE_KEY_VALUE_DB").map(|_| "key-value-db".to_string());
+    let sqlite_db = env::var_os("CARGO_FEATURE_SQLITE_DB").map(|_| "sqlite-db".to_string());
+
+    let database_features: Vec<String> = vec![key_value_db, sqlite_db]
+        .iter()
+        .map(|f| f.to_owned())
+        .flatten()
+        .collect();
+
+    if database_features.len() > 1 {
+        panic!(
+            "At most one database feature can be enabled but these features were enabled: {:?}",
+            database_features
+        )
+    }
 }
