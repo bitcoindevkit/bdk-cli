@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add experimental `regtest-*` features to automatically deploy local regtest nodes
 (bitcoind, and electrs) while running cli commands.
 - Put cached wallet data in separate directories: ~/.bdk-bitcoin/<wallet_name>
+- New MSRV set to `1.56`
 
 ## [0.4.0]
 

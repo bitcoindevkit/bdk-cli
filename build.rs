@@ -22,8 +22,7 @@ fn main() {
 
     let database_features: Vec<String> = vec![key_value_db, sqlite_db]
         .iter()
-        .map(|f| f.to_owned())
-        .flatten()
+        .filter_map(|f| f.to_owned())
         .collect();
 
     if database_features.len() > 1 {
