@@ -1593,6 +1593,8 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Bitcoin,
+            #[cfg(feature = "regtest-node")]
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -1654,6 +1656,8 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Testnet,
+            #[cfg(feature = "regtest-node")]
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -1693,6 +1697,8 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Bitcoin,
+            #[cfg(feature = "regtest-node")]
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -1733,6 +1739,8 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Bitcoin,
+            #[cfg(feature = "regtest-node")]
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -1774,6 +1782,8 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Bitcoin,
+            #[cfg(feature = "regtest-node")]
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -1811,6 +1821,8 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Bitcoin,
+            #[cfg(feature = "regtest-node")]
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -1851,6 +1863,8 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Testnet,
+            #[cfg(feature = "regtest-node")]
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -1925,6 +1939,8 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Testnet,
+            #[cfg(feature = "regtest-node")]
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -1994,6 +2010,8 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Testnet,
+            #[cfg(feature = "regtest-node")]
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -2064,6 +2082,8 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Testnet,
+            #[cfg(feature = "regtest-node")]
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
