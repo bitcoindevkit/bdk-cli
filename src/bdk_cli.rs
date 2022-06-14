@@ -12,11 +12,10 @@
 
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::Network;
-use std::fs;
-use std::path::PathBuf;
-
 use clap::AppSettings;
 use log::{debug, error, info, warn};
+use std::fs;
+use std::path::PathBuf;
 
 #[cfg(feature = "repl")]
 use rustyline::error::ReadlineError;
@@ -51,7 +50,7 @@ use bdk::database::{AnyDatabase, AnyDatabaseConfig, BatchDatabase, ConfigurableD
 use bdk::wallet::wallet_name_from_descriptor;
 use bdk::Wallet;
 use bdk::{bitcoin, Error};
-use bdk_cli::WalletSubCommand;
+use bdk_cli::{Backend, WalletSubCommand};
 use bdk_cli::{CliOpts, CliSubCommand, KeySubCommand, OfflineWalletSubCommand, WalletOpts};
 
 #[cfg(any(
@@ -340,10 +339,24 @@ fn main() {
 
     #[cfg(feature = "regtest-node")]
     let bitcoind = {
-        if network != Network::Regtest {
-            error!("Do not override default network value for `regtest-node` features");
-        }
-        let bitcoind_conf = electrsd::bitcoind::Conf::default();
+        // Configure node directory according to cli options
+        // nodes always have a persistent directory
+        let bitcoind_conf = {
+            match &cli_opts.datadir {
+                None => {
+                    let datadir = prepare_node_datadir().unwrap();
+                    let mut conf = electrsd::bitcoind::Conf::default();
+                    conf.staticdir = Some(datadir);
+                    conf
+                }
+                Some(path) => {
+                    let mut conf = electrsd::bitcoind::Conf::default();
+                    conf.staticdir = Some(path.into());
+                    conf
+                }
+            }
+        };
+
         let bitcoind_exe = electrsd::bitcoind::downloaded_exe_path()
             .expect("We should always have downloaded path");
         electrsd::bitcoind::BitcoinD::with_conf(bitcoind_exe, &bitcoind_conf).unwrap()
@@ -352,49 +365,39 @@ fn main() {
     #[cfg(feature = "regtest-bitcoin")]
     let backend = {
         Backend::Bitcoin {
-            rpc_url: bitcoind.params.rpc_socket.to_string(),
-            rpc_auth: bitcoind
-                .params
-                .cookie_file
-                .clone()
-                .into_os_string()
-                .into_string()
-                .unwrap(),
+            bitcoind: Box::new(bitcoind),
         }
     };
 
     #[cfg(feature = "regtest-electrum")]
-    let (_electrsd, backend) = {
+    let backend = {
         let elect_conf = electrsd::Conf::default();
         let elect_exe =
             electrsd::downloaded_exe_path().expect("We should always have downloaded path");
         let electrsd = electrsd::ElectrsD::with_conf(elect_exe, &bitcoind, &elect_conf).unwrap();
-        let backend = Backend::Electrum {
-            electrum_url: electrsd.electrum_url.clone(),
-        };
-        (electrsd, backend)
+        Backend::Electrum {
+            bitcoind: Box::new(bitcoind),
+            electrsd: Box::new(electrsd),
+        }
     };
 
     #[cfg(any(feature = "regtest-esplora-ureq", feature = "regtest-esplora-reqwest"))]
-    let (_electrsd, backend) = {
+    let backend = {
         let mut elect_conf = electrsd::Conf::default();
         elect_conf.http_enabled = true;
         let elect_exe =
             electrsd::downloaded_exe_path().expect("Electrsd downloaded binaries not found");
         let electrsd = electrsd::ElectrsD::with_conf(elect_exe, &bitcoind, &elect_conf).unwrap();
-        let backend = Backend::Esplora {
-            esplora_url: electrsd
-                .esplora_url
-                .clone()
-                .expect("Esplora port not open in electrum"),
-        };
-        (electrsd, backend)
+        Backend::Esplora {
+            bitcoind: Box::new(bitcoind),
+            esplorad: Box::new(electrsd),
+        }
     };
 
     #[cfg(not(feature = "regtest-node"))]
     let backend = Backend::None;
 
-    match handle_command(cli_opts, network, backend) {
+    match handle_command(cli_opts, network, &backend) {
         Ok(result) => println!("{}", result),
         Err(e) => {
             match e {
