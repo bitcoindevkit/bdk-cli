@@ -85,6 +85,9 @@ enum ReplSubCommand {
     OfflineWalletSubCommand(OfflineWalletSubCommand),
     #[structopt(flatten)]
     KeySubCommand(KeySubCommand),
+    #[cfg(feature = "regtest-node")]
+    #[structopt(flatten)]
+    NodeSubCommand(bdk_cli::NodeSubCommand),
     /// Exit REPL loop
     Exit,
 }
@@ -428,8 +431,16 @@ fn maybe_descriptor_wallet_name(
     Ok(wallet_opts)
 }
 
-fn handle_command(cli_opts: CliOpts, network: Network, _backend: Backend) -> Result<String, Error> {
+fn handle_command(
+    cli_opts: CliOpts,
+    network: Network,
+    _backend: &Backend,
+) -> Result<String, Error> {
     let result = match cli_opts.subcommand {
+        #[cfg(feature = "regtest-node")]
+        CliSubCommand::Node { subcommand: cmd } => {
+            serde_json::to_string_pretty(&_backend.exec_cmd(cmd)?)
+        }
         #[cfg(any(
             feature = "electrum",
             feature = "esplora",
@@ -442,11 +453,11 @@ fn handle_command(cli_opts: CliOpts, network: Network, _backend: Backend) -> Res
         } => {
             let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, network)?;
             let database = open_database(&wallet_opts)?;
-            let blockchain = new_blockchain(network, &wallet_opts, &_backend)?;
+            let blockchain = new_blockchain(network, &wallet_opts, _backend)?;
             let wallet = new_wallet(network, &wallet_opts, database)?;
             let result =
                 bdk_cli::handle_online_wallet_subcommand(&wallet, &blockchain, online_subcommand)?;
-            serde_json::to_string_pretty(&result)?
+            serde_json::to_string_pretty(&result)
         }
         CliSubCommand::Wallet {
             wallet_opts,
@@ -460,13 +471,13 @@ fn handle_command(cli_opts: CliOpts, network: Network, _backend: Backend) -> Res
                 &wallet_opts,
                 offline_subcommand,
             )?;
-            serde_json::to_string_pretty(&result)?
+            serde_json::to_string_pretty(&result)
         }
         CliSubCommand::Key {
             subcommand: key_subcommand,
         } => {
             let result = bdk_cli::handle_key_subcommand(network, key_subcommand)?;
-            serde_json::to_string_pretty(&result)?
+            serde_json::to_string_pretty(&result)
         }
         #[cfg(feature = "compiler")]
         CliSubCommand::Compile {
@@ -474,7 +485,7 @@ fn handle_command(cli_opts: CliOpts, network: Network, _backend: Backend) -> Res
             script_type,
         } => {
             let result = bdk_cli::handle_compile_subcommand(network, policy, script_type)?;
-            serde_json::to_string_pretty(&result)?
+            serde_json::to_string_pretty(&result)
         }
         #[cfg(feature = "repl")]
         CliSubCommand::Repl { wallet_opts } => {
@@ -520,6 +531,10 @@ fn handle_command(cli_opts: CliOpts, network: Network, _backend: Backend) -> Res
                         debug!("repl_subcommand = {:?}", repl_subcommand);
 
                         let result = match repl_subcommand {
+                            #[cfg(feature = "regtest-node")]
+                            ReplSubCommand::NodeSubCommand(sub_command) => {
+                                _backend.exec_cmd(sub_command)
+                            }
                             #[cfg(any(
                                 feature = "electrum",
                                 feature = "esplora",
@@ -527,7 +542,7 @@ fn handle_command(cli_opts: CliOpts, network: Network, _backend: Backend) -> Res
                                 feature = "rpc"
                             ))]
                             ReplSubCommand::OnlineWalletSubCommand(online_subcommand) => {
-                                let blockchain = new_blockchain(network, &wallet_opts, &_backend)?;
+                                let blockchain = new_blockchain(network, &wallet_opts, _backend)?;
                                 bdk_cli::handle_online_wallet_subcommand(
                                     &wallet,
                                     &blockchain,
@@ -558,7 +573,7 @@ fn handle_command(cli_opts: CliOpts, network: Network, _backend: Backend) -> Res
                 }
             }
 
-            "Exiting REPL".to_string()
+            Ok("Exiting REPL".to_string())
         }
         #[cfg(all(feature = "reserves", feature = "electrum"))]
         CliSubCommand::ExternalReserves {
@@ -576,10 +591,10 @@ fn handle_command(cli_opts: CliOpts, network: Network, _backend: Backend) -> Res
                 addresses,
                 electrum_opts,
             )?;
-            serde_json::to_string_pretty(&result)?
+            serde_json::to_string_pretty(&result)
         }
     };
-    Ok(result)
+    result.map_err(|e| e.into())
 }
 
 #[cfg(test)]
