@@ -102,6 +102,7 @@ use std::str::FromStr;
 pub use structopt;
 use structopt::StructOpt;
 
+use crate::bdk::keys::GeneratableKey;
 use crate::OfflineWalletSubCommand::*;
 #[cfg(any(
     feature = "electrum",
@@ -123,6 +124,8 @@ use bdk::bitcoin::hashes::hex::FromHex;
 use bdk::bitcoin::secp256k1::Secp256k1;
 use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey, KeySource};
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
+#[cfg(feature = "regtest-node")]
+use bdk::bitcoin::Amount;
 use bdk::bitcoin::{Address, Network, OutPoint, Script, Txid};
 #[cfg(all(
     feature = "reserves",
@@ -150,7 +153,7 @@ use bdk::electrum_client::{Client, ElectrumApi};
 use bdk::keys::bip39::{Language, Mnemonic, WordCount};
 use bdk::keys::DescriptorKey::Secret;
 use bdk::keys::KeyError::{InvalidNetwork, Message};
-use bdk::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
+use bdk::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratedKey};
 use bdk::miniscript::miniscript;
 #[cfg(feature = "compiler")]
 use bdk::miniscript::policy::Concrete;
@@ -168,6 +171,8 @@ use bdk_reserves::reserves::verify_proof;
 ))]
 #[cfg(feature = "reserves")]
 use bdk_reserves::reserves::ProofOfReserves;
+#[cfg(feature = "regtest-node")]
+use electrsd::bitcoind::bitcoincore_rpc::{Client, RpcApi};
 
 /// Global options
 ///
@@ -203,6 +208,8 @@ use bdk_reserves::reserves::ProofOfReserves;
 ///
 /// let expected_cli_opts = CliOpts {
 ///             network: Network::Testnet,
+///             #[cfg(feature = "regtest-node")]
+///             datadir: None,
 ///             subcommand: CliSubCommand::Wallet {
 ///                 wallet_opts: WalletOpts {
 ///                     wallet: None,
@@ -263,6 +270,11 @@ pub struct CliOpts {
         default_value = "testnet"
     )]
     pub network: Network,
+    /// Sets the backend node data directory.
+    /// Default value : "~/.bdk-bitcoin/node-data"
+    #[cfg(feature = "regtest-node")]
+    #[structopt(name = "DATADIR", short = "d", long = "datadir")]
+    pub datadir: Option<String>,
     /// Top level cli sub-command
     #[structopt(subcommand)]
     pub subcommand: CliSubCommand,
@@ -280,7 +292,15 @@ pub struct CliOpts {
     rename_all = "snake",
     long_about = "Top level options and command modes"
 )]
+#[allow(clippy::large_enum_variant)]
 pub enum CliSubCommand {
+    /// Regtest node sub-commands
+    #[cfg(feature = "regtest-node")]
+    #[structopt(long_about = "Regtest Node mode")]
+    Node {
+        #[structopt(subcommand)]
+        subcommand: NodeSubCommand,
+    },
     /// Wallet options and sub-commands
     #[structopt(long_about = "Wallet mode")]
     Wallet {
@@ -332,6 +352,31 @@ pub enum CliSubCommand {
         #[structopt(flatten)]
         electrum_opts: ElectrumOpts,
     },
+}
+
+#[cfg_attr(not(doc), allow(missing_docs))]
+#[cfg_attr(
+    doc,
+    doc = r#"
+Node operation sub-commands
+
+Used as an API for the node backend.
+"#
+)]
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+#[structopt(rename_all = "lower")]
+#[cfg(any(feature = "regtest-node"))]
+pub enum NodeSubCommand {
+    /// Get info
+    GetInfo,
+    /// Get new address from node's test wallet
+    GetNewAddress,
+    /// Generate blocks
+    Generate { block_num: u64 },
+    /// Get Wallet balance
+    GetBalance,
+    /// Send to an external wallet address
+    SendToAddress { address: String, amount: u64 },
 }
 
 #[cfg_attr(not(doc), allow(missing_docs))]
@@ -880,6 +925,97 @@ fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
     OutPoint::from_str(s).map_err(|e| e.to_string())
 }
 
+#[allow(dead_code)]
+// Different Backend types activated with `regtest-*` mode.
+// If `regtest-*` feature not activated, then default is `None`.
+//
+// Box the backend to reduce size of Enum in memory.
+pub enum Backend {
+    None,
+    #[cfg(feature = "regtest-bitcoin")]
+    // A pure core backend. Wallet connected to it via RPC.
+    Bitcoin {
+        bitcoind: Box<electrsd::bitcoind::BitcoinD>,
+    },
+    #[cfg(feature = "regtest-electrum")]
+    // An Electrum backend, with an underlying bitcoin core
+    // Wallet connected to it, via the electrum url
+    Electrum {
+        bitcoind: Box<electrsd::bitcoind::BitcoinD>,
+        electrsd: Box<electrsd::ElectrsD>,
+    },
+    // An Esplora backend with underlying bitcoin core.
+    // Wallet connected to it, via the esplora url
+    #[cfg(any(feature = "regtest-esplora-ureq", feature = "regtest-esplora-reqwest"))]
+    Esplora {
+        bitcoind: Box<electrsd::bitcoind::BitcoinD>,
+        esplorad: Box<electrsd::ElectrsD>,
+    },
+}
+
+#[cfg(feature = "regtest-node")]
+impl Backend {
+    /// Execute a [`NodeSubCommand`] in the backend
+    pub fn exec_cmd(&self, cmd: NodeSubCommand) -> Result<serde_json::Value, Error> {
+        let client = self.get_client()?;
+        match cmd {
+            NodeSubCommand::GetInfo => Ok(serde_json::to_value(
+                client
+                    .get_blockchain_info()
+                    .map_err(|e| Error::Generic(e.to_string()))?,
+            )?),
+
+            NodeSubCommand::GetNewAddress => Ok(serde_json::to_value(
+                client
+                    .get_new_address(None, None)
+                    .map_err(|e| Error::Generic(e.to_string()))?,
+            )?),
+
+            NodeSubCommand::Generate { block_num } => {
+                let core_addrs = client
+                    .get_new_address(None, None)
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+                let block_hashes = client
+                    .generate_to_address(block_num, &core_addrs)
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(serde_json::to_value(block_hashes)?)
+            }
+
+            NodeSubCommand::GetBalance => Ok(serde_json::to_value(
+                client
+                    .get_balance(None, None)
+                    .map_err(|e| Error::Generic(e.to_string()))?
+                    .to_string(),
+            )?),
+
+            NodeSubCommand::SendToAddress { address, amount } => {
+                let address =
+                    Address::from_str(&address).map_err(|e| Error::Generic(e.to_string()))?;
+                let amount = Amount::from_sat(amount);
+                let txid = client
+                    .send_to_address(&address, amount, None, None, None, None, None, None)
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(serde_json::to_value(&txid)?)
+            }
+        }
+    }
+
+    // Expose the underlying RPC client
+    pub fn get_client(&self) -> Result<&Client, Error> {
+        match self {
+            Self::None => Err(Error::Generic(
+                "No backend available. Cannot execute node commands".to_string(),
+            )),
+            #[cfg(feature = "regtest-bitcoin")]
+            Self::Bitcoin { bitcoind } => Ok(&bitcoind.client),
+            #[cfg(feature = "regtest-electrum")]
+            Self::Electrum { bitcoind, .. } => Ok(&bitcoind.client),
+            #[cfg(any(feature = "regtest-esplora-ureq", feature = "regtest-esplora-reqwest"))]
+            Self::Esplora { bitcoind, .. } => Ok(&bitcoind.client),
+        }
+    }
+}
+
 /// Execute an offline wallet sub-command
 ///
 /// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
@@ -1076,7 +1212,7 @@ where
                 .try_fold::<_, _, Result<PartiallySignedTransaction, Error>>(
                     init_psbt,
                     |mut acc, x| {
-                        acc.merge(x)?;
+                        acc.combine(x)?;
                         Ok(acc)
                     },
                 )?;
