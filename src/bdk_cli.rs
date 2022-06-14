@@ -198,16 +198,6 @@ fn open_database(wallet_opts: &WalletOpts) -> Result<AnyDatabase, Error> {
     Ok(database)
 }
 
-#[allow(dead_code)]
-// Different Backend types activated with `regtest-*` mode.
-// If `regtest-*` feature not activated, then default is `None`.
-enum Backend {
-    None,
-    Bitcoin { rpc_url: String, rpc_auth: String },
-    Electrum { electrum_url: String },
-    Esplora { esplora_url: String },
-}
-
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -222,12 +212,13 @@ fn new_blockchain(
     #[cfg(feature = "electrum")]
     let config = {
         let url = match _backend {
-            Backend::Electrum { electrum_url } => electrum_url.to_owned(),
-            _ => wallet_opts.electrum_opts.server.clone(),
+            #[cfg(feature = "regtest-electrum")]
+            Backend::Electrum { electrsd, .. } => &electrsd.electrum_url,
+            _ => &wallet_opts.electrum_opts.server,
         };
 
         AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
-            url,
+            url: url.to_owned(),
             socks5: wallet_opts.proxy_opts.proxy.clone(),
             retry: wallet_opts.proxy_opts.retries,
             timeout: wallet_opts.electrum_opts.timeout,
@@ -236,13 +227,21 @@ fn new_blockchain(
     };
 
     #[cfg(feature = "esplora")]
-    let config = AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
-        base_url: wallet_opts.esplora_opts.server.clone(),
-        timeout: Some(wallet_opts.esplora_opts.timeout),
-        concurrency: Some(wallet_opts.esplora_opts.conc),
-        stop_gap: wallet_opts.esplora_opts.stop_gap,
-        proxy: wallet_opts.proxy_opts.proxy.clone(),
-    });
+    let config = {
+        let url = match _backend {
+            #[cfg(any(feature = "regtest-esplora-ureq", feature = "regtest-esplora-reqwest"))]
+            Backend::Esplora { esplorad } => esplorad.esplora_url.expect("Esplora url expected"),
+            _ => wallet_opts.esplora_opts.server.clone(),
+        };
+
+        AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
+            base_url: url,
+            timeout: Some(wallet_opts.esplora_opts.timeout),
+            concurrency: Some(wallet_opts.esplora_opts.conc),
+            stop_gap: wallet_opts.esplora_opts.stop_gap,
+            proxy: wallet_opts.proxy_opts.proxy.clone(),
+        })
+    };
 
     #[cfg(feature = "compact_filters")]
     let config = {
@@ -272,10 +271,11 @@ fn new_blockchain(
     #[cfg(feature = "rpc")]
     let config: AnyBlockchainConfig = {
         let (url, auth) = match _backend {
-            Backend::Bitcoin { rpc_url, rpc_auth } => (
-                rpc_url,
+            #[cfg(feature = "regtest-node")]
+            Backend::Bitcoin { bitcoind } => (
+                bitcoind.params.rpc_socket.to_string(),
                 Auth::Cookie {
-                    file: rpc_auth.into(),
+                    file: bitcoind.params.cookie_file.clone(),
                 },
             ),
             _ => {
@@ -289,16 +289,13 @@ fn new_blockchain(
                         password: wallet_opts.rpc_opts.basic_auth.1.clone(),
                     }
                 };
-                (&wallet_opts.rpc_opts.address, auth)
+                (wallet_opts.rpc_opts.address.clone(), auth)
             }
         };
-        // Use deterministic wallet name derived from descriptor
-        let wallet_name = wallet_name_from_descriptor(
-            &wallet_opts.descriptor[..],
-            wallet_opts.change_descriptor.as_deref(),
-            _network,
-            &Secp256k1::new(),
-        )?;
+        let wallet_name = wallet_opts
+            .wallet
+            .to_owned()
+            .expect("Wallet name should be available this level");
 
         let rpc_url = "http://".to_string() + &url;
 
@@ -313,7 +310,7 @@ fn new_blockchain(
         AnyBlockchainConfig::Rpc(rpc_config)
     };
 
-    Ok(AnyBlockchain::from_config(&config)?)
+    AnyBlockchain::from_config(&config)
 }
 
 fn new_wallet<D>(
