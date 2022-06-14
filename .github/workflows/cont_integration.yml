@@ -29,8 +29,6 @@ jobs:
           # regtest-* features are experimental and not fully usable
           - regtest-bitcoin
           - regtest-electrum
-          - regtest-esplora-ureq
-          - regtest-esplora-reqwest
 
     steps:
       - name: Checkout

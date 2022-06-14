@@ -12,7 +12,7 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-bdk = { version = "0.18", default-features = false, features = ["all-keys"]}
+bdk = { version = "0.19", default-features = false, features = ["all-keys"]}
 bdk-macros = "0.6"
 structopt = "^0.3"
 serde_json = { version = "^1.0" }
@@ -28,7 +28,7 @@ env_logger = { version = "0.7", optional = true }
 clap = { version = "2.33", optional = true }
 regex = { version = "1", optional = true }
 bdk-reserves = { version = "0.18", optional = true}
-electrsd = { version= "0.12", features = ["trigger", "bitcoind_22_0"], optional = true}
+electrsd = { version= "0.19", features = ["bitcoind_22_0"], optional = true}
 
 [features]
 default = ["cli", "repl", "key-value-db"]
@@ -45,9 +45,11 @@ compact_filters = ["bdk/compact_filters"]
 rpc = ["bdk/rpc"]
 reserves = ["bdk-reserves"]
 verify = ["bdk/verify"]
-regtest-node = []
-regtest-bitcoin = ["regtest-node" , "rpc", "electrsd"]
+regtest-node = ["electrsd"]
+regtest-bitcoin = ["regtest-node", "rpc"]
 regtest-electrum = ["regtest-node", "electrum", "electrsd/electrs_0_8_10"]
+# regtest-esplora modes aren't operable currently, due to some issues in electrsd/esplora_a33e97e1
+# added for sake of code compleness.
 regtest-esplora-ureq = ["regtest-node", "esplora-ureq", "electrsd/esplora_a33e97e1"]
 regtest-esplora-reqwest = ["regtest-node", "esplora-reqwest", "electrsd/esplora_a33e97e1"]
 
