@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Add distinct `key-value-db` and `sqlite-db` features, keep default as `key-value-db`
+- Add experimental `regtest-*` features that will auto spawn bitcoind regtest node in the background. Exposing bitcoin-cli rpc calls via new bdk-cli command `bdk-cli node <command> [<args>]`.
+- Add integration testing framework in `tests/integrations.rs` with `regtest-*` features.
 
 ## [0.5.0]
 
