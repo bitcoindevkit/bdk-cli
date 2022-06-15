@@ -11,8 +11,11 @@ keywords = ["bitcoin", "wallet", "descriptor", "psbt"]
 readme = "README.md"
 license = "MIT"
 
+[patch.crates-io]
+bdk-reserves = { git = "https://github.com/rajarshimaitra/bdk-reserves.git", branch = "bdk-update", optional = true}
+
 [dependencies]
-bdk = { version = "0.18", default-features = false, features = ["all-keys"]}
+bdk = { version = "0.19", default-features = false, features = ["all-keys"]}
 bdk-macros = "0.6"
 structopt = "^0.3"
 serde_json = { version = "^1.0" }

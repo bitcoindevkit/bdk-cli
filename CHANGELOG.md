@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Add distinct `key-value-db` and `sqlite-db` features, keep default as `key-value-db`
+- Update `bdk` to version 0.19.0
+  - fixes `sqlite-db` issue causing wrong balance
+  - adds experimental taproot descriptor and PSBT support
+- Update `bdk-reserves` to version 0.19.0
 
 ## [0.5.0]
 

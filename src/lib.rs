@@ -1076,7 +1076,7 @@ where
                 .try_fold::<_, _, Result<PartiallySignedTransaction, Error>>(
                     init_psbt,
                     |mut acc, x| {
-                        acc.merge(x)?;
+                        acc.combine(x)?;
                         Ok(acc)
                     },
                 )?;
