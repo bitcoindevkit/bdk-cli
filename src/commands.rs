@@ -1,8 +1,4 @@
-// Bitcoin Dev Kit
-// Written in 2020 by
-//     Alekos Filini <alekos.filini@gmail.com>
-//
-// Copyright (c) 2020-2022 Bitcoin Dev Kit Developers
+// Copyright (c) 2020-2021 Bitcoin Dev Kit Developers
 //
 // This file is licensed under the Apache License, Version 2.0 <LICENSE-APACHE
 // or http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -10,249 +6,37 @@
 // You may not use this file except in accordance with one or both of these
 // licenses.
 
-//! BDK command line interface
+//! bdk-cli Command structure
 //!
-//! This lib provides [`structopt`] structs and enums that parse CLI options and sub-commands from
-//! the command line or from a `String` vector that can be used to access features of the [`bdk`]
-//! library. Functions are also provided to handle subcommands and options and provide results via
-//! the [`bdk`] lib.
-//!
-//! See the [`bdk-cli`] example bin for how to use this lib to create a simple command line
-//! application that demonstrates [`bdk`] wallet and key management features.
-//!
-//! See [`CliOpts`] for global cli options and [`CliSubCommand`] for supported top level sub-commands.
-//!
-//! [`structopt`]: https://docs.rs/crate/structopt
-//! [`bdk`]: https://github.com/bitcoindevkit/bdk
-//! [`bdk-cli`]: https://github.com/bitcoindevkit/bdk-cli/blob/master/src/bdk_cli.rs
-//!
-//! # Example
-//!
-//! ```no_run
-//! # #[cfg(feature = "electrum")]
-//! # {
-//! # use bdk::bitcoin::Network;
-//! # use bdk::blockchain::{AnyBlockchain, ConfigurableBlockchain};
-//! # use bdk::blockchain::{AnyBlockchainConfig, ElectrumBlockchainConfig};
-//! # use bdk_cli::{self, CliOpts, CliSubCommand, WalletOpts, OfflineWalletSubCommand, WalletSubCommand};
-//! # use bdk::database::MemoryDatabase;
-//! # use bdk::Wallet;
-//! # use std::sync::Arc;
-//! # use structopt::StructOpt;
-//! # use std::str::FromStr;
-//!
-//! // to get args from cli use:
-//! // let cli_opts = CliOpts::from_args();
-//!
-//! let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet", "--descriptor",
-//!                     "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)",
-//!                     "sync"];
-//!
-//! let cli_opts = CliOpts::from_iter(&cli_args);
-//! let network = cli_opts.network;
-//!
-//! if let CliSubCommand::Wallet {
-//!         wallet_opts,
-//!         subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand)
-//!     } = cli_opts.subcommand {
-//!
-//!     let descriptor = wallet_opts.descriptor.as_str();
-//!     let change_descriptor = wallet_opts.change_descriptor.as_deref();
-//!
-//!     let database = MemoryDatabase::new();
-//!
-//!     let blockchain_config = AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
-//!         url: wallet_opts.electrum_opts.server.clone(),
-//!         socks5: wallet_opts.proxy_opts.proxy.clone(),
-//!         retry: wallet_opts.proxy_opts.retries,
-//!         timeout: wallet_opts.electrum_opts.timeout,
-//!         stop_gap: wallet_opts.electrum_opts.stop_gap,
-//!     });
-//!     let blockchain = AnyBlockchain::from_config(&blockchain_config).expect("blockchain");
-//!
-//!     let wallet = Wallet::new(
-//!         descriptor,
-//!         change_descriptor,
-//!         network,
-//!         database,
-//!     ).expect("wallet");
-//!
-//!     let result = bdk_cli::handle_online_wallet_subcommand(&wallet, &blockchain, online_subcommand).expect("result");
-//!     println!("{}", serde_json::to_string_pretty(&result).unwrap());
-//! }
-//! # }
-//! ```
+//! This module defines all the bdk-cli commands using [structopt]
 
-pub extern crate bdk;
-#[macro_use]
-extern crate serde_json;
-
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "compact_filters",
-    feature = "rpc"
-))]
-#[macro_use]
-extern crate bdk_macros;
-
-use std::collections::BTreeMap;
-use std::str::FromStr;
-
-pub use structopt;
 use structopt::StructOpt;
 
-use crate::OfflineWalletSubCommand::*;
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "compact_filters",
-    feature = "rpc"
-))]
-use crate::OnlineWalletSubCommand::*;
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk::bitcoin::blockdata::transaction::TxOut;
-use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "compact_filters",
-    feature = "rpc"
-))]
-use bdk::bitcoin::hashes::hex::FromHex;
-use bdk::bitcoin::secp256k1::Secp256k1;
-use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey, KeySource};
-use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-use bdk::bitcoin::{Address, Network, OutPoint, Script, Txid};
-#[cfg(all(
-    feature = "reserves",
-    any(
-        feature = "electrum",
-        feature = "esplora",
-        feature = "compact_filters",
-        feature = "rpc"
-    )
-))]
-use bdk::blockchain::Capability;
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "compact_filters",
-    feature = "rpc"
-))]
-use bdk::blockchain::{log_progress, Blockchain};
-use bdk::database::BatchDatabase;
-use bdk::descriptor::Segwitv0;
-#[cfg(feature = "compiler")]
-use bdk::descriptor::{Descriptor, Legacy, Miniscript};
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk::electrum_client::{Client, ElectrumApi};
-use bdk::keys::bip39::{Language, Mnemonic, WordCount};
-use bdk::keys::DescriptorKey::Secret;
-use bdk::keys::KeyError::{InvalidNetwork, Message};
-use bdk::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
-use bdk::miniscript::miniscript;
-#[cfg(feature = "compiler")]
-use bdk::miniscript::policy::Concrete;
-use bdk::wallet::AddressIndex;
-use bdk::Error;
-use bdk::SignOptions;
-use bdk::{FeeRate, KeychainKind, Wallet};
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk_reserves::reserves::verify_proof;
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "compact_filters",
-    feature = "rpc"
-))]
-#[cfg(feature = "reserves")]
-use bdk_reserves::reserves::ProofOfReserves;
+use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
+use bdk::bitcoin::{Address, Network, OutPoint, Script};
 
-/// Global options
-///
-/// The global options and top level sub-command required for all subsequent [`CliSubCommand`]'s.
-///
-/// # Example
-///
-/// ```
-/// # #[cfg(any(feature = "electrum", feature = "esplora", feature = "compact_filters", feature = "rpc"))]
-/// # {
-/// # use bdk::bitcoin::Network;
-/// # use structopt::StructOpt;
-/// # use bdk_cli::{CliOpts, WalletOpts, CliSubCommand, WalletSubCommand};
-/// # #[cfg(feature = "electrum")]
-/// # use bdk_cli::ElectrumOpts;
-/// # #[cfg(feature = "esplora")]
-/// # use bdk_cli::EsploraOpts;
-/// # #[cfg(feature = "rpc")]
-/// # use bdk_cli::RpcOpts;
-/// # #[cfg(feature = "compact_filters")]
-/// # use bdk_cli::CompactFilterOpts;
-/// # #[cfg(any(feature = "compact_filters", feature = "electrum", feature="esplora"))]
-/// # use bdk_cli::ProxyOpts;
-/// # use bdk_cli::OnlineWalletSubCommand::Sync;
-///
-/// let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
-///                     "--descriptor", "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)",
-///                     "sync"];
-///
-/// // to get CliOpts from the OS command line args use:
-/// // let cli_opts = CliOpts::from_args();
-/// let cli_opts = CliOpts::from_iter(&cli_args);
-///
-/// let expected_cli_opts = CliOpts {
-///             network: Network::Testnet,
-///             subcommand: CliSubCommand::Wallet {
-///                 wallet_opts: WalletOpts {
-///                     wallet: None,
-///                     verbose: false,
-///                     descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
-///                     change_descriptor: None,
-///               #[cfg(feature = "electrum")]
-///               electrum_opts: ElectrumOpts {
-///                   timeout: None,
-///                   server: "ssl://electrum.blockstream.info:60002".to_string(),
-///                   stop_gap: 10
-///               },
-///               #[cfg(feature = "esplora")]
-///               esplora_opts: EsploraOpts {
-///                   server: "https://blockstream.info/testnet/api/".to_string(),
-///                   timeout: 5,
-///                   stop_gap: 10,
-///                   conc: 4
-///               },
-///                 #[cfg(feature = "rpc")]
-///                 rpc_opts: RpcOpts{
-///                    address: "127.0.0.1:18443".to_string(),
-///                    basic_auth: ("user".to_string(), "password".to_string()),
-///                    skip_blocks: None,
-///                    cookie: None,
-///                },
-///                #[cfg(feature = "compact_filters")]
-///                compactfilter_opts: CompactFilterOpts{
-///                    address: vec!["127.0.0.1:18444".to_string()],
-///                    conn_count: 4,
-///                    skip_blocks: 0,
-///                },
-///                #[cfg(any(feature="compact_filters", feature="electrum", feature="esplora"))]
-///                    proxy_opts: ProxyOpts{
-///                        proxy: None,
-///                        proxy_auth: None,
-///                        retries: 5,
-///                    },
-///                 },
-///                 subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync),
-///             },
-///         };
-///
-/// assert_eq!(expected_cli_opts, cli_opts);
-/// # }
-/// ```
+#[cfg(any(
+    feature = "compact_filters",
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc"
+))]
+use crate::utils::parse_proxy_auth;
+use crate::utils::{parse_outpoint, parse_recipient};
 
-#[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(name = "BDK CLI",
-version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
+#[derive(PartialEq, Clone, Debug, StructOpt)]
+/// The BDK Command Line Wallet App
+///
+/// bdk-cli is a light weight command line bitcoin wallet, powered by BDK.
+/// This app can be used as a playground as well as testing environment to simulate
+/// various wallet testing situations. If you are planning to use BDK in your wallet, bdk-cli
+/// is also a great intro tool to get familiar with the BDK API.
+///
+/// But this is not just any toy.
+/// bdk-cli is also a fully functioning Bitcoin wallet with taproot support!
+///
+/// For more information checkout https://bitcoindevkit.org/
+#[structopt(version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
 pub struct CliOpts {
     /// Sets the network
@@ -263,34 +47,33 @@ pub struct CliOpts {
         default_value = "testnet"
     )]
     pub network: Network,
-    /// Top level cli sub-command
     #[structopt(subcommand)]
     pub subcommand: CliSubCommand,
 }
 
 /// CLI sub-commands
-///
-/// The top level sub-commands, each may have different required options. For
-/// instance [`CliSubCommand::Wallet`] requires [`WalletOpts`] with a required descriptor but
-/// [`CliSubCommand::Key`] sub-command does not. [`CliSubCommand::Repl`] also requires
-/// [`WalletOpts`] and a descriptor because in this mode both [`WalletSubCommand`] and
-/// [`KeySubCommand`] sub-commands are available.
 #[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(
-    rename_all = "snake",
-    long_about = "Top level options and command modes"
-)]
+#[structopt(rename_all = "snake")]
 pub enum CliSubCommand {
-    /// Wallet options and sub-commands
-    #[structopt(long_about = "Wallet mode")]
+    /// Wallet Operations
+    ///
+    /// bdk-cli wallet operations includes all the basic wallet level tasks.
+    /// Most commands can be used without connecting to any backend. To use commands that
+    /// needs backend like `sync` and `broadcast`, compile the binary with specific backend feature
+    /// and use the configuration options below to configure for that backend.
     Wallet {
         #[structopt(flatten)]
         wallet_opts: WalletOpts,
         #[structopt(subcommand)]
         subcommand: WalletSubCommand,
     },
-    /// Key management sub-commands
-    #[structopt(long_about = "Key management mode")]
+    /// Key Management Operations
+    ///
+    /// Provides basic key operations that are not related to a specific wallet such as generating a
+    /// new random master extended key or restoring a master extended key from mnemonic words.
+
+    /// These sub-commands are **EXPERIMENTAL** and should only be used for testing. Do not use this
+    /// feature to create keys that secure actual funds on the Bitcoin mainnet.
     Key {
         #[structopt(subcommand)]
         subcommand: KeySubCommand,
@@ -306,16 +89,19 @@ pub enum CliSubCommand {
         #[structopt(name = "TYPE", short = "t", long = "type", default_value = "wsh", possible_values = &["sh","wsh", "sh-wsh"])]
         script_type: String,
     },
-    /// Enter REPL command loop mode
     #[cfg(feature = "repl")]
-    #[structopt(long_about = "REPL command loop mode")]
+    /// REPL command loop mode
+    ///
+    /// REPL command loop can be used to make recurring callbacks to an already loaded wallet.
+    /// This mode is useful for hands on live testing of wallet operations.
     Repl {
         #[structopt(flatten)]
         wallet_opts: WalletOpts,
     },
-    /// Proof of reserves external sub-commands
+    /// Proof of Reserves Operations
+    ///
+    /// This can be used to produce and verify Proof of Reserves (BIP 322) using bdk-cli
     #[cfg(all(feature = "reserves", feature = "electrum"))]
-    #[structopt(long_about = "Proof of reserves external verification")]
     ExternalReserves {
         /// Sets the challenge message with which the proof was produced
         #[structopt(name = "MESSAGE", required = true, index = 1)]
@@ -334,16 +120,6 @@ pub enum CliSubCommand {
     },
 }
 
-#[cfg_attr(not(doc), allow(missing_docs))]
-#[cfg_attr(
-    doc,
-    doc = r#"
-Wallet sub-commands
-
-Can use either an online or offline wallet. An [`OnlineWalletSubCommand`] requires a blockchain
-client and network connection and an [`OfflineWalletSubCommand`] does not.
-"#
-)]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub enum WalletSubCommand {
     #[cfg(any(
@@ -358,84 +134,6 @@ pub enum WalletSubCommand {
     OfflineWalletSubCommand(OfflineWalletSubCommand),
 }
 
-#[cfg_attr(not(doc), allow(missing_docs))]
-#[cfg_attr(
-    doc,
-    doc = r#"
-Wallet options
-
-The wallet options required for all [`CliSubCommand::Wallet`] or [`CliSubCommand::Repl`]
-sub-commands. These options capture wallet descriptor and blockchain client information. The
-blockchain client details are only used for [`OnlineWalletSubCommand`]s.
-
-# Example
-
-```
-# use bdk::bitcoin::Network;
-# use structopt::StructOpt;
-# use bdk_cli::WalletOpts;
-# #[cfg(feature = "electrum")]
-# use bdk_cli::ElectrumOpts;
-# #[cfg(feature = "esplora")]
-# use bdk_cli::EsploraOpts;
-# #[cfg(feature = "compact_filters")]
-# use bdk_cli::CompactFilterOpts;
-# #[cfg(feature = "rpc")]
-# use bdk_cli::RpcOpts;
-# #[cfg(any(feature = "compact_filters", feature = "electrum", feature="esplora"))]
-# use bdk_cli::ProxyOpts;
-
-let cli_args = vec!["wallet",
-                     "--descriptor", "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)"];
-
-// to get WalletOpt from OS command line args use:
-// let wallet_opt = WalletOpt::from_args();
-
-let wallet_opts = WalletOpts::from_iter(&cli_args);
-
-let expected_wallet_opts = WalletOpts {
-               wallet: None,
-                    verbose: false,
-               descriptor: "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/44'/1'/0'/0/*)".to_string(),
-               change_descriptor: None,
-               #[cfg(feature = "electrum")]
-               electrum_opts: ElectrumOpts {
-                   timeout: None,
-                   server: "ssl://electrum.blockstream.info:60002".to_string(),
-                   stop_gap: 10
-               },
-               #[cfg(feature = "esplora")]
-               esplora_opts: EsploraOpts {
-                   server: "https://blockstream.info/testnet/api/".to_string(),
-                   timeout: 5,
-                   stop_gap: 10,
-                   conc: 4
-               },
-               #[cfg(feature = "compact_filters")]
-               compactfilter_opts: CompactFilterOpts{
-                    address: vec!["127.0.0.1:18444".to_string()],
-                    conn_count: 4,
-                    skip_blocks: 0,
-               },
-               #[cfg(feature = "rpc")]
-               rpc_opts: RpcOpts{
-                    address: "127.0.0.1:18443".to_string(),
-                    basic_auth: ("user".to_string(), "password".to_string()),
-                    skip_blocks: None,
-                    cookie: None,
-               },
-               #[cfg(any(feature="compact_filters", feature="electrum", feature="esplora"))]
-                    proxy_opts: ProxyOpts{
-                        proxy: None,
-                        proxy_auth: None,
-                        retries: 5,
-               },
- };
-
-assert_eq!(expected_wallet_opts, wallet_opts);
-```
-"#
-)]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct WalletOpts {
     /// Selects the wallet to use
@@ -467,15 +165,6 @@ pub struct WalletOpts {
     pub proxy_opts: ProxyOpts,
 }
 
-#[cfg_attr(not(doc), allow(missing_docs))]
-#[cfg_attr(
-    doc,
-    doc = r#"
-Proxy Server options
-
-Only activated for `compact_filters` or `electrum`
-"#
-)]
 #[cfg(any(feature = "compact_filters", feature = "electrum", feature = "esplora"))]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct ProxyOpts {
@@ -497,9 +186,6 @@ pub struct ProxyOpts {
     pub retries: u8,
 }
 
-/// Compact Filter options
-///
-/// Compact filter peer information used by [`OnlineWalletSubCommand`]s.
 #[cfg(feature = "compact_filters")]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct CompactFilterOpts {
@@ -557,9 +243,6 @@ pub struct RpcOpts {
     pub skip_blocks: Option<u32>,
 }
 
-/// Electrum options
-///
-/// Electrum blockchain client information used by [`OnlineWalletSubCommand`]s.
 #[cfg(feature = "electrum")]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct ElectrumOpts {
@@ -585,15 +268,6 @@ pub struct ElectrumOpts {
     pub stop_gap: usize,
 }
 
-#[cfg_attr(not(doc), allow(missing_docs))]
-#[cfg_attr(
-    doc,
-    doc = r#"
-Esplora options
-
-Esplora blockchain client information used by [`OnlineWalletSubCommand`]s.
-"#
-)]
 #[cfg(feature = "esplora")]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 pub struct EsploraOpts {
@@ -624,63 +298,6 @@ pub struct EsploraOpts {
     pub conc: u8,
 }
 
-// This is a workaround for `structopt` issue #333, #391, #418; see https://github.com/TeXitoi/structopt/issues/333#issuecomment-712265332
-#[cfg_attr(not(doc), allow(missing_docs))]
-#[cfg_attr(
-    doc,
-    doc = r#"
-Offline Wallet sub-command
-
-[`CliSubCommand::Wallet`] sub-commands that do not require a blockchain client and network
-connection. These sub-commands use only the provided descriptor or locally cached wallet
-information.
-
-# Example
-
-```
-# use bdk_cli::OfflineWalletSubCommand;
-# use structopt::StructOpt;
-
-let address_sub_command = OfflineWalletSubCommand::from_iter(&["wallet", "get_new_address"]);
-assert!(matches!(
-     address_sub_command,
-    OfflineWalletSubCommand::GetNewAddress
-));
-```
-
-To capture wallet sub-commands from a string vector without a preceeding binary name you can
-create a custom struct the includes the `NoBinaryName` clap setting and wraps the WalletSubCommand
-enum. See also the [`bdk-cli`](https://github.com/bitcoindevkit/bdk-cli/blob/master/src/bdkcli.rs)
-example app.
-"#
-)]
-#[cfg_attr(
-    all(doc, feature = "repl"),
-    doc = r#"
-
-# Example
-```
-# use bdk_cli::OfflineWalletSubCommand;
-# use structopt::StructOpt;
-# use clap::AppSettings;
-
-#[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(name = "BDK CLI", setting = AppSettings::NoBinaryName,
-version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
-author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
-struct ReplOpts {
-    /// Wallet sub-command
-    #[structopt(subcommand)]
-    pub subcommand: OfflineWalletSubCommand,
-}
-
-let repl_opts = ReplOpts::from_iter(&["get_new_address"]);
-assert!(matches!(
-    repl_opts.subcommand,
-    OfflineWalletSubCommand::GetNewAddress
-));
-"#
-)]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(rename_all = "snake")]
 pub enum OfflineWalletSubCommand {
@@ -785,17 +402,6 @@ pub enum OfflineWalletSubCommand {
     },
 }
 
-#[cfg_attr(not(doc), allow(missing_docs))]
-#[cfg_attr(
-    doc,
-    doc = r#"
-Online Wallet sub-command
-
-[`CliSubCommand::Wallet`] sub-commands that require a blockchain client and network connection.
-These sub-commands use a provided descriptor, locally cached wallet information, and require a
-blockchain client and network connection.
-"#
-)]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(rename_all = "snake")]
 #[cfg(any(
@@ -848,352 +454,7 @@ pub enum OnlineWalletSubCommand {
     },
 }
 
-fn parse_recipient(s: &str) -> Result<(Script, u64), String> {
-    let parts: Vec<_> = s.split(':').collect();
-    if parts.len() != 2 {
-        return Err("Invalid format".to_string());
-    }
-    let addr = Address::from_str(parts[0]).map_err(|e| e.to_string())?;
-    let val = u64::from_str(parts[1]).map_err(|e| e.to_string())?;
-
-    Ok((addr.script_pubkey(), val))
-}
-#[cfg(any(
-    feature = "electrum",
-    feature = "compact_filters",
-    feature = "esplora",
-    feature = "rpc"
-))]
-fn parse_proxy_auth(s: &str) -> Result<(String, String), String> {
-    let parts: Vec<_> = s.split(':').collect();
-    if parts.len() != 2 {
-        return Err("Invalid format".to_string());
-    }
-
-    let user = parts[0].to_string();
-    let passwd = parts[1].to_string();
-
-    Ok((user, passwd))
-}
-
-fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
-    OutPoint::from_str(s).map_err(|e| e.to_string())
-}
-
-/// Execute an offline wallet sub-command
-///
-/// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
-pub fn handle_offline_wallet_subcommand<D>(
-    wallet: &Wallet<D>,
-    wallet_opts: &WalletOpts,
-    offline_subcommand: OfflineWalletSubCommand,
-) -> Result<serde_json::Value, Error>
-where
-    D: BatchDatabase,
-{
-    match offline_subcommand {
-        GetNewAddress => {
-            let addr = wallet.get_address(AddressIndex::New)?;
-            if wallet_opts.verbose {
-                Ok(json!({
-                    "address": addr.address,
-                    "index": addr.index
-                }))
-            } else {
-                Ok(json!({
-                    "address": addr.address,
-                }))
-            }
-        }
-        ListUnspent => Ok(serde_json::to_value(&wallet.list_unspent()?)?),
-        ListTransactions => Ok(serde_json::to_value(
-            &wallet.list_transactions(wallet_opts.verbose)?,
-        )?),
-        GetBalance => Ok(json!({"satoshi": wallet.get_balance()?})),
-        CreateTx {
-            recipients,
-            send_all,
-            enable_rbf,
-            offline_signer,
-            utxos,
-            unspendable,
-            fee_rate,
-            external_policy,
-            internal_policy,
-        } => {
-            let mut tx_builder = wallet.build_tx();
-
-            if send_all {
-                tx_builder.drain_wallet().drain_to(recipients[0].0.clone());
-            } else {
-                tx_builder.set_recipients(recipients);
-            }
-
-            if enable_rbf {
-                tx_builder.enable_rbf();
-            }
-
-            if offline_signer {
-                tx_builder.include_output_redeem_witness_script();
-            }
-
-            if let Some(fee_rate) = fee_rate {
-                tx_builder.fee_rate(FeeRate::from_sat_per_vb(fee_rate));
-            }
-
-            if let Some(utxos) = utxos {
-                tx_builder.add_utxos(&utxos[..])?.manually_selected_only();
-            }
-
-            if let Some(unspendable) = unspendable {
-                tx_builder.unspendable(unspendable);
-            }
-
-            let policies = vec![
-                external_policy.map(|p| (p, KeychainKind::External)),
-                internal_policy.map(|p| (p, KeychainKind::Internal)),
-            ];
-
-            for (policy, keychain) in policies.into_iter().flatten() {
-                let policy = serde_json::from_str::<BTreeMap<String, Vec<usize>>>(&policy)
-                    .map_err(|s| Error::Generic(s.to_string()))?;
-                tx_builder.policy_path(policy, keychain);
-            }
-
-            let (psbt, details) = tx_builder.finish()?;
-            if wallet_opts.verbose {
-                Ok(
-                    json!({"psbt": base64::encode(&serialize(&psbt)),"details": details, "serialized_psbt": psbt}),
-                )
-            } else {
-                Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"details": details}))
-            }
-        }
-        BumpFee {
-            txid,
-            shrink_address,
-            offline_signer,
-            utxos,
-            unspendable,
-            fee_rate,
-        } => {
-            let txid = Txid::from_str(txid.as_str()).map_err(|s| Error::Generic(s.to_string()))?;
-
-            let mut tx_builder = wallet.build_fee_bump(txid)?;
-            tx_builder.fee_rate(FeeRate::from_sat_per_vb(fee_rate));
-
-            if let Some(address) = shrink_address {
-                let script_pubkey = address.script_pubkey();
-                tx_builder.allow_shrinking(script_pubkey)?;
-            }
-
-            if offline_signer {
-                tx_builder.include_output_redeem_witness_script();
-            }
-
-            if let Some(utxos) = utxos {
-                tx_builder.add_utxos(&utxos[..])?;
-            }
-
-            if let Some(unspendable) = unspendable {
-                tx_builder.unspendable(unspendable);
-            }
-
-            let (psbt, details) = tx_builder.finish()?;
-            Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"details": details,}))
-        }
-        Policies => Ok(json!({
-            "external": wallet.policies(KeychainKind::External)?,
-            "internal": wallet.policies(KeychainKind::Internal)?,
-        })),
-        PublicDescriptor => Ok(json!({
-            "external": wallet.public_descriptor(KeychainKind::External)?.map(|d| d.to_string()),
-            "internal": wallet.public_descriptor(KeychainKind::Internal)?.map(|d| d.to_string()),
-        })),
-        Sign {
-            psbt,
-            assume_height,
-            trust_witness_utxo,
-        } => {
-            let psbt = base64::decode(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
-            let mut psbt: PartiallySignedTransaction = deserialize(&psbt)?;
-            let signopt = SignOptions {
-                assume_height,
-                trust_witness_utxo: trust_witness_utxo.unwrap_or(false),
-                ..Default::default()
-            };
-            let finalized = wallet.sign(&mut psbt, signopt)?;
-            if wallet_opts.verbose {
-                Ok(
-                    json!({"psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized, "serialized_psbt": psbt}),
-                )
-            } else {
-                Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized,}))
-            }
-        }
-        ExtractPsbt { psbt } => {
-            let psbt = base64::decode(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
-            let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
-            Ok(json!({"raw_tx": serialize_hex(&psbt.extract_tx()),}))
-        }
-        FinalizePsbt {
-            psbt,
-            assume_height,
-            trust_witness_utxo,
-        } => {
-            let psbt = base64::decode(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
-            let mut psbt: PartiallySignedTransaction = deserialize(&psbt)?;
-
-            let signopt = SignOptions {
-                assume_height,
-                trust_witness_utxo: trust_witness_utxo.unwrap_or(false),
-                ..Default::default()
-            };
-            let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
-            if wallet_opts.verbose {
-                Ok(
-                    json!({ "psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized, "serialized_psbt": psbt}),
-                )
-            } else {
-                Ok(json!({ "psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized,}))
-            }
-        }
-        CombinePsbt { psbt } => {
-            let mut psbts = psbt
-                .iter()
-                .map(|s| {
-                    let psbt = base64::decode(&s).map_err(|e| Error::Generic(e.to_string()))?;
-                    let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
-                    Ok(psbt)
-                })
-                .collect::<Result<Vec<_>, Error>>()?;
-
-            let init_psbt = psbts
-                .pop()
-                .ok_or_else(|| Error::Generic("Invalid PSBT input".to_string()))?;
-            let final_psbt = psbts
-                .into_iter()
-                .try_fold::<_, _, Result<PartiallySignedTransaction, Error>>(
-                    init_psbt,
-                    |mut acc, x| {
-                        acc.merge(x)?;
-                        Ok(acc)
-                    },
-                )?;
-            Ok(json!({ "psbt": base64::encode(&serialize(&final_psbt)) }))
-        }
-    }
-}
-
-/// Execute an online wallet sub-command
-///
-/// Online wallet sub-commands are described in [`OnlineWalletSubCommand`]. See [`crate`] for
-/// example usage.
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "compact_filters",
-    feature = "rpc"
-))]
-#[maybe_async]
-pub fn handle_online_wallet_subcommand<B, D>(
-    wallet: &Wallet<D>,
-    blockchain: &B,
-    online_subcommand: OnlineWalletSubCommand,
-) -> Result<serde_json::Value, Error>
-where
-    B: Blockchain,
-    D: BatchDatabase,
-{
-    use bdk::SyncOptions;
-
-    match online_subcommand {
-        Sync => {
-            maybe_await!(wallet.sync(
-                blockchain,
-                SyncOptions {
-                    progress: Some(Box::new(log_progress())),
-                }
-            ))?;
-            Ok(json!({}))
-        }
-        Broadcast { psbt, tx } => {
-            let tx = match (psbt, tx) {
-                (Some(psbt), None) => {
-                    let psbt = base64::decode(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
-                    let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
-                    psbt.extract_tx()
-                }
-                (None, Some(tx)) => deserialize(&Vec::<u8>::from_hex(&tx)?)?,
-                (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
-                (None, None) => panic!("Missing `psbt` and `tx` option"),
-            };
-            maybe_await!(blockchain.broadcast(&tx))?;
-            Ok(json!({ "txid": tx.txid() }))
-        }
-        #[cfg(feature = "reserves")]
-        ProduceProof { msg } => {
-            let mut psbt = maybe_await!(wallet.create_proof(&msg))?;
-
-            let _finalized = wallet.sign(
-                &mut psbt,
-                SignOptions {
-                    trust_witness_utxo: true,
-                    ..Default::default()
-                },
-            )?;
-
-            let psbt_ser = serialize(&psbt);
-            let psbt_b64 = base64::encode(&psbt_ser);
-
-            Ok(json!({ "psbt": psbt , "psbt_base64" : psbt_b64}))
-        }
-        #[cfg(feature = "reserves")]
-        VerifyProof {
-            psbt,
-            msg,
-            confirmations,
-        } => {
-            let psbt = base64::decode(&psbt).unwrap();
-            let psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
-            let current_height = blockchain.get_height()?;
-            let max_confirmation_height = if confirmations == 0 {
-                None
-            } else {
-                if !blockchain
-                    .get_capabilities()
-                    .contains(&Capability::GetAnyTx)
-                {
-                    return Err(Error::Generic(
-                        "For validating a proof with a certain number of confirmations, we need a Blockchain with the GetAnyTx capability."
-                        .to_string()
-                    ));
-                }
-                Some(current_height - confirmations)
-            };
-
-            let spendable =
-                maybe_await!(wallet.verify_proof(&psbt, &msg, max_confirmation_height))?;
-            Ok(json!({ "spendable": spendable }))
-        }
-    }
-}
-
-#[cfg_attr(not(doc), allow(missing_docs))]
-#[cfg_attr(
-    doc,
-    doc = r#"
-Key sub-command
-
-Provides basic key operations that are not related to a specific wallet such as generating a
-new random master extended key or restoring a master extended key from mnemonic words.
-
-These sub-commands are **EXPERIMENTAL** and should only be used for testing. Do not use this
-feature to create keys that secure actual funds on the Bitcoin mainnet.
-"#
-)]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(rename_all = "snake")]
 pub enum KeySubCommand {
     /// Generates new random seed mnemonic phrase and corresponding master extended key
     Generate {
@@ -1230,209 +491,33 @@ pub enum KeySubCommand {
     },
 }
 
-/// Execute a key sub-command
-///
-/// Key sub-commands are described in [`KeySubCommand`].
-pub fn handle_key_subcommand(
-    network: Network,
-    subcommand: KeySubCommand,
-) -> Result<serde_json::Value, Error> {
-    let secp = Secp256k1::new();
-
-    match subcommand {
-        KeySubCommand::Generate {
-            word_count,
-            password,
-        } => {
-            let mnemonic_type = match word_count {
-                12 => WordCount::Words12,
-                _ => WordCount::Words24,
-            };
-            let mnemonic: GeneratedKey<_, miniscript::BareCtx> =
-                Mnemonic::generate((mnemonic_type, Language::English))
-                    .map_err(|_| Error::Generic("Mnemonic generation error".to_string()))?;
-            let mnemonic = mnemonic.into_key();
-            let xkey: ExtendedKey = (mnemonic.clone(), password).into_extended_key()?;
-            let xprv = xkey.into_xprv(network).ok_or_else(|| {
-                Error::Generic("Privatekey info not found (should not happen)".to_string())
-            })?;
-            let fingerprint = xprv.fingerprint(&secp);
-            let phrase = mnemonic
-                .word_iter()
-                .fold("".to_string(), |phrase, w| phrase + w + " ")
-                .trim()
-                .to_string();
-            Ok(
-                json!({ "mnemonic": phrase, "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }),
-            )
-        }
-        KeySubCommand::Restore { mnemonic, password } => {
-            let mnemonic = Mnemonic::parse_in(Language::English, mnemonic)
-                .map_err(|e| Error::Generic(e.to_string()))?;
-            let xkey: ExtendedKey = (mnemonic, password).into_extended_key()?;
-            let xprv = xkey.into_xprv(network).ok_or_else(|| {
-                Error::Generic("Privatekey info not found (should not happen)".to_string())
-            })?;
-            let fingerprint = xprv.fingerprint(&secp);
-
-            Ok(json!({ "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }))
-        }
-        KeySubCommand::Derive { xprv, path } => {
-            if xprv.network != network {
-                return Err(Error::Key(InvalidNetwork));
-            }
-            let derived_xprv = &xprv.derive_priv(&secp, &path)?;
-
-            let origin: KeySource = (xprv.fingerprint(&secp), path);
-
-            let derived_xprv_desc_key: DescriptorKey<Segwitv0> =
-                derived_xprv.into_descriptor_key(Some(origin), DerivationPath::default())?;
-
-            if let Secret(desc_seckey, _, _) = derived_xprv_desc_key {
-                let desc_pubkey = desc_seckey
-                    .as_public(&secp)
-                    .map_err(|e| Error::Generic(e.to_string()))?;
-                Ok(json!({"xpub": desc_pubkey.to_string(), "xprv": desc_seckey.to_string()}))
-            } else {
-                Err(Error::Key(Message("Invalid key variant".to_string())))
-            }
-        }
-    }
-}
-
-/// Execute the miniscript compiler sub-command
-///
-/// Compiler options are described in [`CliSubCommand::Compile`].
-#[cfg(feature = "compiler")]
-pub fn handle_compile_subcommand(
-    _network: Network,
-    policy: String,
-    script_type: String,
-) -> Result<serde_json::Value, Error> {
-    let policy = Concrete::<String>::from_str(policy.as_str())?;
-    let legacy_policy: Miniscript<String, Legacy> = policy
-        .compile()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-    let segwit_policy: Miniscript<String, Segwitv0> = policy
-        .compile()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-
-    let descriptor = match script_type.as_str() {
-        "sh" => Descriptor::new_sh(legacy_policy),
-        "wsh" => Descriptor::new_wsh(segwit_policy),
-        "sh-wsh" => Descriptor::new_sh_wsh(segwit_policy),
-        _ => panic!("Invalid type"),
-    }
-    .map_err(Error::Miniscript)?;
-
-    Ok(json!({"descriptor": descriptor.to_string()}))
-}
-
-/// Proof of reserves verification sub-command
-///
-/// Proof of reserves options are described in [`CliSubCommand::ExternalReserves`].
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-pub fn handle_ext_reserves_subcommand(
-    network: Network,
-    message: String,
-    psbt: String,
-    confirmations: usize,
-    addresses: Vec<String>,
-    electrum_opts: ElectrumOpts,
-) -> Result<serde_json::Value, Error> {
-    let psbt = base64::decode(&psbt)
-        .map_err(|e| Error::Generic(format!("Base64 decode error: {:?}", e)))?;
-    let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
-    let client = Client::new(&electrum_opts.server)?;
-
-    let current_block_height = client.block_headers_subscribe().map(|data| data.height)?;
-    let max_confirmation_height = Some(current_block_height - confirmations);
-
-    let outpoints_per_addr = addresses
-        .iter()
-        .map(|address| {
-            let address = Address::from_str(&address)
-                .map_err(|e| Error::Generic(format!("Invalid address: {:?}", e)))?;
-            get_outpoints_for_address(address, &client, max_confirmation_height)
-        })
-        .collect::<Result<Vec<Vec<_>>, Error>>()?;
-    let outpoints_combined = outpoints_per_addr
-        .iter()
-        .fold(Vec::new(), |mut outpoints, outs| {
-            outpoints.append(&mut outs.clone());
-            outpoints
-        });
-
-    let spendable = verify_proof(&psbt, &message, outpoints_combined, network)
-        .map_err(|e| Error::Generic(format!("{:?}", e)))?;
-
-    Ok(json!({ "spendable": spendable }))
-}
-
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-pub fn get_outpoints_for_address(
-    address: Address,
-    client: &Client,
-    max_confirmation_height: Option<usize>,
-) -> Result<Vec<(OutPoint, TxOut)>, Error> {
-    let unspents = client
-        .script_list_unspent(&address.script_pubkey())
-        .map_err(Error::Electrum)?;
-
-    unspents
-        .iter()
-        .filter(|utxo| {
-            utxo.height > 0 && utxo.height <= max_confirmation_height.unwrap_or(usize::MAX)
-        })
-        .map(|utxo| {
-            let tx = match client.transaction_get(&utxo.tx_hash) {
-                Ok(tx) => tx,
-                Err(e) => {
-                    return Err(e).map_err(Error::Electrum);
-                }
-            };
-
-            Ok((
-                OutPoint {
-                    txid: utxo.tx_hash,
-                    vout: utxo.tx_pos as u32,
-                },
-                tx.output[utxo.tx_pos].clone(),
-            ))
-        })
-        .collect()
-}
-
-#[cfg(test)]
-mod test {
-    use super::{CliOpts, WalletOpts};
-    #[cfg(feature = "compiler")]
-    use crate::handle_compile_subcommand;
-    #[cfg(feature = "compact_filters")]
-    use crate::CompactFilterOpts;
-    #[cfg(feature = "electrum")]
-    use crate::ElectrumOpts;
-    #[cfg(feature = "esplora")]
-    use crate::EsploraOpts;
-    use crate::OfflineWalletSubCommand::{BumpFee, CreateTx, GetNewAddress};
-    #[cfg(all(feature = "reserves", feature = "compact_filters"))]
-    use crate::OnlineWalletSubCommand::ProduceProof;
-    #[cfg(all(feature = "reserves", feature = "esplora-ureq"))]
-    use crate::OnlineWalletSubCommand::VerifyProof;
+#[cfg(feature = "repl")]
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+pub enum ReplSubCommand {
     #[cfg(any(
         feature = "electrum",
         feature = "esplora",
         feature = "compact_filters",
         feature = "rpc"
     ))]
-    use crate::OnlineWalletSubCommand::{Broadcast, Sync};
-    #[cfg(any(feature = "compact_filters", feature = "electrum", feature = "esplora"))]
-    use crate::ProxyOpts;
-    #[cfg(feature = "rpc")]
-    use crate::RpcOpts;
+    #[structopt(flatten)]
+    OnlineWalletSubCommand(OnlineWalletSubCommand),
+    #[structopt(flatten)]
+    OfflineWalletSubCommand(OfflineWalletSubCommand),
+    #[structopt(flatten)]
+    KeySubCommand(KeySubCommand),
+    /// Exit REPL loop
+    Exit,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[cfg(feature = "compiler")]
+    use crate::handlers::handle_compile_subcommand;
+    use crate::handlers::handle_key_subcommand;
     #[cfg(all(feature = "reserves", feature = "electrum"))]
-    use crate::{handle_ext_reserves_subcommand, handle_online_wallet_subcommand};
-    use crate::{handle_key_subcommand, CliSubCommand, KeySubCommand, WalletSubCommand};
+    use crate::handlers::{handle_ext_reserves_subcommand, handle_online_wallet_subcommand};
     use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
     #[cfg(all(feature = "reserves", feature = "electrum"))]
     use bdk::bitcoin::{consensus::Encodable, util::psbt::PartiallySignedTransaction};
@@ -1445,6 +530,25 @@ mod test {
     };
     use std::str::{self, FromStr};
     use structopt::StructOpt;
+
+    use super::OfflineWalletSubCommand::{BumpFee, CreateTx, GetNewAddress};
+    #[cfg(any(
+        feature = "electrum",
+        feature = "esplora",
+        feature = "compact_filters",
+        feature = "rpc"
+    ))]
+    use super::OnlineWalletSubCommand::{Broadcast, Sync};
+    use super::WalletSubCommand::OfflineWalletSubCommand;
+    #[cfg(any(
+        feature = "electrum",
+        feature = "esplora",
+        feature = "compact_filters",
+        feature = "rpc"
+    ))]
+    use super::WalletSubCommand::OnlineWalletSubCommand;
+    #[cfg(feature = "repl")]
+    use regex::Regex;
 
     #[test]
     fn test_parse_wallet_get_new_address() {
@@ -1496,7 +600,7 @@ mod test {
                         skip_blocks: None,
                     },
                 },
-                subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
+                subcommand: OfflineWalletSubCommand(GetNewAddress),
             },
         };
 
@@ -1535,7 +639,7 @@ mod test {
                         retries: 3,
                     },
                 },
-                subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
+                subcommand: OfflineWalletSubCommand(GetNewAddress),
             },
         };
 
@@ -1575,7 +679,7 @@ mod test {
                         retries: 5,
                     }
                 },
-                subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
+                subcommand: OfflineWalletSubCommand(GetNewAddress),
             },
         };
 
@@ -1615,7 +719,7 @@ mod test {
                         retries: 5,
                     }
                 },
-                subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
+                subcommand: OfflineWalletSubCommand(GetNewAddress),
             },
         };
 
@@ -1651,7 +755,7 @@ mod test {
                         skip_blocks: Some(5),
                     },
                 },
-                subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
+                subcommand: OfflineWalletSubCommand(GetNewAddress),
             },
         };
 
@@ -1692,7 +796,7 @@ mod test {
                         retries: 5,
                     }
                 },
-                subcommand: WalletSubCommand::OfflineWalletSubCommand(GetNewAddress),
+                subcommand: OfflineWalletSubCommand(GetNewAddress),
             },
         };
 
@@ -1754,7 +858,7 @@ mod test {
                         skip_blocks: None,
                     },
                 },
-                subcommand: WalletSubCommand::OnlineWalletSubCommand(Sync),
+                subcommand: OnlineWalletSubCommand(Sync),
             },
         };
 
@@ -1897,7 +1001,7 @@ mod test {
                         retries: 5,
                     }
                 },
-                subcommand: WalletSubCommand::OfflineWalletSubCommand(BumpFee {
+                subcommand: OfflineWalletSubCommand(BumpFee {
                     txid: "35aab0d0213f8996f9e236a28630319b93109754819e8abf48a0835708d33506".to_string(),
                     shrink_address: Some(Address::from_str("tb1ql7w62elx9ucw4pj5lgw4l028hmuw80sndtntxt").unwrap()),
                     offline_signer: false,
@@ -1967,7 +1071,7 @@ mod test {
                         skip_blocks: None,
                     },
                 },
-                subcommand: WalletSubCommand::OnlineWalletSubCommand(Broadcast {
+                subcommand: OnlineWalletSubCommand(Broadcast {
                     psbt: Some("cHNidP8BAEICAAAAASWhGE1AhvtO+2GjJHopssFmgfbq+WweHd8zN/DeaqmDAAAAAAD/////AQAAAAAAAAAABmoEAAECAwAAAAAAAAA=".to_string()),
                     tx: None
                 }),
@@ -2123,7 +1227,7 @@ mod test {
                         retries: 5,
                     },
                 },
-                subcommand: WalletSubCommand::OnlineWalletSubCommand(ProduceProof {
+                subcommand: OnlineWalletSubCommand(ProduceProof {
                     msg: message.to_string(),
                 }),
             },
@@ -2174,7 +1278,7 @@ mod test {
                         retries: 5,
                     },
                 },
-                subcommand: WalletSubCommand::OnlineWalletSubCommand(VerifyProof {
+                subcommand: OnlineWalletSubCommand(VerifyProof {
                     psbt: psbt.to_string(),
                     msg: message.to_string(),
                     confirmations: 6,
@@ -2229,7 +1333,7 @@ mod test {
                         retries: 5,
                     },
                 },
-                subcommand: WalletSubCommand::OnlineWalletSubCommand(VerifyProof {
+                subcommand: OnlineWalletSubCommand(VerifyProof {
                     psbt: psbt.to_string(),
                     msg: message.to_string(),
                     confirmations: 0,
@@ -2330,7 +1434,7 @@ mod test {
         let wallet_subcmd = match cli_opts.subcommand {
             CliSubCommand::Wallet {
                 wallet_opts: _,
-                subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
+                subcommand: OnlineWalletSubCommand(online_subcommand),
             } => online_subcommand,
             _ => panic!("unexpected subcommand"),
         };
@@ -2368,7 +1472,7 @@ mod test {
         let wallet_subcmd = match cli_opts.subcommand {
             CliSubCommand::Wallet {
                 wallet_opts: _,
-                subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
+                subcommand: OnlineWalletSubCommand(online_subcommand),
             } => online_subcommand,
             _ => panic!("unexpected subcommand"),
         };
@@ -2432,5 +1536,59 @@ mod test {
             .as_u64()
             .unwrap();
         assert!(spendable > 0);
+    }
+
+    #[cfg(feature = "repl")]
+    #[test]
+    fn test_regex_double_quotes() {
+        let split_regex = Regex::new(crate::REPL_LINE_SPLIT_REGEX).unwrap();
+        let line = r#"restore -m "word1 word2 word3" -p 'test! 123 -test' "#;
+        let split_line: Vec<&str> = split_regex
+            .captures_iter(&line)
+            .map(|c| {
+                c.get(1)
+                    .or_else(|| c.get(2))
+                    .or_else(|| c.get(3))
+                    .unwrap()
+                    .as_str()
+            })
+            .collect();
+        assert_eq!(
+            vec!(
+                "restore",
+                "-m",
+                "word1 word2 word3",
+                "-p",
+                "test! 123 -test"
+            ),
+            split_line
+        );
+    }
+
+    #[cfg(feature = "repl")]
+    #[test]
+    fn test_regex_single_quotes() {
+        let split_regex = Regex::new(crate::REPL_LINE_SPLIT_REGEX).unwrap();
+        let line = r#"restore -m 'word1 word2 word3' -p "test *123 -test" "#;
+        let split_line: Vec<&str> = split_regex
+            .captures_iter(&line)
+            .map(|c| {
+                c.get(1)
+                    .or_else(|| c.get(2))
+                    .or_else(|| c.get(3))
+                    .unwrap()
+                    .as_str()
+            })
+            .collect();
+        assert_eq!(
+            vec!(
+                "restore",
+                "-m",
+                "word1 word2 word3",
+                "-p",
+                "test *123 -test"
+            ),
+            split_line
+        );
     }
 }
