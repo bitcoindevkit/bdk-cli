@@ -22,15 +22,10 @@ jobs:
           - rpc
           - reserves
           - reserves,electrum
-          - reserves,esplora-ureq
-          - reserves,compact_filters
-          - reserves,rpc
           - electrum,verify
           # regtest-* features are experimental and not fully usable
           - regtest-bitcoin
           - regtest-electrum
-          - regtest-esplora-ureq
-          - regtest-esplora-reqwest
 
     steps:
       - name: Checkout
