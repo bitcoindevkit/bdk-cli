@@ -1388,7 +1388,7 @@ mod test {
     fn encode_psbt(psbt: PartiallySignedTransaction) -> Vec<u8> {
         let mut encoded = Vec::<u8>::new();
         psbt.consensus_encode(&mut encoded).unwrap();
-        let base64_psbt = base64::encode(&encoded);
+        let base64_psbt = bdk::bitcoin::base64::encode(&encoded);
 
         base64_psbt.as_bytes().to_vec()
     }

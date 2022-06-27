@@ -282,7 +282,7 @@ pub(crate) fn new_blockchain(
             &Secp256k1::new(),
         )?;
 
-        let rpc_url = "http://".to_string() + &url;
+        let rpc_url = "http://".to_string() + url;
 
         let rpc_config = RpcConfig {
             url: rpc_url,
@@ -295,7 +295,7 @@ pub(crate) fn new_blockchain(
         AnyBlockchainConfig::Rpc(rpc_config)
     };
 
-    Ok(AnyBlockchain::from_config(&config)?)
+    AnyBlockchain::from_config(&config)
 }
 
 /// Create a new wallet from given wallet configuration options

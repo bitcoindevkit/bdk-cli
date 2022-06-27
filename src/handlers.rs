@@ -27,6 +27,7 @@ use bdk::{database::BatchDatabase, wallet::AddressIndex, Error, FeeRate, Keychai
 
 use structopt::StructOpt;
 
+use bdk::bitcoin::base64;
 use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
 #[cfg(any(
     feature = "electrum",
@@ -503,7 +504,7 @@ pub fn handle_ext_reserves_subcommand(
     let outpoints_per_addr = addresses
         .iter()
         .map(|address| {
-            let address = Address::from_str(&address)
+            let address = Address::from_str(address)
                 .map_err(|e| Error::Generic(format!("Invalid address: {:?}", e)))?;
             get_outpoints_for_address(address, &client, max_confirmation_height)
         })
