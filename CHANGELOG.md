@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Add distinct `key-value-db` and `sqlite-db` features, keep default as `key-value-db`
+- Reorganize existing codes in separate modules. Change crate type from lib to bin.
+- Rewrite relevant doc comments as `structopt` help document.
+- Update `bdk` and `bdk-reserves` to v0.19.0.
+- Change default database to `sqlite`.
 
 ## [0.5.0]
 

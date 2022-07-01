@@ -13,14 +13,14 @@
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use crate::commands::WalletOpts;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
     feature = "compact_filters",
     feature = "rpc"
 ))]
-use crate::backend::Backend;
-use crate::commands::WalletOpts;
+use crate::nodes::Nodes;
 use bdk::bitcoin::secp256k1::Secp256k1;
 use bdk::bitcoin::{Address, Network, OutPoint, Script};
 #[cfg(feature = "compact_filters")]
@@ -199,12 +199,12 @@ pub(crate) fn open_database(wallet_opts: &WalletOpts) -> Result<AnyDatabase, Err
 pub(crate) fn new_blockchain(
     _network: Network,
     wallet_opts: &WalletOpts,
-    _backend: &Backend,
+    _backend: &Nodes,
 ) -> Result<AnyBlockchain, Error> {
     #[cfg(feature = "electrum")]
     let config = {
         let url = match _backend {
-            Backend::Electrum { electrum_url } => electrum_url.to_owned(),
+            Nodes::Electrum { electrum_url } => electrum_url.to_owned(),
             _ => wallet_opts.electrum_opts.server.clone(),
         };
 
@@ -254,7 +254,7 @@ pub(crate) fn new_blockchain(
     #[cfg(feature = "rpc")]
     let config: AnyBlockchainConfig = {
         let (url, auth) = match _backend {
-            Backend::Bitcoin { rpc_url, rpc_auth } => (
+            Nodes::Bitcoin { rpc_url, rpc_auth } => (
                 rpc_url,
                 Auth::Cookie {
                     file: rpc_auth.into(),

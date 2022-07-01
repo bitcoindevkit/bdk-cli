@@ -22,7 +22,7 @@ use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::OnlineWalletSubCommand::*;
 use crate::commands::*;
 use crate::utils::*;
-use crate::Backend;
+use crate::Nodes;
 use bdk::{database::BatchDatabase, wallet::AddressIndex, Error, FeeRate, KeychainKind, Wallet};
 
 use structopt::StructOpt;
@@ -559,7 +559,7 @@ pub fn get_outpoints_for_address(
 pub fn handle_command(
     cli_opts: CliOpts,
     network: Network,
-    _backend: Backend,
+    _backend: Nodes,
 ) -> Result<String, Error> {
     let result = match cli_opts.subcommand {
         #[cfg(any(

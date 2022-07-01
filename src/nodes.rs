@@ -6,14 +6,14 @@
 // You may not use this file except in accordance with one or both of these
 // licenses.
 
-//! The Backend
+//! The Node structures
 //!
-//! This module defines the Backend struct and associated operations
+//! This module defines the the backend node structures for `regtest-*` features
 
 #[allow(dead_code)]
-// Different Backend types activated with `regtest-*` mode.
+// Different regtest node types activated with `regtest-*` mode.
 // If `regtest-*` feature not activated, then default is `None`.
-pub enum Backend {
+pub enum Nodes {
     None,
     Bitcoin { rpc_url: String, rpc_auth: String },
     Electrum { electrum_url: String },

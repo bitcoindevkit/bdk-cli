@@ -34,11 +34,11 @@ default = ["repl", "sqlite-db"]
 # To use the app in a REPL mode
 repl = ["regex", "rustyline", "fd-lock"]
 
-# Avaialable dataabse options
+# Avaialable databse options
 key-value-db = ["bdk/key-value-db"]
 sqlite-db = ["bdk/sqlite"]
 
-# Avialable blockchain backend options
+# Avialable blockchain client options
 rpc = ["bdk/rpc"]
 electrum = ["bdk/electrum"]
 compact_filters = ["bdk/compact_filters"]

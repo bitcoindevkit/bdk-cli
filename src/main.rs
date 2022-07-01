@@ -10,12 +10,12 @@
 //!
 //! This module describes the app's main() function
 
-mod backend;
 mod commands;
 mod handlers;
+mod nodes;
 mod utils;
 
-use backend::Backend;
+use nodes::Nodes;
 
 use bitcoin::Network;
 
@@ -53,7 +53,7 @@ fn main() {
 
     #[cfg(feature = "regtest-bitcoin")]
     let backend = {
-        Backend::Bitcoin {
+        Nodes::Bitcoin {
             rpc_url: bitcoind.params.rpc_socket.to_string(),
             rpc_auth: bitcoind
                 .params
@@ -71,7 +71,7 @@ fn main() {
         let elect_exe =
             electrsd::downloaded_exe_path().expect("We should always have downloaded path");
         let electrsd = electrsd::ElectrsD::with_conf(elect_exe, &bitcoind, &elect_conf).unwrap();
-        let backend = Backend::Electrum {
+        let backend = Nodes::Electrum {
             electrum_url: electrsd.electrum_url.clone(),
         };
         (electrsd, backend)
@@ -84,17 +84,17 @@ fn main() {
         let elect_exe =
             electrsd::downloaded_exe_path().expect("Electrsd downloaded binaries not found");
         let electrsd = electrsd::ElectrsD::with_conf(elect_exe, &bitcoind, &elect_conf).unwrap();
-        let backend = Backend::Esplora {
+        let backend = Nodes::Esplora {
             esplora_url: electrsd
                 .esplora_url
                 .clone()
                 .expect("Esplora port not open in electrum"),
         };
-        (electrsd, backend)
+        (electrsd, nodes)
     };
 
     #[cfg(not(feature = "regtest-node"))]
-    let backend = Backend::None;
+    let backend = Nodes::None;
 
     match handle_command(cli_opts, network, backend) {
         Ok(result) => println!("{}", result),
