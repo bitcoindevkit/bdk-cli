@@ -20,7 +20,6 @@ jobs:
           - compiler
           - compact_filters
           - rpc
-          - reserves
           - reserves,electrum
           - electrum,verify
           # regtest-* features are experimental and not fully usable

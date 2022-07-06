@@ -6,55 +6,63 @@ authors = ["Alekos Filini <alekos.filini@gmail.com>", "Riccardo Casatta <riccard
 homepage = "https://bitcoindevkit.org"
 repository = "https://github.com/bitcoindevkit/bdk-cli"
 documentation = "https://docs.rs/bdk-cli"
-description = "A CLI library and example CLI tool based on the BDK descriptor-based wallet library"
-keywords = ["bitcoin", "wallet", "descriptor", "psbt"]
+description = "An experimental CLI wallet application and playground, powered by BDK"
+keywords = ["bitcoin", "wallet", "descriptor", "psbt", "taproot"]
 readme = "README.md"
 license = "MIT"
 
 [dependencies]
-bdk = { version = "0.18", default-features = false, features = ["all-keys"]}
+bdk = { version = "0.19", default-features = false, features = ["all-keys"]}
 bdk-macros = "0.6"
-structopt = "^0.3"
-serde_json = { version = "^1.0" }
-log = "^0.4"
-base64 = "^0.11"
-zeroize = { version = "<1.4.0" }
+structopt = "0.3"
+serde_json = "1.0"
+log = "0.4"
+zeroize = "<1.4.0"
+dirs-next = "2.0"
+env_logger = "0.7"
 
 # Optional dependencies
 rustyline = { version = "~9.0", optional = true }
 fd-lock = { version = "=3.0.2", optional = true }
-dirs-next = { version = "2.0", optional = true }
-env_logger = { version = "0.7", optional = true }
-clap = { version = "2.33", optional = true }
 regex = { version = "1", optional = true }
-bdk-reserves = { version = "0.18", optional = true}
+bdk-reserves = { version = "0.19", optional = true}
 electrsd = { version= "0.12", features = ["trigger", "bitcoind_22_0"], optional = true}
 
 [features]
-default = ["cli", "repl", "key-value-db"]
-cli = ["clap", "dirs-next", "env_logger"]
+default = ["repl", "sqlite-db"]
+
+# To use the app in a REPL mode
 repl = ["regex", "rustyline", "fd-lock"]
+
+# Available database options
 key-value-db = ["bdk/key-value-db"]
-# sqlite-db = ["bdk/sqlite"] TODO add back with bdk version 0.19
+sqlite-db = ["bdk/sqlite"]
+
+# Available blockchain client options
+rpc = ["bdk/rpc"]
 electrum = ["bdk/electrum"]
+compact_filters = ["bdk/compact_filters"]
 esplora = []
 esplora-ureq = ["esplora", "bdk/use-esplora-ureq"]
 esplora-reqwest = ["esplora", "bdk/use-esplora-reqwest"]
-compiler = ["bdk/compiler"]
-compact_filters = ["bdk/compact_filters"]
-rpc = ["bdk/rpc"]
-reserves = ["bdk-reserves"]
+
+# Use this to consensus verify transactions at sync time
 verify = ["bdk/verify"]
+
+# Extra utility tools
+# Compile policies
+compiler = ["bdk/compiler"]
+# Create/Verify proof of reserves as per BIP322
+reserves = ["bdk-reserves"]
+
+# Following features auto deploys a regtest node in the background.
+# Connects the bdk wallet with that node.
+# And allows a new `bdk-cli node <command>` to operate the background node.
+#
+# This is most useful for integrations testing as well as quick demo testing
+# by devs using bdk and various types of background nodes.
 regtest-node = []
 regtest-bitcoin = ["regtest-node" , "rpc", "electrsd"]
 regtest-electrum = ["regtest-node", "electrum", "electrsd/electrs_0_8_10"]
 regtest-esplora-ureq = ["regtest-node", "esplora-ureq", "electrsd/esplora_a33e97e1"]
 regtest-esplora-reqwest = ["regtest-node", "esplora-reqwest", "electrsd/esplora_a33e97e1"]
-
-[[bin]]
-name = "bdk-cli"
-path = "src/bdk_cli.rs"
-required-features = ["cli"]
-
-[package.metadata.docs.rs]
-features = ["compiler", "electrum"]
