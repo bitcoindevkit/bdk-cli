@@ -10,6 +10,7 @@
 //!
 //! This module defines all the bdk-cli commands using [structopt]
 
+use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
 use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
@@ -493,6 +494,7 @@ pub enum KeySubCommand {
 
 #[cfg(feature = "repl")]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
+#[structopt(global_settings =&[AppSettings::NoBinaryName])]
 pub enum ReplSubCommand {
     #[cfg(any(
         feature = "electrum",
