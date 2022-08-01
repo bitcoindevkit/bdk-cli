@@ -49,7 +49,8 @@ pub struct CliOpts {
         name = "NETWORK",
         short = "n",
         long = "network",
-        default_value = "testnet"
+        default_value = "testnet",
+        possible_values = &["bitcoin", "testnet", "signet", "regtest"]
     )]
     pub network: Network,
     /// Sets the wallet data directory.
@@ -69,7 +70,7 @@ pub enum CliSubCommand {
     ///
     /// These commands can be used to control the backend bitcoin-core node
     /// launched automatically with the `regtest-*` feature sets. The commands issues
-    /// bitcoin-cli rpc calls on the demon, in the background.
+    /// bitcoin-cli rpc calls on the daemon, in the background.
     ///
     /// Feel free to open feature-request in <https://github.com/bitcoindevkit/bdk-cli>
     /// if you need extra rpc calls not covered in the command list.
