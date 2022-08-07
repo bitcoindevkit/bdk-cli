@@ -27,11 +27,17 @@
 
 ## About
 
-This project provides a command-line Bitcoin wallet application using the latest [BDK APIs](https://docs.rs/bdk/0.19.0/bdk/wallet/struct.Wallet.html). This is used mostly as an high level integration testing framework, by the BDK team, using the [tests](/tests/integration.rs) modules.
+This project provides a command-line Bitcoin wallet application using the latest [BDK APIs](https://docs.rs/bdk/0.19.0/bdk/wallet/struct.Wallet.html). This might look tiny and innocent, but through harnessing the power of BDK, this is a very powerful generic descriptor based command line wallet tool.
+And yes, it can do Taproot!!
 
-But if you are planning to use BDK in your own wallet project, bdk-cli is a nice playground to get started with. It allows easy testnet and regtest wallet operations, to try out whats possible with descriptors, miniscripts, and BDK APIs. For more information on BDK refer the [website](https://bitcoindevkit.org/), and the [rust docs](https://docs.rs/bdk/latest/bdk/index.html)
+This crate can be used for following purposes:
+ - Instantly create a miniscript based wallet and connect to your backend of choice (Electrum, Esplora, Core RPC, CBF etc) and quickly play around with your own complex bitcoin scripting workflow. With one or many wallet, connected with one or many backends.
+ - The `tests/integration.rs` is used to document high level complex workflows between BDK and different Bitcoin infra-systems, like Core, Electrum and Lightning(soon TM).
+ - (Planned) Expose the basic command handler via `wasm` to integrate the `bdk-cli` app natively into web platform. [demo](https://bitcoindevkit.org/bdk-cli/playground/)
 
-bdk-cli can be compiled in various different ways to suit the experimental needs.
+If you consider using BDK in your own wallet project, bdk-cli is a nice playground to get started with. It allows easy testnet and regtest wallet operations, to try out whats possible with descriptors, miniscripts, and BDK APIs. For more information on BDK refer the [website](https://bitcoindevkit.org/), and the [rust docs](https://docs.rs/bdk/latest/bdk/index.html)
+
+bdk-cli can be compiled with different features to suit the experimental needs.
   - Database Options
      - `key-value-db` : Sets the wallet database a `sled` db.
      - `sqlite-db` : Sets the wallet database as `sqlite3` db.
@@ -46,10 +52,10 @@ bdk-cli can be compiled in various different ways to suit the experimental needs
      - `verify` : uses `bitcoinconsensus` to verify transactions at every `sync` call of the wallet.
      - `reserves` : opens up bdk-cli **Proof of Reserves** operation commands using the [bdk-reserves plugin](https://github.com/weareseba/bdk-reserves). (requires `electrum`)
    - Automated Node Backend
-     - `regtest-bitcoin` : Auto deploys a regtest bitcoin node, connects the wallet, and exposes core rpc commands via `bdk-cli node` subsommands.
-     - `regtest-electrum` : Auto deploys a `electrsd` connected to a `bitcoind` and an wallet connectded to `electrsd`. `bdk-cli node` subcommand still calls the `bitcoind` RPC.
+     - `regtest-bitcoin` : Auto deploys a regtest bitcoin node, connects the wallet, and exposes core rpc commands via `bdk-cli node` subcommands.
+     - `regtest-electrum` : Auto deploys a `electrsd` connected to a `bitcoind` and a wallet connected to `electrsd`. `bdk-cli node` subcommand still calls the `bitcoind` RPC.
 
-The `deafult` feature sets are `repl` and `sqlite-db`. With `default` features, `bdk-cli` works as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
+The `default` feature sets are `repl` and `sqlite-db`. With `default` features, `bdk-cli` works as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
 
 
 ## Install bdk-cli
