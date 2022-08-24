@@ -71,7 +71,8 @@ use bdk::{
     feature = "compact_filters",
     feature = "rpc"
 ))]
-use bdk_macros::{maybe_async, maybe_await};
+use bdk_macros::maybe_await;
+use bdk_macros::maybe_async;
 #[cfg(feature = "reserves")]
 use bdk_reserves::reserves::verify_proof;
 #[cfg(feature = "reserves")]
