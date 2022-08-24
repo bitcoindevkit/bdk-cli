@@ -65,6 +65,7 @@ use bdk::{
     bitcoin::{Address, OutPoint, TxOut},
     blockchain::Capability,
 };
+use bdk_macros::maybe_async;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -72,7 +73,6 @@ use bdk::{
     feature = "rpc"
 ))]
 use bdk_macros::maybe_await;
-use bdk_macros::maybe_async;
 #[cfg(feature = "reserves")]
 use bdk_reserves::reserves::verify_proof;
 #[cfg(feature = "reserves")]
@@ -557,6 +557,7 @@ pub fn get_outpoints_for_address(
         .collect()
 }
 
+#[maybe_async]
 pub fn handle_command(
     cli_opts: CliOpts,
     network: Network,
@@ -577,7 +578,11 @@ pub fn handle_command(
             let database = open_database(&wallet_opts)?;
             let blockchain = new_blockchain(network, &wallet_opts, &_backend)?;
             let wallet = new_wallet(network, &wallet_opts, database)?;
-            let result = handle_online_wallet_subcommand(&wallet, &blockchain, online_subcommand)?;
+            let result = maybe_await!(handle_online_wallet_subcommand(
+                &wallet,
+                &blockchain,
+                online_subcommand
+            ))?;
             serde_json::to_string_pretty(&result)?
         }
         CliSubCommand::Wallet {
@@ -657,11 +662,11 @@ pub fn handle_command(
                             ))]
                             ReplSubCommand::OnlineWalletSubCommand(online_subcommand) => {
                                 let blockchain = new_blockchain(network, &wallet_opts, &_backend)?;
-                                handle_online_wallet_subcommand(
+                                maybe_await!(handle_online_wallet_subcommand(
                                     &wallet,
                                     &blockchain,
                                     online_subcommand,
-                                )
+                                ))
                             }
                             ReplSubCommand::OfflineWalletSubCommand(offline_subcommand) => {
                                 handle_offline_wallet_subcommand(

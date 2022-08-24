@@ -27,6 +27,7 @@ fd-lock = { version = "=3.0.2", optional = true }
 regex = { version = "1", optional = true }
 bdk-reserves = { version = "0.19", optional = true}
 electrsd = { version= "0.12", features = ["trigger", "bitcoind_22_0"], optional = true}
+tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"], optional = true }
 
 [features]
 default = ["repl", "sqlite-db"]
@@ -44,7 +45,8 @@ electrum = ["bdk/electrum"]
 compact_filters = ["bdk/compact_filters"]
 esplora = []
 esplora-ureq = ["esplora", "bdk/use-esplora-ureq"]
-esplora-reqwest = ["esplora", "bdk/use-esplora-reqwest"]
+async-interface = ["bdk/async-interface", "tokio"]
+esplora-reqwest = ["esplora", "bdk/use-esplora-reqwest", "bdk/reqwest-default-tls", "async-interface"]
 
 # Use this to consensus verify transactions at sync time
 verify = ["bdk/verify"]
