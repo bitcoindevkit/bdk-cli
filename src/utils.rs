@@ -183,6 +183,9 @@ pub(crate) fn open_database(wallet_opts: &WalletOpts) -> Result<AnyDatabase, Err
             .into_string()
             .expect("path string"),
     });
+    #[cfg(not(any(feature = "key-value-db", feature = "sqlite-db")))]
+    let config = AnyDatabaseConfig::Memory(());
+
     let database = AnyDatabase::from_config(&config)?;
     log::debug!("database opened successfully");
     Ok(database)

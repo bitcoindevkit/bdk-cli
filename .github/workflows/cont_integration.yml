@@ -14,17 +14,19 @@ jobs:
           - 1.56.0 # MSRV
         features:
           - default
+          - electrum,sqlite-db
+          - electrum,key-value-db
           - electrum
-          - esplora-ureq
-          - esplora-reqwest
-          - compiler
-          - compact_filters
-          - rpc
-          - reserves,electrum
-          - electrum,verify
+          - esplora-ureq,sqlite-db
+          - esplora-reqwest,sqlite-db
+          - compiler,sqlite-db
+          - compact_filters,sqlite-db
+          - rpc,sqlite-db
+          - reserves,electrum,sqlite-db
+          - electrum,verify,sqlite-db
           # regtest-* features are experimental and not fully usable
-          - regtest-bitcoin
-          - regtest-electrum
+          - regtest-bitcoin,sqlite-db
+          - regtest-electrum,sqlite-db
 
     steps:
       - name: Checkout
@@ -47,11 +49,11 @@ jobs:
           override: true
           components: rustfmt, clippy
       - name: Build
-        run: cargo build --features ${{ matrix.features }} --locked
+        run: cargo build --no-default-features --features repl,${{ matrix.features }} --locked
       - name: Clippy
         run: cargo clippy -- -D warnings
       - name: Test
-        run: cargo test --features ${{ matrix.features }}
+        run: cargo test --no-default-features --features repl,${{ matrix.features }}
 
   fmt:
     name: Rust fmt
