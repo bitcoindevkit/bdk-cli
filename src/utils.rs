@@ -164,6 +164,11 @@ pub(crate) fn prepare_home_dir(home_path: Option<PathBuf>) -> Result<PathBuf, Er
 }
 
 /// Prepare bdk_cli wallet directory.
+#[cfg(any(
+    feature = "key-value-db",
+    feature = "sqlite-db",
+    feature = "compact_filters"
+))]
 fn prepare_wallet_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf, Error> {
     let mut dir = home_path.to_owned();
 
@@ -178,6 +183,7 @@ fn prepare_wallet_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf, Er
 }
 
 /// Prepare wallet database directory.
+#[cfg(any(feature = "key-value-db", feature = "sqlite-db",))]
 fn prepare_wallet_db_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf, Error> {
     let mut db_dir = prepare_wallet_dir(wallet_name, home_path)?;
 
@@ -248,12 +254,14 @@ pub(crate) fn prepare_electrum_datadir(home_path: &Path) -> Result<PathBuf, Erro
     Ok(dir)
 }
 
+#[allow(unused_variables)]
 /// Open the wallet database.
 pub(crate) fn open_database(
     wallet_opts: &WalletOpts,
     home_path: &Path,
 ) -> Result<AnyDatabase, Error> {
     let wallet_name = wallet_opts.wallet.as_ref().expect("wallet name");
+    #[cfg(any(feature = "key-value-db", feature = "sqlite-db",))]
     let database_path = prepare_wallet_db_dir(wallet_name, home_path)?;
 
     #[cfg(feature = "key-value-db")]
