@@ -24,11 +24,14 @@ use log::{debug, error, warn};
 use crate::commands::CliOpts;
 use crate::handlers::*;
 use bdk::{bitcoin, Error};
+use bdk_macros::{maybe_async, maybe_await};
 use structopt::StructOpt;
 
 #[cfg(feature = "repl")]
 const REPL_LINE_SPLIT_REGEX: &str = r#""([^"]*)"|'([^']*)'|([\w\-]+)"#;
 
+#[maybe_async]
+#[cfg_attr(feature = "async-interface", tokio::main)]
 fn main() {
     env_logger::init();
 
@@ -96,7 +99,7 @@ fn main() {
     #[cfg(not(feature = "regtest-node"))]
     let backend = Nodes::None;
 
-    match handle_command(cli_opts, network, backend) {
+    match maybe_await!(handle_command(cli_opts, network, backend)) {
         Ok(result) => println!("{}", result),
         Err(e) => {
             match e {

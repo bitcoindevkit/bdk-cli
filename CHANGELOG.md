@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rewrite relevant doc comments as `structopt` help document.
 - Update `bdk` and `bdk-reserves` to v0.19.0.
 - Change default database to `sqlite`.
+- Change the `esplora-reqwest` feature to always use async mode
 
 ## [0.5.0]
 
