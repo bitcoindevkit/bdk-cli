@@ -14,6 +14,9 @@ mod commands;
 mod handlers;
 mod nodes;
 mod utils;
+#[cfg(target_arch = "wasm32")]
+mod wasm;
+
 use bitcoin::Network;
 
 use log::{debug, error, warn};
@@ -24,10 +27,11 @@ use bdk::{bitcoin, Error};
 use bdk_macros::{maybe_async, maybe_await};
 use structopt::StructOpt;
 
-#[cfg(feature = "repl")]
+#[cfg(any(feature = "repl", target_arch = "wasm32"))]
 const REPL_LINE_SPLIT_REGEX: &str = r#""([^"]*)"|'([^']*)'|([\w\-]+)"#;
 
 #[maybe_async]
+#[cfg(not(target_arch = "wasm32"))]
 #[cfg_attr(feature = "async-interface", tokio::main)]
 fn main() {
     env_logger::init();
@@ -50,3 +54,7 @@ fn main() {
         },
     }
 }
+
+// wasm32 requires a non-async main
+#[cfg(target_arch = "wasm32")]
+fn main() {}

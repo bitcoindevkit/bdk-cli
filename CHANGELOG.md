@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add new `bdk-cli node <command> [<args>]` to control the backend node deployed by `regtest-*` features.
 - Add an integration testing framework in `src/tests/integration.rs`. This framework uses the `regtest-*` feature to run automated testing with bdk-cli.
 - Add possible values for `network` option to improve help message, and fix typo in doc.
+- Add a module `wasm` containing objects to use bdk-cli from web assembly
 
 ## [0.5.0]
 

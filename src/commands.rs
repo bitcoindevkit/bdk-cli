@@ -552,7 +552,7 @@ pub enum KeySubCommand {
 }
 
 /// Subcommands available in REPL mode.
-#[cfg(feature = "repl")]
+#[cfg(any(feature = "repl", target_arch = "wasm32"))]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(global_settings =&[AppSettings::NoBinaryName], rename_all = "lower")]
 pub enum ReplSubCommand {
