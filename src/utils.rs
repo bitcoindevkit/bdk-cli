@@ -28,7 +28,7 @@ use bdk::blockchain::compact_filters::{BitcoinPeerConfig, CompactFiltersBlockcha
 #[cfg(feature = "esplora")]
 use bdk::blockchain::esplora::EsploraBlockchainConfig;
 #[cfg(feature = "rpc")]
-use bdk::blockchain::rpc::{Auth, RpcConfig};
+use bdk::blockchain::rpc::{Auth, RpcConfig, RpcSyncParams};
 #[cfg(feature = "electrum")]
 use bdk::blockchain::ElectrumBlockchainConfig;
 #[cfg(any(
@@ -292,7 +292,11 @@ pub(crate) fn new_blockchain(
             auth,
             network: _network,
             wallet_name,
-            skip_blocks: wallet_opts.rpc_opts.skip_blocks,
+            // TODO add cli options to set all rpc sync params
+            sync_params: Some(RpcSyncParams {
+                start_time: wallet_opts.rpc_opts.start_time,
+                ..Default::default()
+            }),
         };
 
         AnyBlockchainConfig::Rpc(rpc_config)
