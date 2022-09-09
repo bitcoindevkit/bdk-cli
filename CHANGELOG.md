@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add distinct `key-value-db` and `sqlite-db` features, keep default as `key-value-db`
 - Reorganize existing codes in separate modules. Change crate type from lib to bin.
 - Rewrite relevant doc comments as `structopt` help document.
-- Update `bdk` and `bdk-reserves` to v0.19.0.
+- Update `bdk` and `bdk-reserves` to v0.22.0.
 - Change default database to `sqlite`.
 - Change the `esplora-reqwest` feature to always use async mode
+- Change rpc `--skip-blocks` option to `--start-time` which specifies time initial sync will start scanning from.
 
 ## [0.5.0]
 
