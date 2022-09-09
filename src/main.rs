@@ -14,9 +14,6 @@ mod commands;
 mod handlers;
 mod nodes;
 mod utils;
-
-use nodes::Nodes;
-
 use bitcoin::Network;
 
 use log::{debug, error, warn};
@@ -43,63 +40,7 @@ fn main() {
         warn!("This is experimental software and not currently recommended for use on Bitcoin mainnet, proceed with caution.")
     }
 
-    #[cfg(feature = "regtest-node")]
-    let bitcoind = {
-        if network != Network::Regtest {
-            error!("Do not override default network value for `regtest-node` features");
-        }
-        let bitcoind_conf = electrsd::bitcoind::Conf::default();
-        let bitcoind_exe = electrsd::bitcoind::downloaded_exe_path()
-            .expect("We should always have downloaded path");
-        electrsd::bitcoind::BitcoinD::with_conf(bitcoind_exe, &bitcoind_conf).unwrap()
-    };
-
-    #[cfg(feature = "regtest-bitcoin")]
-    let backend = {
-        Nodes::Bitcoin {
-            rpc_url: bitcoind.params.rpc_socket.to_string(),
-            rpc_auth: bitcoind
-                .params
-                .cookie_file
-                .clone()
-                .into_os_string()
-                .into_string()
-                .unwrap(),
-        }
-    };
-
-    #[cfg(feature = "regtest-electrum")]
-    let (_electrsd, backend) = {
-        let elect_conf = electrsd::Conf::default();
-        let elect_exe =
-            electrsd::downloaded_exe_path().expect("We should always have downloaded path");
-        let electrsd = electrsd::ElectrsD::with_conf(elect_exe, &bitcoind, &elect_conf).unwrap();
-        let backend = Nodes::Electrum {
-            electrum_url: electrsd.electrum_url.clone(),
-        };
-        (electrsd, backend)
-    };
-
-    #[cfg(any(feature = "regtest-esplora-ureq", feature = "regtest-esplora-reqwest"))]
-    let (_electrsd, backend) = {
-        let mut elect_conf = electrsd::Conf::default();
-        elect_conf.http_enabled = true;
-        let elect_exe =
-            electrsd::downloaded_exe_path().expect("Electrsd downloaded binaries not found");
-        let electrsd = electrsd::ElectrsD::with_conf(elect_exe, &bitcoind, &elect_conf).unwrap();
-        let backend = Nodes::Esplora {
-            esplora_url: electrsd
-                .esplora_url
-                .clone()
-                .expect("Esplora port not open in electrum"),
-        };
-        (electrsd, nodes)
-    };
-
-    #[cfg(not(feature = "regtest-node"))]
-    let backend = Nodes::None;
-
-    match maybe_await!(handle_command(cli_opts, network, backend)) {
+    match maybe_await!(handle_command(cli_opts)) {
         Ok(result) => println!("{}", result),
         Err(e) => {
             match e {
