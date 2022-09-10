@@ -592,6 +592,14 @@ pub(crate) fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             let split_regex = Regex::new(crate::REPL_LINE_SPLIT_REGEX)
                 .map_err(|e| Error::Generic(e.to_string()))?;
 
+            #[cfg(any(
+                feature = "electrum",
+                feature = "esplora",
+                feature = "compact_filters",
+                feature = "rpc"
+            ))]
+            let backend = new_backend(&home_dir)?;
+
             loop {
                 let readline = rl.readline(">> ");
                 match readline {
@@ -622,7 +630,6 @@ pub(crate) fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                         let result = match repl_subcommand {
                             #[cfg(feature = "regtest-node")]
                             ReplSubCommand::Node { subcommand } => {
-                                let backend = new_backend(&home_dir)?;
                                 match backend.exec_cmd(subcommand) {
                                     Ok(result) => Ok(result),
                                     Err(e) => Ok(serde_json::Value::String(e.to_string())),
@@ -638,7 +645,6 @@ pub(crate) fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                                 subcommand:
                                     WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
                             } => {
-                                let backend = new_backend(&home_dir)?;
                                 let blockchain = new_blockchain(
                                     cli_opts.network,
                                     &wallet_opts,
