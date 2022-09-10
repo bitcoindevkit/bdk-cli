@@ -26,7 +26,7 @@ rustyline = { version = "~9.0", optional = true }
 fd-lock = { version = "=3.0.2", optional = true }
 regex = { version = "1", optional = true }
 bdk-reserves = { version = "0.22", optional = true }
-electrsd = { version= "0.12", features = ["trigger", "bitcoind_22_0"], optional = true}
+electrsd = { version= "0.19", features = ["bitcoind_22_0"], optional = true}
 tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"], optional = true }
 
 [features]
@@ -63,8 +63,9 @@ reserves = ["bdk-reserves"]
 #
 # This is most useful for integrations testing as well as quick demo testing
 # by devs using bdk and various types of background nodes.
-regtest-node = []
-regtest-bitcoin = ["regtest-node" , "rpc", "electrsd"]
+regtest-node = ["electrsd"]
+regtest-bitcoin = ["regtest-node" , "rpc"]
 regtest-electrum = ["regtest-node", "electrum", "electrsd/electrs_0_8_10"]
-regtest-esplora-ureq = ["regtest-node", "esplora-ureq", "electrsd/esplora_a33e97e1"]
-regtest-esplora-reqwest = ["regtest-node", "esplora-reqwest", "electrsd/esplora_a33e97e1"]
+#TODO: Check why esplora in electrsd isn't working.
+#regtest-esplora-ureq = ["regtest-node", "esplora-ureq", "electrsd/esplora_a33e97e1"]
+#regtest-esplora-reqwest = ["regtest-node", "esplora-reqwest", "electrsd/esplora_a33e97e1"]

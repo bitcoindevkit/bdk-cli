@@ -10,7 +10,9 @@
 //!
 //! This module defines all the bdk-cli commands using [structopt]
 
+#![allow(clippy::large_enum_variant)]
 use structopt::clap::AppSettings;
+
 use structopt::StructOpt;
 
 use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
@@ -48,6 +50,11 @@ pub struct CliOpts {
         default_value = "testnet"
     )]
     pub network: Network,
+    /// Sets the wallet data directory.
+    /// Default value : "~/.bdk-bitcoin
+    #[structopt(name = "DATADIR", short = "d", long = "datadir")]
+    pub datadir: Option<std::path::PathBuf>,
+    /// Top level cli sub-command
     #[structopt(subcommand)]
     pub subcommand: CliSubCommand,
 }
@@ -56,6 +63,20 @@ pub struct CliOpts {
 #[derive(Debug, StructOpt, Clone, PartialEq)]
 #[structopt(rename_all = "snake")]
 pub enum CliSubCommand {
+    /// Node operation subcommands
+    ///
+    /// These commands can be used to control the backend bitcoin-core node
+    /// launched automatically with the `regtest-*` feature sets. The commands issues
+    /// bitcoin-cli rpc calls on the demon, in the background.
+    ///
+    /// Feel free to open feature-request in https://github.com/bitcoindevkit/bdk-cli
+    /// if you need extra rpc calls not covered in the command list.
+    #[cfg(feature = "regtest-node")]
+    #[structopt(long_about = "Regtest Node mode")]
+    Node {
+        #[structopt(subcommand)]
+        subcommand: NodeSubCommand,
+    },
     /// Wallet Operations
     ///
     /// bdk-cli wallet operations includes all the basic wallet level tasks.
@@ -119,6 +140,25 @@ pub enum CliSubCommand {
         #[structopt(flatten)]
         electrum_opts: ElectrumOpts,
     },
+}
+
+#[derive(Debug, StructOpt, Clone, PartialEq)]
+#[structopt(rename_all = "lower")]
+#[cfg(any(feature = "regtest-node"))]
+pub enum NodeSubCommand {
+    /// Get info
+    GetInfo,
+    /// Get new address from node's test wallet
+    GetNewAddress,
+    /// Generate given number of blocks and fund the internal wallet with coinbases.
+    Generate { block_num: u64 },
+    /// Get Wallet balance
+    GetBalance,
+    /// Send to an external wallet address
+    SendToAddress { address: String, amount: u64 },
+    /// Execute any bitcoin-cli commands
+    #[structopt(external_subcommand)]
+    BitcoinCli(Vec<String>),
 }
 
 #[derive(Debug, StructOpt, Clone, PartialEq)]
@@ -499,20 +539,24 @@ pub enum KeySubCommand {
 
 #[cfg(feature = "repl")]
 #[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(global_settings =&[AppSettings::NoBinaryName])]
+#[structopt(global_settings =&[AppSettings::NoBinaryName], rename_all = "lower")]
 pub enum ReplSubCommand {
-    #[cfg(any(
-        feature = "electrum",
-        feature = "esplora",
-        feature = "compact_filters",
-        feature = "rpc"
-    ))]
-    #[structopt(flatten)]
-    OnlineWalletSubCommand(OnlineWalletSubCommand),
-    #[structopt(flatten)]
-    OfflineWalletSubCommand(OfflineWalletSubCommand),
-    #[structopt(flatten)]
-    KeySubCommand(KeySubCommand),
+    /// Execute wallet Commands
+    Wallet {
+        #[structopt(subcommand)]
+        subcommand: WalletSubCommand,
+    },
+    /// Execute Key Commands
+    Key {
+        #[structopt(subcommand)]
+        subcommand: KeySubCommand,
+    },
+    /// Execute Node Commands
+    #[cfg(feature = "regtest-node")]
+    Node {
+        #[structopt(subcommand)]
+        subcommand: NodeSubCommand,
+    },
     /// Exit REPL loop
     Exit,
 }
@@ -568,6 +612,7 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Bitcoin,
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -629,6 +674,7 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Testnet,
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -668,6 +714,7 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Bitcoin,
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -708,6 +755,7 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Bitcoin,
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -749,6 +797,7 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Bitcoin,
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -786,6 +835,7 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Bitcoin,
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -826,6 +876,7 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Testnet,
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -900,6 +951,7 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Testnet,
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -969,6 +1021,7 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Testnet,
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -1039,6 +1092,7 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Testnet,
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -1169,6 +1223,7 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Testnet,
+            datadir: None,
             subcommand: CliSubCommand::Compile {
                 policy: "thresh(3,pk(Alice),pk(Bob),pk(Carol),older(2))".to_string(),
                 script_type: "sh-wsh".to_string(),
@@ -1374,6 +1429,7 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Bitcoin,
+            datadir: None,
             subcommand: CliSubCommand::ExternalReserves {
                 message,
                 psbt,

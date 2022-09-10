@@ -22,7 +22,6 @@ use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::OnlineWalletSubCommand::*;
 use crate::commands::*;
 use crate::utils::*;
-use crate::Nodes;
 use bdk::{database::BatchDatabase, wallet::AddressIndex, Error, FeeRate, KeychainKind, Wallet};
 
 use structopt::StructOpt;
@@ -61,10 +60,7 @@ use bdk::miniscript::miniscript;
 use bdk::miniscript::policy::Concrete;
 use bdk::SignOptions;
 #[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk::{
-    bitcoin::{Address, OutPoint, TxOut},
-    blockchain::Capability,
-};
+use bdk::{bitcoin::Address, blockchain::Capability};
 use bdk_macros::maybe_async;
 #[cfg(any(
     feature = "electrum",
@@ -301,7 +297,7 @@ where
     feature = "compact_filters",
     feature = "rpc"
 ))]
-pub fn handle_online_wallet_subcommand<B, D>(
+pub(crate) fn handle_online_wallet_subcommand<B, D>(
     wallet: &Wallet<D>,
     blockchain: &B,
     online_subcommand: OnlineWalletSubCommand,
@@ -387,7 +383,7 @@ where
 /// Execute a key sub-command
 ///
 /// Key sub-commands are described in [`KeySubCommand`].
-pub fn handle_key_subcommand(
+pub(crate) fn handle_key_subcommand(
     network: Network,
     subcommand: KeySubCommand,
 ) -> Result<serde_json::Value, Error> {
@@ -458,7 +454,7 @@ pub fn handle_key_subcommand(
 ///
 /// Compiler options are described in [`CliSubCommand::Compile`].
 #[cfg(feature = "compiler")]
-pub fn handle_compile_subcommand(
+pub(crate) fn handle_compile_subcommand(
     _network: Network,
     policy: String,
     script_type: String,
@@ -486,7 +482,7 @@ pub fn handle_compile_subcommand(
 ///
 /// Proof of reserves options are described in [`CliSubCommand::ExternalReserves`].
 #[cfg(all(feature = "reserves", feature = "electrum"))]
-pub fn handle_ext_reserves_subcommand(
+pub(crate) fn handle_ext_reserves_subcommand(
     network: Network,
     message: String,
     psbt: String,
@@ -523,47 +519,16 @@ pub fn handle_ext_reserves_subcommand(
     Ok(json!({ "spendable": spendable }))
 }
 
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-pub fn get_outpoints_for_address(
-    address: Address,
-    client: &Client,
-    max_confirmation_height: Option<usize>,
-) -> Result<Vec<(OutPoint, TxOut)>, Error> {
-    let unspents = client
-        .script_list_unspent(&address.script_pubkey())
-        .map_err(Error::Electrum)?;
-
-    unspents
-        .iter()
-        .filter(|utxo| {
-            utxo.height > 0 && utxo.height <= max_confirmation_height.unwrap_or(usize::MAX)
-        })
-        .map(|utxo| {
-            let tx = match client.transaction_get(&utxo.tx_hash) {
-                Ok(tx) => tx,
-                Err(e) => {
-                    return Err(e).map_err(Error::Electrum);
-                }
-            };
-
-            Ok((
-                OutPoint {
-                    txid: utxo.tx_hash,
-                    vout: utxo.tx_pos as u32,
-                },
-                tx.output[utxo.tx_pos].clone(),
-            ))
-        })
-        .collect()
-}
-
 #[maybe_async]
-pub fn handle_command(
-    cli_opts: CliOpts,
-    network: Network,
-    _backend: Nodes,
-) -> Result<String, Error> {
+pub(crate) fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
+    let network = cli_opts.network;
+    let home_dir = prepare_home_dir(cli_opts.datadir)?;
     let result = match cli_opts.subcommand {
+        #[cfg(feature = "regtest-node")]
+        CliSubCommand::Node { subcommand: cmd } => {
+            let backend = new_backend(&home_dir)?;
+            serde_json::to_string_pretty(&backend.exec_cmd(cmd)?)
+        }
         #[cfg(any(
             feature = "electrum",
             feature = "esplora",
@@ -574,48 +539,49 @@ pub fn handle_command(
             wallet_opts,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
-            let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, network)?;
-            let database = open_database(&wallet_opts)?;
-            let blockchain = new_blockchain(network, &wallet_opts, &_backend)?;
+            let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, cli_opts.network)?;
+            let database = open_database(&wallet_opts, &home_dir)?;
+            let backend = new_backend(&home_dir)?;
+            let blockchain = new_blockchain(network, &wallet_opts, &backend, &home_dir)?;
             let wallet = new_wallet(network, &wallet_opts, database)?;
             let result = maybe_await!(handle_online_wallet_subcommand(
                 &wallet,
                 &blockchain,
                 online_subcommand
             ))?;
-            serde_json::to_string_pretty(&result)?
+            serde_json::to_string_pretty(&result)
         }
         CliSubCommand::Wallet {
             wallet_opts,
             subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
             let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, network)?;
-            let database = open_database(&wallet_opts)?;
+            let database = open_database(&wallet_opts, &home_dir)?;
             let wallet = new_wallet(network, &wallet_opts, database)?;
             let result =
                 handle_offline_wallet_subcommand(&wallet, &wallet_opts, offline_subcommand)?;
-            serde_json::to_string_pretty(&result)?
+            serde_json::to_string_pretty(&result)
         }
         CliSubCommand::Key {
             subcommand: key_subcommand,
         } => {
-            let result = handle_key_subcommand(network, key_subcommand)?;
-            serde_json::to_string_pretty(&result)?
+            let result = handle_key_subcommand(cli_opts.network, key_subcommand)?;
+            serde_json::to_string_pretty(&result)
         }
         #[cfg(feature = "compiler")]
         CliSubCommand::Compile {
             policy,
             script_type,
         } => {
-            let result = handle_compile_subcommand(network, policy, script_type)?;
-            serde_json::to_string_pretty(&result)?
+            let result = handle_compile_subcommand(cli_opts.network, policy, script_type)?;
+            serde_json::to_string_pretty(&result)
         }
         #[cfg(feature = "repl")]
         CliSubCommand::Repl { wallet_opts } => {
-            let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, network)?;
-            let database = open_database(&wallet_opts)?;
+            let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, cli_opts.network)?;
+            let database = open_database(&wallet_opts, &home_dir)?;
 
-            let wallet = new_wallet(network, &wallet_opts, database)?;
+            let wallet = new_wallet(cli_opts.network, &wallet_opts, database)?;
 
             let mut rl = Editor::<()>::new();
 
@@ -625,6 +591,14 @@ pub fn handle_command(
 
             let split_regex = Regex::new(crate::REPL_LINE_SPLIT_REGEX)
                 .map_err(|e| Error::Generic(e.to_string()))?;
+
+            #[cfg(any(
+                feature = "electrum",
+                feature = "esplora",
+                feature = "compact_filters",
+                feature = "rpc"
+            ))]
+            let backend = new_backend(&home_dir)?;
 
             loop {
                 let readline = rl.readline(">> ");
@@ -654,29 +628,45 @@ pub fn handle_command(
                         log::debug!("repl_subcommand = {:?}", repl_subcommand);
 
                         let result = match repl_subcommand {
+                            #[cfg(feature = "regtest-node")]
+                            ReplSubCommand::Node { subcommand } => {
+                                match backend.exec_cmd(subcommand) {
+                                    Ok(result) => Ok(result),
+                                    Err(e) => Ok(serde_json::Value::String(e.to_string())),
+                                }
+                            }
                             #[cfg(any(
                                 feature = "electrum",
                                 feature = "esplora",
                                 feature = "compact_filters",
                                 feature = "rpc"
                             ))]
-                            ReplSubCommand::OnlineWalletSubCommand(online_subcommand) => {
-                                let blockchain = new_blockchain(network, &wallet_opts, &_backend)?;
+                            ReplSubCommand::Wallet {
+                                subcommand:
+                                    WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
+                            } => {
+                                let blockchain = new_blockchain(
+                                    cli_opts.network,
+                                    &wallet_opts,
+                                    &backend,
+                                    &home_dir,
+                                )?;
                                 maybe_await!(handle_online_wallet_subcommand(
                                     &wallet,
                                     &blockchain,
                                     online_subcommand,
                                 ))
                             }
-                            ReplSubCommand::OfflineWalletSubCommand(offline_subcommand) => {
-                                handle_offline_wallet_subcommand(
-                                    &wallet,
-                                    &wallet_opts,
-                                    offline_subcommand,
-                                )
-                            }
-                            ReplSubCommand::KeySubCommand(key_subcommand) => {
-                                handle_key_subcommand(network, key_subcommand)
+                            ReplSubCommand::Wallet {
+                                subcommand:
+                                    WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
+                            } => handle_offline_wallet_subcommand(
+                                &wallet,
+                                &wallet_opts,
+                                offline_subcommand,
+                            ),
+                            ReplSubCommand::Key { subcommand } => {
+                                handle_key_subcommand(cli_opts.network, subcommand)
                             }
                             ReplSubCommand::Exit => break,
                         };
@@ -692,7 +682,7 @@ pub fn handle_command(
                 }
             }
 
-            "Exiting REPL".to_string()
+            Ok("Exiting REPL".to_string())
         }
         #[cfg(all(feature = "reserves", feature = "electrum"))]
         CliSubCommand::ExternalReserves {
@@ -703,15 +693,15 @@ pub fn handle_command(
             electrum_opts,
         } => {
             let result = handle_ext_reserves_subcommand(
-                network,
+                cli_opts.network,
                 message,
                 psbt,
                 confirmations,
                 addresses,
                 electrum_opts,
             )?;
-            serde_json::to_string_pretty(&result)?
+            serde_json::to_string_pretty(&result)
         }
     };
-    Ok(result)
+    result.map_err(|e| e.into())
 }
