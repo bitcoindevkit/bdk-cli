@@ -27,40 +27,40 @@
 
 ## About
 
-This project provides a command-line Bitcoin wallet application using the latest [BDK APIs](https://docs.rs/bdk/0.19.0/bdk/wallet/struct.Wallet.html). This might look tiny and innocent, but through harnessing the power of BDK, this is a very powerful generic descriptor based command line wallet tool.
+This project provides a command-line Bitcoin wallet application using the latest [BDK APIs](https://docs.rs/bdk/latest/bdk/wallet/struct.Wallet.html). This might look tiny and innocent, but by harnessing the power of BDK it provides a powerful generic descriptor based command line wallet tool.
 And yes, it can do Taproot!!
 
-This crate can be used for following purposes:
- - Instantly create a miniscript based wallet and connect to your backend of choice (Electrum, Esplora, Core RPC, CBF etc) and quickly play around with your own complex bitcoin scripting workflow. With one or many wallet, connected with one or many backends.
- - The `tests/integration.rs` is used to document high level complex workflows between BDK and different Bitcoin infra-systems, like Core, Electrum and Lightning(soon TM).
- - (Planned) Expose the basic command handler via `wasm` to integrate the `bdk-cli` app natively into web platform. [demo](https://bitcoindevkit.org/bdk-cli/playground/)
+This crate can be used for the following purposes:
+ - Instantly create a miniscript based wallet and connect to your backend of choice (Electrum, Esplora, Core RPC, CBF etc) and quickly play around with your own complex bitcoin scripting workflow. With one or many wallets, connected with one or many backends.
+ - The `tests/integration.rs` module is used to document high level complex workflows between BDK and different Bitcoin infrastructure systems, like Core, Electrum and Lightning(soon TM).
+ - (Planned) Expose the basic command handler via `wasm` to integrate `bdk-cli` functionality natively into the web platform. See also the [playground](https://bitcoindevkit.org/bdk-cli/playground/) page.
 
-If you consider using BDK in your own wallet project, bdk-cli is a nice playground to get started with. It allows easy testnet and regtest wallet operations, to try out whats possible with descriptors, miniscripts, and BDK APIs. For more information on BDK refer the [website](https://bitcoindevkit.org/), and the [rust docs](https://docs.rs/bdk/latest/bdk/index.html)
+If you are considering using BDK in your own wallet project bdk-cli is a nice playground to get started with. It allows easy testnet and regtest wallet operations, to try out what's possible with descriptors, miniscript, and BDK APIs. For more information on BDK refer to the [website](https://bitcoindevkit.org/) and the [rust docs](https://docs.rs/bdk/latest/bdk/index.html)
 
-bdk-cli can be compiled with different features to suit the experimental needs.
+bdk-cli can be compiled with different features to suit your experimental needs.
   - Database Options
-     - `key-value-db` : Sets the wallet database a `sled` db.
-     - `sqlite-db` : Sets the wallet database as `sqlite3` db.
+     - `key-value-db` : Sets the wallet database to a `sled` db.
+     - `sqlite-db` : Sets the wallet database to a `sqlite3` db.
   - Blockchain Options
      - `rpc` : Connects the wallet to bitcoin core via RPC.
      - `electrum` : Connects the wallet to an electrum server.
-     - `compact_filters` : Deploy a BIP157 node to get blockchain data from bitcoin p2p network.
-     - `esplora-ureq/reqwest` : Connects the wallet to a esplora server sync/asynchronously.
+     - `compact_filters` : Deploy a BIP157 node to get blockchain data from the bitcoin p2p network.
+     - `esplora-ureq` or `esplora-reqwest` : Connects the wallet to an esplora server synchronously or asynchronously.
   - Extra Utility Tools
-     - `repl` : use bdk-cli as a [REPL](https://codewith.mu/en/tutorials/1.0/repl) shell (useful for quick hand testing wallet operations).
+     - `repl` : use bdk-cli as a [REPL](https://codewith.mu/en/tutorials/1.0/repl) shell (useful for quick manual testing of wallet operations).
      - `compiler` : opens up bdk-cli policy compiler commands.
      - `verify` : uses `bitcoinconsensus` to verify transactions at every `sync` call of the wallet.
-     - `reserves` : opens up bdk-cli **Proof of Reserves** operation commands using the [bdk-reserves plugin](https://github.com/weareseba/bdk-reserves). (requires `electrum`)
+     - `reserves` : opens up bdk-cli **Proof of Reserves** operation commands using the [bdk-reserves plugin](https://github.com/bitcoindevkit/bdk-reserves). (requires the `electrum` feature)
    - Automated Node Backend
-     - `regtest-bitcoin` : Auto deploys a regtest bitcoin node, connects the wallet, and exposes core rpc commands via `bdk-cli node` subcommands.
-     - `regtest-electrum` : Auto deploys a `electrsd` connected to a `bitcoind` and a wallet connected to `electrsd`. `bdk-cli node` subcommand still calls the `bitcoind` RPC.
-
-The `default` feature sets are `repl` and `sqlite-db`. With `default` features, `bdk-cli` works as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
+     - `regtest-bitcoin` : Auto deploys a regtest `bitcoind` node, connects the wallet, and exposes core rpc commands via `bdk-cli node` subcommands.
+     - `regtest-electrum` : Auto deploys `electrsd` and connected `bitcoind` nodes, exposes core rpc commands via `bdk-cli node` and provides a wallet connected to the local `electrsd`.
+    
+The `default` feature set is `repl` and `sqlite-db`. With the `default` features, `bdk-cli` can be used as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
 
 
 ## Install bdk-cli
 ### From source
-To install dev version of `bdk-cli` from local git repo with the `electrum` blockchain client enabled:
+To install a dev version of `bdk-cli` from a local git repo with the `electrum` blockchain client enabled:
 
 ```shell
 cd <bdk-cli git repo directory>
@@ -69,8 +69,8 @@ bdk-cli help # to verify it worked
 ```
 
 If no blockchain client feature is enabled online wallet commands `sync` and `broadcast` will be 
-disabled. To enable these commands a blockchain client features such as `electrum` or another 
-blockchain client feature must be enabled. Below is an example of how run the `bdk-cli` bin with
+disabled. To enable these commands a blockchain client feature such as `electrum` or another 
+blockchain client feature must be enabled. Below is an example of how to run the `bdk-cli` binary with
 the `esplora-ureq` blockchain client feature.
 
 ```shell
@@ -81,7 +81,7 @@ At most one blockchain feature can be enabled, available blockchain client featu
 `electrum`, `esplora-ureq` (blocking), `esplora-reqwest` (async), `compact_filters` and `rpc`.
 
 ### From crates.io
-You can the install the binaries for the latest tag of `bdk-cli` with online wallet features 
+You can install the binary for the latest tag of `bdk-cli` with online wallet features 
 directly from [crates.io](https://crates.io/crates/bdk-cli) with a command as below:
 ```sh
 cargo install bdk-cli --features electrum
@@ -89,7 +89,7 @@ cargo install bdk-cli --features electrum
 
 ### bdk-cli bin usage examples
 
-To get usage information for the `bdk-cli` bin use the below command which returns a list of
+To get usage information for the `bdk-cli` binary use the below command which returns a list of
 available wallet options and commands:
 
 ```shell
@@ -102,13 +102,13 @@ To sync a wallet to the default electrum server:
 cargo run --features electrum -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
 ```
 
-To sync a wallet to Bitcoin Core node (assuming a regtest node at 127.0.0.1:18443) using the core rpc:
+To sync a wallet to a Bitcoin Core node (assuming a regtest node at 127.0.0.1:18443) using the core rpc:
 
 ```shell
 cargo run --features rpc -- --network regtest wallet --node 127.0.0.1:18443 --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
 ```
 
-To sync a wallet to Bitcoin Core node (assuming a regtest node at 127.0.0.1:18444) serving compact filters:
+To sync a wallet to a Bitcoin Core node (assuming a regtest node at 127.0.0.1:18444) serving compact filters:
 Note: 
 - This will increase build time by few minutes for the binaries because of `librocksdb`.
 - Bitcoin Core v0.21.0 or higher is required to serve compact filters.  
@@ -123,7 +123,7 @@ To get a wallet balance with customized logging:
 RUST_LOG=debug,sled=info,rustls=info cargo run -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" get_balance
 ```
 
-To generate a new extended master key, suitable for using in a descriptor:
+To generate a new extended master key, suitable for use in a descriptor:
 
 ```shell
 cargo run -- key generate

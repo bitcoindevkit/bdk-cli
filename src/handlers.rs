@@ -8,7 +8,7 @@
 
 //! Command Handlers
 //!
-//! This module describes all the command handling logic used by bdk-cli
+//! This module describes all the command handling logic used by bdk-cli.
 
 use std::collections::BTreeMap;
 
