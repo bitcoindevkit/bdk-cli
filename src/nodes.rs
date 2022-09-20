@@ -32,19 +32,19 @@ use {
 pub enum Nodes {
     None,
     #[cfg(feature = "regtest-bitcoin")]
-    // A bitcoin core backend. Wallet connected to it via RPC.
+    /// A bitcoin core backend. Wallet connected to it via RPC.
     Bitcoin {
         bitcoind: Box<electrsd::bitcoind::BitcoinD>,
     },
     #[cfg(feature = "regtest-electrum")]
-    // An Electrum backend, with an underlying bitcoin core
-    // Wallet connected to it, via the electrum url
+    /// An Electrum backend with an underlying bitcoin core
+    /// Wallet connected to it, via the electrum url.
     Electrum {
         bitcoind: Box<electrsd::bitcoind::BitcoinD>,
         electrsd: Box<electrsd::ElectrsD>,
     },
-    // An Esplora backend with underlying bitcoin core.
-    // Wallet connected to it, via the esplora url
+    /// An Esplora backend with an underlying bitcoin core
+    /// Wallet connected to it, via the esplora url.
     #[cfg(any(feature = "regtest-esplora-ureq", feature = "regtest-esplora-reqwest"))]
     Esplora {
         bitcoind: Box<electrsd::bitcoind::BitcoinD>,
@@ -110,7 +110,7 @@ impl Nodes {
         }
     }
 
-    // Expose the underlying RPC client
+    // Expose the underlying RPC client.
     pub fn get_client(&self) -> Result<&Client, Error> {
         match self {
             Self::None => Err(Error::Generic(

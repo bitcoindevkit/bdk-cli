@@ -68,7 +68,7 @@ pub(crate) fn maybe_descriptor_wallet_name(
     Ok(wallet_opts)
 }
 
-/// Parse the recipient (Address,Amount) argument from cli input
+/// Parse the recipient (Address,Amount) argument from cli input.
 pub(crate) fn parse_recipient(s: &str) -> Result<(Script, u64), String> {
     let parts: Vec<_> = s.split(':').collect();
     if parts.len() != 2 {
@@ -86,7 +86,7 @@ pub(crate) fn parse_recipient(s: &str) -> Result<(Script, u64), String> {
     feature = "esplora",
     feature = "rpc"
 ))]
-/// Parse the proxy (Socket:Port) argument from the cli input
+/// Parse the proxy (Socket:Port) argument from the cli input.
 pub(crate) fn parse_proxy_auth(s: &str) -> Result<(String, String), String> {
     let parts: Vec<_> = s.split(':').collect();
     if parts.len() != 2 {
@@ -99,6 +99,7 @@ pub(crate) fn parse_proxy_auth(s: &str) -> Result<(String, String), String> {
     Ok((user, passwd))
 }
 
+/// Fetch all the utxos, for a given address.
 #[cfg(all(feature = "reserves", feature = "electrum"))]
 pub fn get_outpoints_for_address(
     address: Address,
@@ -133,15 +134,15 @@ pub fn get_outpoints_for_address(
         .collect()
 }
 
-/// Parse a outpoint (Txid:Vout) argument from cli input
+/// Parse a outpoint (Txid:Vout) argument from cli input.
 pub(crate) fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
     OutPoint::from_str(s).map_err(|e| e.to_string())
 }
 
-/// prepare bdk-cli home directory
+/// Prepare bdk-cli home directory
 ///
 /// This function is called to check if [`crate::CliOpts`] datadir is set.
-/// If not the default home directory is created at `~/.bdk-bitcoin
+/// If not the default home directory is created at `~/.bdk-bitcoin`.
 pub(crate) fn prepare_home_dir(home_path: Option<PathBuf>) -> Result<PathBuf, Error> {
     let dir = home_path.unwrap_or_else(|| {
         let mut dir = PathBuf::new();
@@ -162,7 +163,7 @@ pub(crate) fn prepare_home_dir(home_path: Option<PathBuf>) -> Result<PathBuf, Er
     Ok(dir)
 }
 
-/// prepare bdk_cli wallet directory
+/// Prepare bdk_cli wallet directory.
 fn prepare_wallet_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf, Error> {
     let mut dir = home_path.to_owned();
 
@@ -176,7 +177,7 @@ fn prepare_wallet_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf, Er
     Ok(dir)
 }
 
-/// Prepare wallet database directory
+/// Prepare wallet database directory.
 fn prepare_wallet_db_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf, Error> {
     let mut db_dir = prepare_wallet_dir(wallet_name, home_path)?;
 
@@ -195,7 +196,7 @@ fn prepare_wallet_db_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf,
     Ok(db_dir)
 }
 
-/// Prepare blockchain data directory (for compact filters)
+/// Prepare blockchain data directory (for compact filters).
 #[cfg(feature = "compact_filters")]
 fn prepare_bc_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf, Error> {
     let mut bc_dir = prepare_wallet_dir(wallet_name, home_path)?;
@@ -213,9 +214,9 @@ fn prepare_bc_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf, Error>
     Ok(bc_dir)
 }
 
-// We create only a global single node directory. Because multiple
-// wallets can access the same node datadir, and they will have separate
-// wallet names in `<home_path>/bitcoind/regtest/wallets`.
+/// Create the global bitcoind directory.
+/// multiple wallets can access the same node datadir, and they will have separate
+/// wallet names in `<home_path>/bitcoind/regtest/wallets`.
 #[cfg(feature = "regtest-node")]
 pub(crate) fn prepare_bitcoind_datadir(home_path: &Path) -> Result<PathBuf, Error> {
     let mut dir = home_path.to_owned();
@@ -230,9 +231,9 @@ pub(crate) fn prepare_bitcoind_datadir(home_path: &Path) -> Result<PathBuf, Erro
     Ok(dir)
 }
 
-// We create only a global single node directory. Because multiple
-// wallets can access the same node datadir, and they will have separate
-// wallet names in `<home_path>/electrsd/regtest/wallets`.
+/// Create the global electrsd directory.
+/// multiple wallets can access the same node datadir, and they will have separate
+/// wallet names in `<home_path>/bitcoind/regtest/wallets`.
 #[cfg(feature = "regtest-electrum")]
 pub(crate) fn prepare_electrum_datadir(home_path: &Path) -> Result<PathBuf, Error> {
     let mut dir = home_path.to_owned();
@@ -247,7 +248,7 @@ pub(crate) fn prepare_electrum_datadir(home_path: &Path) -> Result<PathBuf, Erro
     Ok(dir)
 }
 
-/// Open the wallet database
+/// Open the wallet database.
 pub(crate) fn open_database(
     wallet_opts: &WalletOpts,
     home_path: &Path,
@@ -278,6 +279,7 @@ pub(crate) fn open_database(
     Ok(database)
 }
 
+/// Create a new backend node at given datadir.
 #[allow(dead_code)]
 pub(crate) fn new_backend(_datadir: &Path) -> Result<Nodes, Error> {
     #[cfg(feature = "regtest-node")]
@@ -359,7 +361,7 @@ pub(crate) fn new_backend(_datadir: &Path) -> Result<Nodes, Error> {
     feature = "rpc"
 ))]
 /// Create a new blockchain for a given [Nodes] if available
-/// Or else create one from the wallet configuration options
+/// or else create one from the wallet configuration options.
 pub(crate) fn new_blockchain(
     _network: Network,
     wallet_opts: &WalletOpts,
@@ -474,7 +476,7 @@ pub(crate) fn new_blockchain(
     AnyBlockchain::from_config(&config)
 }
 
-/// Create a new wallet from given wallet configuration options
+/// Create a new wallet from given wallet configuration options.
 pub(crate) fn new_wallet<D>(
     network: Network,
     wallet_opts: &WalletOpts,

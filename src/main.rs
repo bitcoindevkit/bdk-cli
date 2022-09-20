@@ -6,9 +6,9 @@
 // You may not use this file except in accordance with one or both of these
 // licenses.
 
-//! BDK CLI APP
-//!
-//! This module describes the app's main() function
+#![doc = include_str!("../README.md")]
+#![doc(html_logo_url = "https://github.com/bitcoindevkit/bdk/raw/master/static/bdk.png")]
+#![warn(missing_docs)]
 
 mod commands;
 mod handlers;
