@@ -396,6 +396,22 @@ pub enum OfflineWalletSubCommand {
         /// Selects which policy should be used to satisfy the internal descriptor.
         #[structopt(name = "INT_POLICY", long = "internal_policy")]
         internal_policy: Option<String>,
+        /// Optionally create an OP_RETURN output containing given String in utf8 encoding (max 80 bytes)
+        #[structopt(
+            name = "ADD_STRING",
+            long = "add_string",
+            short = "s",
+            conflicts_with = "ADD_DATA"
+        )]
+        add_string: Option<String>,
+        /// Optionally create an OP_RETURN output containing given base64 encoded String. (max 80 bytes)
+        #[structopt(
+            name = "ADD_DATA",
+            long = "add_data",
+            short = "o",
+            conflicts_with = "ADD_STRING"
+        )]
+        add_data: Option<String>, //base 64 econding
     },
     /// Bumps the fees of an RBF transaction.
     BumpFee {
@@ -945,7 +961,9 @@ mod test {
                             "--change_descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
                             "create_tx", "--to", "n2Z3YNXtceeJhFkTknVaNjT1mnCGWesykJ:123456","mjDZ34icH4V2k9GmC8niCrhzVuR3z8Mgkf:78910",
                             "--utxos","87345e46bfd702d24d54890cc094d08a005f773b27c8f965dfe0eb1e23eef88e:1",
-                            "--utxos","87345e46bfd702d24d54890cc094d08a005f773b27c8f965dfe0eb1e23eef88e:2"];
+                            "--utxos","87345e46bfd702d24d54890cc094d08a005f773b27c8f965dfe0eb1e23eef88e:2",
+                            "--add_string","Hello BDK",
+                           ];
 
         let cli_opts = CliOpts::from_iter(&cli_args);
 
@@ -1016,6 +1034,8 @@ mod test {
                     fee_rate: None,
                     external_policy: None,
                     internal_policy: None,
+                    add_data: None,
+                    add_string: Some("Hello BDK".to_string()),
                 }),
             },
         };

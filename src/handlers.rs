@@ -122,6 +122,8 @@ where
             fee_rate,
             external_policy,
             internal_policy,
+            add_data,
+            add_string,
         } => {
             let mut tx_builder = wallet.build_tx();
 
@@ -149,6 +151,13 @@ where
 
             if let Some(unspendable) = unspendable {
                 tx_builder.unspendable(unspendable);
+            }
+
+            if let Some(base64_data) = add_data {
+                let op_return_data = base64::decode(&base64_data).unwrap();
+                tx_builder.add_data(op_return_data.as_slice());
+            } else if let Some(string_data) = add_string {
+                tx_builder.add_data(string_data.as_bytes());
             }
 
             let policies = vec![
