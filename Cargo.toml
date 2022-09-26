@@ -27,7 +27,20 @@ fd-lock = { version = "=3.0.2", optional = true }
 regex = { version = "1", optional = true }
 bdk-reserves = { version = "0.22", optional = true }
 electrsd = { version= "0.19", features = ["bitcoind_22_0"], optional = true}
-tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"], optional = true }
+
+# Platform-specific dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "=0.2.79", features = ["serde-serialize"] }
+wasm-bindgen-futures = { version = "0.4" }
+js-sys = "=0.3.56"
+wasm-logger = "0.2.0"
+secp256k1 = { version = "0.22.0", default-features = false }
+rand = { version = "^0.6", features = ["wasm-bindgen"] }
+serde = { version = "^1.0", features = ["derive"] }
+regex = { version = "1" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"] }
 
 [features]
 default = ["repl", "sqlite-db"]
@@ -45,7 +58,7 @@ electrum = ["bdk/electrum"]
 compact_filters = ["bdk/compact_filters"]
 esplora = []
 esplora-ureq = ["esplora", "bdk/use-esplora-ureq"]
-async-interface = ["bdk/async-interface", "tokio"]
+async-interface = ["bdk/async-interface"]
 esplora-reqwest = ["esplora", "bdk/use-esplora-reqwest", "bdk/reqwest-default-tls", "async-interface"]
 
 # Use this to consensus verify transactions at sync time
