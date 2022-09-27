@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0]
+
 - Add distinct `key-value-db` and `sqlite-db` features, keep default as `key-value-db`
 - Reorganize existing codes in separate modules. Change crate type from lib to bin.
 - Rewrite relevant doc comments as `structopt` help document.
@@ -69,7 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.0-beta.1]
 
-[unreleased]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.4.0...HEAD
+[unreleased]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.1.0...v0.2.0
