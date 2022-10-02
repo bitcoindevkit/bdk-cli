@@ -13,13 +13,12 @@
 //! All subcommands are defined in the below enums.
 
 #![allow(clippy::large_enum_variant)]
-use structopt::clap::AppSettings;
-
-use structopt::StructOpt;
+use clap::{AppSettings, Args, Parser, Subcommand};
 
 use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
-use bdk::bitcoin::{Address, Network, OutPoint, Script};
+use bdk::bitcoin::{Address, Network, OutPoint};
 
+use crate::utils::parse_outpoint;
 #[cfg(any(
     feature = "compact_filters",
     feature = "electrum",
@@ -27,9 +26,8 @@ use bdk::bitcoin::{Address, Network, OutPoint, Script};
     feature = "rpc"
 ))]
 use crate::utils::parse_proxy_auth;
-use crate::utils::{parse_outpoint, parse_recipient};
 
-#[derive(PartialEq, Clone, Debug, StructOpt)]
+#[derive(PartialEq, Clone, Debug, Parser)]
 /// The BDK Command Line Wallet App
 ///
 /// bdk-cli is a light weight command line bitcoin wallet, powered by BDK.
@@ -41,13 +39,13 @@ use crate::utils::{parse_outpoint, parse_recipient};
 /// bdk-cli is also a fully functioning Bitcoin wallet with taproot support!
 ///
 /// For more information checkout <https://bitcoindevkit.org/>
-#[structopt(version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
+#[clap(version = option_env ! ("CARGO_PKG_VERSION").unwrap_or("unknown"),
 author = option_env ! ("CARGO_PKG_AUTHORS").unwrap_or(""))]
 pub struct CliOpts {
     /// Sets the network.
-    #[structopt(
+    #[clap(
         name = "NETWORK",
-        short = "n",
+        short = 'n',
         long = "network",
         default_value = "testnet",
         possible_values = &["bitcoin", "testnet", "signet", "regtest"]
@@ -55,16 +53,16 @@ pub struct CliOpts {
     pub network: Network,
     /// Sets the wallet data directory.
     /// Default value : "~/.bdk-bitcoin
-    #[structopt(name = "DATADIR", short = "d", long = "datadir")]
+    #[clap(name = "DATADIR", short = 'd', long = "datadir")]
     pub datadir: Option<std::path::PathBuf>,
     /// Top level cli sub-commands.
-    #[structopt(subcommand)]
+    #[clap(subcommand)]
     pub subcommand: CliSubCommand,
 }
 
 /// Top level cli sub-commands.
-#[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(rename_all = "snake")]
+#[derive(Debug, Subcommand, Clone, PartialEq)]
+#[clap(rename_all = "snake")]
 pub enum CliSubCommand {
     /// Node operation subcommands.
     ///
@@ -75,9 +73,9 @@ pub enum CliSubCommand {
     /// Feel free to open a feature request issue in <https://github.com/bitcoindevkit/bdk-cli>
     /// if you need extra rpc calls not covered in the command list.
     #[cfg(feature = "regtest-node")]
-    #[structopt(long_about = "Regtest Node mode")]
+    #[clap(long_about = "Regtest Node mode")]
     Node {
-        #[structopt(subcommand)]
+        #[clap(subcommand)]
         subcommand: NodeSubCommand,
     },
     /// Wallet operations.
@@ -87,9 +85,9 @@ pub enum CliSubCommand {
     /// needs backend like `sync` and `broadcast`, compile the binary with specific backend feature
     /// and use the configuration options below to configure for that backend.
     Wallet {
-        #[structopt(flatten)]
+        #[clap(flatten)]
         wallet_opts: WalletOpts,
-        #[structopt(subcommand)]
+        #[clap(subcommand)]
         subcommand: WalletSubCommand,
     },
     /// Key management operations.
@@ -100,18 +98,18 @@ pub enum CliSubCommand {
     /// These sub-commands are **EXPERIMENTAL** and should only be used for testing. Do not use this
     /// feature to create keys that secure actual funds on the Bitcoin mainnet.
     Key {
-        #[structopt(subcommand)]
+        #[clap(subcommand)]
         subcommand: KeySubCommand,
     },
     /// Compile a miniscript policy to an output descriptor.
     #[cfg(feature = "compiler")]
-    #[structopt(long_about = "Miniscript policy compiler")]
+    #[clap(long_about = "Miniscript policy compiler")]
     Compile {
         /// Sets the spending policy to compile.
-        #[structopt(name = "POLICY", required = true, index = 1)]
+        #[clap(name = "POLICY", required = true, index = 1)]
         policy: String,
         /// Sets the script type used to embed the compiled policy.
-        #[structopt(name = "TYPE", short = "t", long = "type", default_value = "wsh", possible_values = &["sh","wsh", "sh-wsh"])]
+        #[clap(name = "TYPE", short = 't', long = "type", default_value = "wsh", possible_values = &["sh","wsh", "sh-wsh"])]
         script_type: String,
     },
     #[cfg(feature = "repl")]
@@ -120,7 +118,7 @@ pub enum CliSubCommand {
     /// REPL command loop can be used to make recurring callbacks to an already loaded wallet.
     /// This mode is useful for hands on live testing of wallet operations.
     Repl {
-        #[structopt(flatten)]
+        #[clap(flatten)]
         wallet_opts: WalletOpts,
     },
     /// Proof of reserves operations.
@@ -129,25 +127,25 @@ pub enum CliSubCommand {
     #[cfg(all(feature = "reserves", feature = "electrum"))]
     ExternalReserves {
         /// Sets the challenge message with which the proof was produced.
-        #[structopt(name = "MESSAGE", required = true, index = 1)]
+        #[clap(name = "MESSAGE", required = true, index = 1)]
         message: String,
         /// Sets the proof in form of a PSBT to verify.
-        #[structopt(name = "PSBT", required = true, index = 2)]
+        #[clap(name = "PSBT", required = true, index = 2)]
         psbt: String,
         /// Sets the number of block confirmations for UTXOs to be considered.
-        #[structopt(name = "CONFIRMATIONS", required = true, index = 3)]
+        #[clap(name = "CONFIRMATIONS", required = true, index = 3)]
         confirmations: usize,
         /// Sets the addresses for which the proof was produced.
-        #[structopt(name = "ADDRESSES", required = true, index = 4)]
+        #[clap(name = "ADDRESSES", required = true, index = 4)]
         addresses: Vec<String>,
-        #[structopt(flatten)]
+        #[clap(flatten)]
         electrum_opts: ElectrumOpts,
     },
 }
 
 /// Backend Node operation subcommands.
-#[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(rename_all = "lower")]
+#[derive(Debug, Subcommand, Clone, PartialEq)]
+#[clap(rename_all = "lower")]
 #[cfg(any(feature = "regtest-node"))]
 pub enum NodeSubCommand {
     /// Get info.
@@ -161,12 +159,12 @@ pub enum NodeSubCommand {
     /// Send to an external wallet address.
     SendToAddress { address: String, amount: u64 },
     /// Execute any bitcoin-cli commands.
-    #[structopt(external_subcommand)]
+    #[clap(external_subcommand)]
     BitcoinCli(Vec<String>),
 }
 
 /// Wallet operation subcommands.
-#[derive(Debug, StructOpt, Clone, PartialEq)]
+#[derive(Debug, Subcommand, Clone, PartialEq)]
 pub enum WalletSubCommand {
     #[cfg(any(
         feature = "electrum",
@@ -174,60 +172,60 @@ pub enum WalletSubCommand {
         feature = "compact_filters",
         feature = "rpc"
     ))]
-    #[structopt(flatten)]
+    #[clap(flatten)]
     OnlineWalletSubCommand(OnlineWalletSubCommand),
-    #[structopt(flatten)]
+    #[clap(flatten)]
     OfflineWalletSubCommand(OfflineWalletSubCommand),
 }
 
 /// Config options wallet operations can take.
-#[derive(Debug, StructOpt, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, PartialEq)]
 pub struct WalletOpts {
     /// Selects the wallet to use.
-    #[structopt(name = "WALLET_NAME", short = "w", long = "wallet")]
+    #[clap(name = "WALLET_NAME", short = 'w', long = "wallet")]
     pub wallet: Option<String>,
     /// Adds verbosity, returns PSBT in JSON format alongside serialized, displays expanded objects.
-    #[structopt(name = "VERBOSE", short = "v", long = "verbose")]
+    #[clap(name = "VERBOSE", short = 'v', long = "verbose")]
     pub verbose: bool,
     /// Sets the descriptor to use for the external addresses.
-    #[structopt(name = "DESCRIPTOR", short = "d", long = "descriptor", required = true)]
+    #[clap(name = "DESCRIPTOR", short = 'd', long = "descriptor", required = true)]
     pub descriptor: String,
     /// Sets the descriptor to use for internal addresses.
-    #[structopt(name = "CHANGE_DESCRIPTOR", short = "c", long = "change_descriptor")]
+    #[clap(name = "CHANGE_DESCRIPTOR", short = 'c', long = "change_descriptor")]
     pub change_descriptor: Option<String>,
     #[cfg(feature = "electrum")]
-    #[structopt(flatten)]
+    #[clap(flatten)]
     pub electrum_opts: ElectrumOpts,
     #[cfg(feature = "esplora")]
-    #[structopt(flatten)]
+    #[clap(flatten)]
     pub esplora_opts: EsploraOpts,
     #[cfg(feature = "compact_filters")]
-    #[structopt(flatten)]
+    #[clap(flatten)]
     pub compactfilter_opts: CompactFilterOpts,
     #[cfg(feature = "rpc")]
-    #[structopt(flatten)]
+    #[clap(flatten)]
     pub rpc_opts: RpcOpts,
     #[cfg(any(feature = "compact_filters", feature = "electrum", feature = "esplora"))]
-    #[structopt(flatten)]
+    #[clap(flatten)]
     pub proxy_opts: ProxyOpts,
 }
 
 /// Options to configure a SOCKS5 proxy for a blockchain client connection.
 #[cfg(any(feature = "compact_filters", feature = "electrum", feature = "esplora"))]
-#[derive(Debug, StructOpt, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, PartialEq)]
 pub struct ProxyOpts {
     /// Sets the SOCKS5 proxy for a blockchain client.
-    #[structopt(name = "PROXY_ADDRS:PORT", long = "proxy", short = "p")]
+    #[clap(name = "PROXY_ADDRS:PORT", long = "proxy", short = 'p')]
     pub proxy: Option<String>,
 
     /// Sets the SOCKS5 proxy credential.
-    #[structopt(name="PROXY_USER:PASSWD", long="proxy_auth", short="a", parse(try_from_str = parse_proxy_auth))]
+    #[clap(name="PROXY_USER:PASSWD", long="proxy_auth", short='a', value_parser = parse_proxy_auth)]
     pub proxy_auth: Option<(String, String)>,
 
     /// Sets the SOCKS5 proxy retries for the blockchain client.
-    #[structopt(
+    #[clap(
         name = "PROXY_RETRIES",
-        short = "r",
+        short = 'r',
         long = "retries",
         default_value = "5"
     )]
@@ -236,25 +234,25 @@ pub struct ProxyOpts {
 
 /// Options to configure a BIP157 Compact Filter backend.
 #[cfg(feature = "compact_filters")]
-#[derive(Debug, StructOpt, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, PartialEq)]
 pub struct CompactFilterOpts {
     /// Sets the full node network address.
-    #[structopt(
+    #[clap(
         name = "ADDRESS:PORT",
-        short = "n",
+        short = 'n',
         long = "node",
         default_value = "127.0.0.1:18444"
     )]
     pub address: Vec<String>,
 
     /// Sets the number of parallel node connections.
-    #[structopt(name = "CONNECTIONS", long = "conn_count", default_value = "4")]
+    #[clap(name = "CONNECTIONS", long = "conn_count", default_value = "4")]
     pub conn_count: usize,
 
     /// Optionally skip initial `skip_blocks` blocks.
-    #[structopt(
+    #[clap(
         name = "SKIP_BLOCKS",
-        short = "k",
+        short = 'k',
         long = "skip_blocks",
         default_value = "0"
     )]
@@ -263,35 +261,35 @@ pub struct CompactFilterOpts {
 
 /// Options to configure a bitcoin core rpc backend.
 #[cfg(feature = "rpc")]
-#[derive(Debug, StructOpt, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, PartialEq)]
 pub struct RpcOpts {
     /// Sets the full node address for rpc connection.
-    #[structopt(
+    #[clap(
         name = "ADDRESS:PORT",
-        short = "n",
+        short = 'n',
         long = "node",
         default_value = "127.0.0.1:18443"
     )]
     pub address: String,
 
     /// Sets the rpc basic authentication.
-    #[structopt(
+    #[clap(
         name = "USER:PASSWD",
-        short = "a",
+        short = 'a',
         long = "basic-auth",
-        parse(try_from_str = parse_proxy_auth),
+        value_parser = parse_proxy_auth,
         default_value = "user:password",
     )]
     pub basic_auth: (String, String),
 
     /// Sets an optional cookie authentication.
-    #[structopt(name = "COOKIE", long = "cookie")]
+    #[clap(name = "COOKIE", long = "cookie")]
     pub cookie: Option<String>,
 
     /// Time in unix seconds in which initial sync will start scanning from (0 to start from genesis).
-    #[structopt(
+    #[clap(
         name = "RPC_START_TIME",
-        short = "s",
+        short = 's',
         long = "start-time",
         default_value = "0"
     )]
@@ -300,25 +298,25 @@ pub struct RpcOpts {
 
 /// Options to configure electrum backend.
 #[cfg(feature = "electrum")]
-#[derive(Debug, StructOpt, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, PartialEq)]
 pub struct ElectrumOpts {
     /// Sets the SOCKS5 proxy timeout for the Electrum client.
-    #[structopt(name = "PROXY_TIMEOUT", short = "t", long = "timeout")]
+    #[clap(name = "PROXY_TIMEOUT", short = 't', long = "timeout")]
     pub timeout: Option<u8>,
     /// Sets the Electrum server to use.
-    #[structopt(
+    #[clap(
         name = "ELECTRUM_URL",
-        short = "s",
+        short = 's',
         long = "server",
         default_value = "ssl://electrum.blockstream.info:60002"
     )]
     pub server: String,
 
     /// Stop searching addresses for transactions after finding an unused gap of this length.
-    #[structopt(
+    #[clap(
         name = "STOP_GAP",
         long = "stop_gap",
-        short = "g",
+        short = 'g',
         default_value = "10"
     )]
     pub stop_gap: usize,
@@ -326,38 +324,38 @@ pub struct ElectrumOpts {
 
 /// Options to configure Esplora backend.
 #[cfg(feature = "esplora")]
-#[derive(Debug, StructOpt, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, PartialEq)]
 pub struct EsploraOpts {
     /// Use the esplora server if given as parameter.
-    #[structopt(
+    #[clap(
         name = "ESPLORA_URL",
-        short = "s",
+        short = 's',
         long = "server",
         default_value = "https://blockstream.info/testnet/api/"
     )]
     pub server: String,
 
     /// Socket timeout.
-    #[structopt(name = "TIMEOUT", long = "timeout", default_value = "5")]
+    #[clap(name = "TIMEOUT", long = "timeout", default_value = "5")]
     pub timeout: u64,
 
     /// Stop searching addresses for transactions after finding an unused gap of this length.
-    #[structopt(
+    #[clap(
         name = "STOP_GAP",
         long = "stop_gap",
-        short = "g",
+        short = 'g',
         default_value = "10"
     )]
     pub stop_gap: usize,
 
     /// Number of parallel requests sent to the esplora service.
-    #[structopt(name = "CONCURRENCY", long = "conc", default_value = "4")]
+    #[clap(name = "CONCURRENCY", long = "conc", default_value = "4")]
     pub conc: u8,
 }
 
 /// Wallet subcommands that can be issued without a blockchain backend.
-#[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(rename_all = "snake")]
+#[derive(Debug, Subcommand, Clone, PartialEq)]
+#[clap(rename_all = "snake")]
 pub enum OfflineWalletSubCommand {
     /// Generates a new external address.
     GetNewAddress,
@@ -370,45 +368,47 @@ pub enum OfflineWalletSubCommand {
     /// Creates a new unsigned transaction.
     CreateTx {
         /// Adds a recipient to the transaction.
-        #[structopt(name = "ADDRESS:SAT", long = "to", required = true, parse(try_from_str = parse_recipient))]
-        recipients: Vec<(Script, u64)>,
+        // Clap Doesn't support complex vector parsing https://github.com/clap-rs/clap/issues/1704.
+        // Address and amount parsing is done at run time in handler function.
+        #[clap(name = "ADDRESS:SAT", long = "to", required = true)]
+        recipients: Vec<String>,
         /// Sends all the funds (or all the selected utxos). Requires only one recipient with value 0.
-        #[structopt(short = "all", long = "send_all")]
+        #[clap(long = "send_all", short = 'a')]
         send_all: bool,
         /// Enables Replace-By-Fee (BIP125).
-        #[structopt(short = "rbf", long = "enable_rbf")]
+        #[clap(long = "enable_rbf", short = 'r')]
         enable_rbf: bool,
         /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
-        #[structopt(long = "offline_signer")]
+        #[clap(long = "offline_signer")]
         offline_signer: bool,
         /// Selects which utxos *must* be spent.
-        #[structopt(name = "MUST_SPEND_TXID:VOUT", long = "utxos", parse(try_from_str = parse_outpoint))]
+        #[clap(name = "MUST_SPEND_TXID:VOUT", long = "utxos", value_parser = parse_outpoint)]
         utxos: Option<Vec<OutPoint>>,
         /// Marks a utxo as unspendable.
-        #[structopt(name = "CANT_SPEND_TXID:VOUT", long = "unspendable", parse(try_from_str = parse_outpoint))]
+        #[clap(name = "CANT_SPEND_TXID:VOUT", long = "unspendable", value_parser = parse_outpoint)]
         unspendable: Option<Vec<OutPoint>>,
         /// Fee rate to use in sat/vbyte.
-        #[structopt(name = "SATS_VBYTE", short = "fee", long = "fee_rate")]
+        #[clap(name = "SATS_VBYTE", short = 'f', long = "fee_rate")]
         fee_rate: Option<f32>,
         /// Selects which policy should be used to satisfy the external descriptor.
-        #[structopt(name = "EXT_POLICY", long = "external_policy")]
+        #[clap(name = "EXT_POLICY", long = "external_policy")]
         external_policy: Option<String>,
         /// Selects which policy should be used to satisfy the internal descriptor.
-        #[structopt(name = "INT_POLICY", long = "internal_policy")]
+        #[clap(name = "INT_POLICY", long = "internal_policy")]
         internal_policy: Option<String>,
         /// Optionally create an OP_RETURN output containing given String in utf8 encoding (max 80 bytes)
-        #[structopt(
+        #[clap(
             name = "ADD_STRING",
             long = "add_string",
-            short = "s",
+            short = 's',
             conflicts_with = "ADD_DATA"
         )]
         add_string: Option<String>,
         /// Optionally create an OP_RETURN output containing given base64 encoded String. (max 80 bytes)
-        #[structopt(
+        #[clap(
             name = "ADD_DATA",
             long = "add_data",
-            short = "o",
+            short = 'o',
             conflicts_with = "ADD_STRING"
         )]
         add_data: Option<String>, //base 64 econding
@@ -416,22 +416,22 @@ pub enum OfflineWalletSubCommand {
     /// Bumps the fees of an RBF transaction.
     BumpFee {
         /// TXID of the transaction to update.
-        #[structopt(name = "TXID", short = "txid", long = "txid")]
+        #[clap(name = "TXID", long = "txid")]
         txid: String,
         /// Allows the wallet to reduce the amount to the specified address in order to increase fees.
-        #[structopt(name = "SHRINK_ADDRESS", short = "s", long = "shrink")]
+        #[clap(name = "SHRINK_ADDRESS", long = "shrink")]
         shrink_address: Option<Address>,
         /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
-        #[structopt(long = "offline_signer")]
+        #[clap(long = "offline_signer")]
         offline_signer: bool,
         /// Selects which utxos *must* be added to the tx. Unconfirmed utxos cannot be used.
-        #[structopt(name = "MUST_SPEND_TXID:VOUT", long = "utxos", parse(try_from_str = parse_outpoint))]
+        #[clap(name = "MUST_SPEND_TXID:VOUT", long = "utxos", value_parser = parse_outpoint)]
         utxos: Option<Vec<OutPoint>>,
         /// Marks an utxo as unspendable, in case more inputs are needed to cover the extra fees.
-        #[structopt(name = "CANT_SPEND_TXID:VOUT", long = "unspendable", parse(try_from_str = parse_outpoint))]
+        #[clap(name = "CANT_SPEND_TXID:VOUT", long = "unspendable", value_parser = parse_outpoint)]
         unspendable: Option<Vec<OutPoint>>,
         /// The new targeted fee rate in sat/vbyte.
-        #[structopt(name = "SATS_VBYTE", short = "fee", long = "fee_rate")]
+        #[clap(name = "SATS_VBYTE", short = 'f', long = "fee_rate")]
         fee_rate: f32,
     },
     /// Returns the available spending policies for the descriptor.
@@ -441,44 +441,44 @@ pub enum OfflineWalletSubCommand {
     /// Signs and tries to finalize a PSBT.
     Sign {
         /// Sets the PSBT to sign.
-        #[structopt(name = "BASE64_PSBT", long = "psbt")]
+        #[clap(name = "BASE64_PSBT", long = "psbt")]
         psbt: String,
         /// Assume the blockchain has reached a specific height. This affects the transaction finalization, if there are timelocks in the descriptor.
-        #[structopt(name = "HEIGHT", long = "assume_height")]
+        #[clap(name = "HEIGHT", long = "assume_height")]
         assume_height: Option<u32>,
         /// Whether the signer should trust the witness_utxo, if the non_witness_utxo hasn’t been provided.
-        #[structopt(name = "WITNESS", long = "trust_witness_utxo")]
+        #[clap(name = "WITNESS", long = "trust_witness_utxo")]
         trust_witness_utxo: Option<bool>,
     },
     /// Extracts a raw transaction from a PSBT.
     ExtractPsbt {
         /// Sets the PSBT to extract
-        #[structopt(name = "BASE64_PSBT", long = "psbt")]
+        #[clap(name = "BASE64_PSBT", long = "psbt")]
         psbt: String,
     },
     /// Finalizes a PSBT.
     FinalizePsbt {
         /// Sets the PSBT to finalize.
-        #[structopt(name = "BASE64_PSBT", long = "psbt")]
+        #[clap(name = "BASE64_PSBT", long = "psbt")]
         psbt: String,
         /// Assume the blockchain has reached a specific height.
-        #[structopt(name = "HEIGHT", long = "assume_height")]
+        #[clap(name = "HEIGHT", long = "assume_height")]
         assume_height: Option<u32>,
         /// Whether the signer should trust the witness_utxo, if the non_witness_utxo hasn’t been provided.
-        #[structopt(name = "WITNESS", long = "trust_witness_utxo")]
+        #[clap(name = "WITNESS", long = "trust_witness_utxo")]
         trust_witness_utxo: Option<bool>,
     },
     /// Combines multiple PSBTs into one.
     CombinePsbt {
         /// Add one PSBT to combine. This option can be repeated multiple times, one for each PSBT.
-        #[structopt(name = "BASE64_PSBT", long = "psbt", required = true)]
+        #[clap(name = "BASE64_PSBT", long = "psbt", required = true)]
         psbt: Vec<String>,
     },
 }
 
 /// Wallet subcommands that needs a blockchain backend.
-#[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(rename_all = "snake")]
+#[derive(Debug, Subcommand, Clone, PartialEq)]
+#[clap(rename_all = "snake")]
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -491,7 +491,7 @@ pub enum OnlineWalletSubCommand {
     /// Broadcasts a transaction to the network. Takes either a raw transaction or a PSBT to extract.
     Broadcast {
         /// Sets the PSBT to sign.
-        #[structopt(
+        #[clap(
             name = "BASE64_PSBT",
             long = "psbt",
             required_unless = "RAWTX",
@@ -499,7 +499,7 @@ pub enum OnlineWalletSubCommand {
         )]
         psbt: Option<String>,
         /// Sets the raw transaction to broadcast.
-        #[structopt(
+        #[clap(
             name = "RAWTX",
             long = "tx",
             required_unless = "BASE64_PSBT",
@@ -511,81 +511,81 @@ pub enum OnlineWalletSubCommand {
     #[cfg(feature = "reserves")]
     ProduceProof {
         /// Sets the message.
-        #[structopt(name = "MESSAGE", long = "message")]
+        #[clap(name = "MESSAGE", long = "message")]
         msg: String,
     },
     /// Verify a proof of reserves for our wallet.
     #[cfg(feature = "reserves")]
     VerifyProof {
         /// Sets the PSBT to verify.
-        #[structopt(name = "BASE64_PSBT", long = "psbt")]
+        #[clap(name = "BASE64_PSBT", long = "psbt")]
         psbt: String,
         /// Sets the message to verify.
-        #[structopt(name = "MESSAGE", long = "message")]
+        #[clap(name = "MESSAGE", long = "message")]
         msg: String,
         /// Sets the number of block confirmations for UTXOs to be considered.
-        #[structopt(name = "CONFIRMATIONS", long = "confirmations", default_value = "6")]
+        #[clap(name = "CONFIRMATIONS", long = "confirmations", default_value = "6")]
         confirmations: u32,
     },
 }
 
 /// Subcommands for Key operations.
-#[derive(Debug, StructOpt, Clone, PartialEq)]
+#[derive(Debug, Subcommand, Clone, PartialEq)]
 pub enum KeySubCommand {
     /// Generates new random seed mnemonic phrase and corresponding master extended key.
     Generate {
         /// Entropy level based on number of random seed mnemonic words.
-        #[structopt(
+        #[clap(
         name = "WORD_COUNT",
-        short = "e",
+        short = 'e',
         long = "entropy",
         default_value = "24",
         possible_values = &["12","24"],
         )]
         word_count: usize,
         /// Seed password.
-        #[structopt(name = "PASSWORD", short = "p", long = "password")]
+        #[clap(name = "PASSWORD", short = 'p', long = "password")]
         password: Option<String>,
     },
     /// Restore a master extended key from seed backup mnemonic words.
     Restore {
         /// Seed mnemonic words, must be quoted (eg. "word1 word2 ...").
-        #[structopt(name = "MNEMONIC", short = "m", long = "mnemonic")]
+        #[clap(name = "MNEMONIC", short = 'm', long = "mnemonic")]
         mnemonic: String,
         /// Seed password.
-        #[structopt(name = "PASSWORD", short = "p", long = "password")]
+        #[clap(name = "PASSWORD", short = 'p', long = "password")]
         password: Option<String>,
     },
     /// Derive a child key pair from a master extended key and a derivation path string (eg. "m/84'/1'/0'/0" or "m/84h/1h/0h/0").
     Derive {
         /// Extended private key to derive from.
-        #[structopt(name = "XPRV", short = "x", long = "xprv")]
+        #[clap(name = "XPRV", short = 'x', long = "xprv")]
         xprv: ExtendedPrivKey,
         /// Path to use to derive extended public key from extended private key.
-        #[structopt(name = "PATH", short = "p", long = "path")]
+        #[clap(name = "PATH", short = 'p', long = "path")]
         path: DerivationPath,
     },
 }
 
 /// Subcommands available in REPL mode.
 #[cfg(any(feature = "repl", target_arch = "wasm32"))]
-#[derive(Debug, StructOpt, Clone, PartialEq)]
-#[structopt(global_settings =&[AppSettings::NoBinaryName], rename_all = "lower")]
+#[derive(Debug, Parser, Clone, PartialEq)]
+#[clap(global_settings =&[AppSettings::NoBinaryName], rename_all = "lower")]
 pub enum ReplSubCommand {
     /// Execute wallet commands.
     Wallet {
-        #[structopt(subcommand)]
+        #[clap(subcommand)]
         subcommand: WalletSubCommand,
     },
     /// Execute key commands.
     Key {
-        #[structopt(subcommand)]
+        #[clap(subcommand)]
         subcommand: KeySubCommand,
     },
     /// Execute node commands.
     #[cfg(feature = "regtest-node")]
     Node {
-        #[structopt(subcommand)]
+        #[clap(subcommand)]
         subcommand: NodeSubCommand,
     },
     /// Exit REPL loop.
@@ -611,7 +611,6 @@ mod test {
         SyncOptions, Wallet,
     };
     use std::str::{self, FromStr};
-    use structopt::StructOpt;
 
     use super::OfflineWalletSubCommand::{BumpFee, CreateTx, GetNewAddress};
     #[cfg(any(
@@ -631,6 +630,13 @@ mod test {
     use super::WalletSubCommand::OnlineWalletSubCommand;
     #[cfg(feature = "repl")]
     use regex::Regex;
+
+
+    #[test]
+    fn test_clap_args() {
+        use clap::CommandFactory;
+        CliOpts::command().debug_assert();
+    }
 
     #[test]
     fn test_parse_wallet_get_new_address() {
@@ -959,20 +965,14 @@ mod test {
         let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
                             "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "--change_descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
-                            "create_tx", "--to", "n2Z3YNXtceeJhFkTknVaNjT1mnCGWesykJ:123456","mjDZ34icH4V2k9GmC8niCrhzVuR3z8Mgkf:78910",
+                            "create_tx", "--to", "n2Z3YNXtceeJhFkTknVaNjT1mnCGWesykJ:123456", //Fix Me: Clap isn't parsing vectors correctly "mjDZ34icH4V2k9GmC8niCrhzVuR3z8Mgkf:78910",
                             "--utxos","87345e46bfd702d24d54890cc094d08a005f773b27c8f965dfe0eb1e23eef88e:1",
                             "--utxos","87345e46bfd702d24d54890cc094d08a005f773b27c8f965dfe0eb1e23eef88e:2",
                             "--add_string","Hello BDK",
                            ];
 
-        let cli_opts = CliOpts::from_iter(&cli_args);
+        let cli_opts = CliOpts::parse_from(&cli_args);
 
-        let script1 = Address::from_str("n2Z3YNXtceeJhFkTknVaNjT1mnCGWesykJ")
-            .unwrap()
-            .script_pubkey();
-        let script2 = Address::from_str("mjDZ34icH4V2k9GmC8niCrhzVuR3z8Mgkf")
-            .unwrap()
-            .script_pubkey();
         let outpoint1 = OutPoint::from_str(
             "87345e46bfd702d24d54890cc094d08a005f773b27c8f965dfe0eb1e23eef88e:1",
         )
@@ -1025,7 +1025,7 @@ mod test {
                     },
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(CreateTx {
-                    recipients: vec![(script1, 123456), (script2, 78910)],
+                    recipients: vec!["n2Z3YNXtceeJhFkTknVaNjT1mnCGWesykJ:123456".to_string()],
                     send_all: false,
                     enable_rbf: false,
                     offline_signer: false,
@@ -1356,6 +1356,7 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Bitcoin,
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -1375,7 +1376,7 @@ mod test {
                         retries: 5,
                     },
                 },
-                subcommand: OnlineWalletSubCommand(VerifyProof {
+                subcommand: OnlineWalletSubCommand(OnlineWalletSubCommand::VerifyProof {
                     psbt: psbt.to_string(),
                     msg: message.to_string(),
                     confirmations: 6,
@@ -1411,6 +1412,7 @@ mod test {
 
         let expected_cli_opts = CliOpts {
             network: Network::Bitcoin,
+            datadir: None,
             subcommand: CliSubCommand::Wallet {
                 wallet_opts: WalletOpts {
                     wallet: None,
@@ -1430,7 +1432,7 @@ mod test {
                         retries: 5,
                     },
                 },
-                subcommand: OnlineWalletSubCommand(VerifyProof {
+                subcommand: OnlineWalletSubCommand(OnlineWalletSubCommand::VerifyProof {
                     psbt: psbt.to_string(),
                     msg: message.to_string(),
                     confirmations: 0,
