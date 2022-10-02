@@ -24,7 +24,7 @@ use crate::commands::*;
 use crate::utils::*;
 use bdk::{database::BatchDatabase, wallet::AddressIndex, Error, FeeRate, KeychainKind, Wallet};
 
-use structopt::StructOpt;
+use clap::Parser;
 
 use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
 #[cfg(any(
@@ -124,12 +124,21 @@ where
             add_data,
             add_string,
         } => {
+            // Handle string to recipient parsing
+            let parsed_recipients = recipients
+                .iter()
+                .map(|recpt| parse_recipient(recpt))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(Error::Generic)?;
+
             let mut tx_builder = wallet.build_tx();
 
             if send_all {
-                tx_builder.drain_wallet().drain_to(recipients[0].0.clone());
+                tx_builder
+                    .drain_wallet()
+                    .drain_to(parsed_recipients[0].0.clone());
             } else {
-                tx_builder.set_recipients(recipients);
+                tx_builder.set_recipients(parsed_recipients);
             }
 
             if enable_rbf {
