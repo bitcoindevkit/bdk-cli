@@ -631,7 +631,6 @@ mod test {
     #[cfg(feature = "repl")]
     use regex::Regex;
 
-
     #[test]
     fn test_clap_args() {
         use clap::CommandFactory;
@@ -863,7 +862,7 @@ mod test {
                             "--change_descriptor", "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
                             "--proxy", "127.0.0.1:9005",
                             "--proxy_auth", "random_user:random_passwd",
-                            "--node", "127.0.0.1:18444", "127.2.3.1:19695",
+                            "--node", "127.0.0.1:18444",
                             "--conn_count", "4",
                             "--skip_blocks", "5",
                             "get_new_address"];
@@ -880,7 +879,7 @@ mod test {
                     descriptor: "wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)".to_string(),
                     change_descriptor: Some("wpkh(xpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)".to_string()),
                     compactfilter_opts: CompactFilterOpts{
-                        address: vec!["127.0.0.1:18444".to_string(), "127.2.3.1:19695".to_string()],
+                        address: vec!["127.0.0.1:18444".to_string()],
                         conn_count: 4,
                         skip_blocks: 5,
                     },
