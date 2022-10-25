@@ -97,9 +97,9 @@ dependencies = [
 
 [[package]]
 name = "bdk"
-version = "0.22.0"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14836e8b1312be32e46f5da47e1189c2239fa75f9237a0a7c7aea9ee7071a2bc"
+checksum = "a03818e03fb03c159053bf474a23c474c92796cc0ebc5f677512e989ee449c04"
 dependencies = [
  "ahash",
  "async-trait",
@@ -110,13 +110,12 @@ dependencies = [
  "bitcoincore-rpc",
  "cc",
  "electrum-client 0.11.0",
+ "esplora-client",
  "futures",
  "js-sys",
- "lazy_static",
  "log",
  "miniscript",
  "rand 0.7.3",
- "reqwest",
  "rocksdb",
  "rusqlite",
  "serde",
@@ -124,7 +123,6 @@ dependencies = [
  "sled",
  "socks",
  "tokio",
- "ureq 2.2.0",
 ]
 
 [[package]]
@@ -167,9 +165,9 @@ dependencies = [
 
 [[package]]
 name = "bdk-reserves"
-version = "0.22.0"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2ac508671a0363f379eb04ff4565ab49b648e48efe115f919356e4be9540739"
+checksum = "5e2e96262f8f6da9eccae468632a23c7aaadaa604fc42c8179be8399c2fff84b"
 dependencies = [
  "bdk",
  "bitcoinconsensus",
@@ -619,6 +617,19 @@ checksum = "64f18991e7bf11e7ffee451b5318b5c1a73c52d0d0ada6e5a3017c8c1ced6a21"
 dependencies = [
  "libc",
  "str-buf",
+]
+
+[[package]]
+name = "esplora-client"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fe8d4f87f145afbd22b19673be46fe5fb72a948fab2f3a84231f20f28c36959"
+dependencies = [
+ "bitcoin",
+ "log",
+ "reqwest",
+ "serde",
+ "ureq 2.2.0",
 ]
 
 [[package]]
