@@ -16,9 +16,8 @@
 use clap::{AppSettings, Args, Parser, Subcommand};
 
 use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
-use bdk::bitcoin::{Address, Network, OutPoint};
+use bdk::bitcoin::{Address, Network, OutPoint, Script};
 
-use crate::utils::parse_outpoint;
 #[cfg(any(
     feature = "compact_filters",
     feature = "electrum",
@@ -26,6 +25,7 @@ use crate::utils::parse_outpoint;
     feature = "rpc"
 ))]
 use crate::utils::parse_proxy_auth;
+use crate::utils::{parse_outpoint, parse_recipient};
 
 #[derive(PartialEq, Clone, Debug, Parser)]
 /// The BDK Command Line Wallet App
@@ -370,8 +370,8 @@ pub enum OfflineWalletSubCommand {
         /// Adds a recipient to the transaction.
         // Clap Doesn't support complex vector parsing https://github.com/clap-rs/clap/issues/1704.
         // Address and amount parsing is done at run time in handler function.
-        #[clap(name = "ADDRESS:SAT", long = "to", required = true)]
-        recipients: Vec<String>,
+        #[clap(name = "ADDRESS:SAT", long = "to", required = true, value_parser = parse_recipient)]
+        recipients: Vec<(Script, u64)>,
         /// Sends all the funds (or all the selected utxos). Requires only one recipient with value 0.
         #[clap(long = "send_all", short = 'a')]
         send_all: bool,
@@ -964,13 +964,21 @@ mod test {
         let cli_args = vec!["bdk-cli", "--network", "testnet", "wallet",
                             "--descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/0/*)",
                             "--change_descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
-                            "create_tx", "--to", "n2Z3YNXtceeJhFkTknVaNjT1mnCGWesykJ:123456", //Fix Me: Clap isn't parsing vectors correctly "mjDZ34icH4V2k9GmC8niCrhzVuR3z8Mgkf:78910",
+                            "create_tx", "--to", "n2Z3YNXtceeJhFkTknVaNjT1mnCGWesykJ:123456", "--to", "mjDZ34icH4V2k9GmC8niCrhzVuR3z8Mgkf:78910",
                             "--utxos","87345e46bfd702d24d54890cc094d08a005f773b27c8f965dfe0eb1e23eef88e:1",
                             "--utxos","87345e46bfd702d24d54890cc094d08a005f773b27c8f965dfe0eb1e23eef88e:2",
                             "--add_string","Hello BDK",
                            ];
 
         let cli_opts = CliOpts::parse_from(&cli_args);
+
+        let script1 = Address::from_str("n2Z3YNXtceeJhFkTknVaNjT1mnCGWesykJ")
+            .unwrap()
+            .script_pubkey();
+
+        let script2 = Address::from_str("mjDZ34icH4V2k9GmC8niCrhzVuR3z8Mgkf")
+            .unwrap()
+            .script_pubkey();
 
         let outpoint1 = OutPoint::from_str(
             "87345e46bfd702d24d54890cc094d08a005f773b27c8f965dfe0eb1e23eef88e:1",
@@ -1024,7 +1032,7 @@ mod test {
                     },
                 },
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(CreateTx {
-                    recipients: vec!["n2Z3YNXtceeJhFkTknVaNjT1mnCGWesykJ:123456".to_string()],
+                    recipients: vec![(script1, 123456), (script2, 78910)],
                     send_all: false,
                     enable_rbf: false,
                     offline_signer: false,
