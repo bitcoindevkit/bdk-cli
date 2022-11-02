@@ -12,7 +12,7 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-bdk = { version = "0.23", default-features = false, features = ["all-keys"]}
+bdk = { version = "0.24", default-features = false, features = ["all-keys"] }
 bdk-macros = "0.6"
 structopt = "0.3"
 serde_json = "1.0"
@@ -20,13 +20,14 @@ log = "0.4"
 zeroize = "<1.4.0"
 dirs-next = "2.0"
 env_logger = "0.7"
+base64 = "^0.13"
 
 # Optional dependencies
 rustyline = { version = "~9.0", optional = true }
 fd-lock = { version = "=3.0.2", optional = true }
 regex = { version = "1", optional = true }
-bdk-reserves = { version = "0.23", optional = true }
-electrsd = { version= "0.19", features = ["bitcoind_22_0"], optional = true}
+bdk-reserves = { git = "https://github.com/notmandatory/bdk-reserves", branch = "update_bdk_024", optional = true }
+electrsd = { version= "0.21", features = ["bitcoind_22_0"], optional = true}
 
 # Platform-specific dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -38,6 +39,7 @@ secp256k1 = { version = "0.22.0", default-features = false }
 rand = { version = "^0.6", features = ["wasm-bindgen"] }
 serde = { version = "^1.0", features = ["derive"] }
 regex = { version = "1" }
+getrandom = "0.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"] }
@@ -82,3 +84,8 @@ regtest-electrum = ["regtest-node", "electrum", "electrsd/electrs_0_8_10"]
 #TODO: Check why esplora in electrsd isn't working.
 #regtest-esplora-ureq = ["regtest-node", "esplora-ureq", "electrsd/esplora_a33e97e1"]
 #regtest-esplora-reqwest = ["regtest-node", "esplora-reqwest", "electrsd/esplora_a33e97e1"]
+
+# This feature is used to run `cargo check` in our CI targeting wasm. It's not recommended
+# for libraries to explicitly include the "getrandom/js" feature, so we only do it when
+# necessary for running our CI. See: https://docs.rs/getrandom/0.2.8/getrandom/#webassembly-support
+dev-getrandom-wasm = ["getrandom/js"]
