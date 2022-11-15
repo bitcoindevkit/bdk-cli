@@ -8,8 +8,10 @@ use bitcoin::*;
 
 use bdk::blockchain::AnyBlockchain;
 use bdk::database::AnyDatabase;
+use bdk::miniscript::{MiniscriptKey, Translator};
 use js_sys::Promise;
 use regex::Regex;
+use std::collections::HashMap;
 use std::error::Error;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -123,6 +125,38 @@ impl WasmWallet {
     }
 }
 
+#[cfg(feature = "compiler")]
+struct AliasMap {
+    inner: HashMap<String, Alias>,
+}
+
+#[cfg(feature = "compiler")]
+impl Translator<String, String, bdk::Error> for AliasMap {
+    // Provides the translation public keys P -> Q
+    fn pk(&mut self, pk: &String) -> Result<String, bdk::Error> {
+        self.inner
+            .get(pk)
+            .map(|a| a.into_key())
+            .ok_or(bdk::Error::Generic("Couldn't map alias".to_string())) // Dummy Err
+    }
+
+    fn sha256(&mut self, sha256: &String) -> Result<String, bdk::Error> {
+        Ok(sha256.to_string())
+    }
+
+    fn hash256(&mut self, hash256: &String) -> Result<String, bdk::Error> {
+        Ok(hash256.to_string())
+    }
+
+    fn ripemd160(&mut self, ripemd160: &String) -> Result<String, bdk::Error> {
+        Ok(ripemd160.to_string())
+    }
+
+    fn hash160(&mut self, hash160: &String) -> Result<String, bdk::Error> {
+        Ok(hash160.to_string())
+    }
+}
+
 #[wasm_bindgen]
 #[cfg(feature = "compiler")]
 pub fn compile(policy: String, aliases: String, script_type: String) -> Result<JsValue, String> {
@@ -133,10 +167,7 @@ pub fn compile(policy: String, aliases: String, script_type: String) -> Result<J
     ) -> Result<String, Box<dyn Error>> {
         use std::collections::HashMap;
         let aliases: HashMap<String, Alias> = serde_json::from_str(&aliases)?;
-        let aliases: HashMap<String, String> = aliases
-            .into_iter()
-            .map(|(k, v)| (k, v.into_key()))
-            .collect();
+        let mut aliases = AliasMap { inner: aliases };
 
         let policy = Concrete::<String>::from_str(&policy)?;
 
@@ -147,10 +178,8 @@ pub fn compile(policy: String, aliases: String, script_type: String) -> Result<J
             _ => return Err(Box::<dyn Error>::from("InvalidScriptType")),
         };
 
-        let descriptor: Result<Descriptor<String>, bdk::Error> = descriptor.translate_pk(
-            |key| Ok(aliases.get(key).unwrap_or(key).into()),
-            |key| Ok(aliases.get(key).unwrap_or(key).into()),
-        );
+        let descriptor: Result<Descriptor<String>, bdk::Error> =
+            descriptor.translate_pk(&mut aliases);
         let descriptor = descriptor?;
 
         Ok(descriptor.to_string().into())
@@ -172,10 +201,10 @@ enum Alias {
 
 #[cfg(feature = "compiler")]
 impl Alias {
-    fn into_key(self) -> String {
+    fn into_key(&self) -> String {
         match self {
             Alias::GenWif => {
-                let generated: GeneratedKey<bitcoin::PrivateKey, miniscript::Legacy> =
+                let generated: GeneratedKey<PrivateKey, miniscript::Legacy> =
                     GeneratableDefaultOptions::generate_default().unwrap();
 
                 let mut key = generated.into_key();
@@ -194,7 +223,7 @@ impl Alias {
 
                 format!("{}{}", xprv, path)
             }
-            Alias::Existing { extra } => extra,
+            Alias::Existing { extra } => extra.to_string(),
         }
     }
 }

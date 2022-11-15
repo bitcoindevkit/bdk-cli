@@ -26,7 +26,6 @@ use bdk::{database::BatchDatabase, wallet::AddressIndex, Error, FeeRate, Keychai
 
 use structopt::StructOpt;
 
-use bdk::bitcoin::base64;
 use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
 #[cfg(any(
     feature = "electrum",
@@ -449,7 +448,7 @@ pub(crate) fn handle_key_subcommand(
 
             if let Secret(desc_seckey, _, _) = derived_xprv_desc_key {
                 let desc_pubkey = desc_seckey
-                    .as_public(&secp)
+                    .to_public(&secp)
                     .map_err(|e| Error::Generic(e.to_string()))?;
                 Ok(json!({"xpub": desc_pubkey.to_string(), "xprv": desc_seckey.to_string()}))
             } else {
