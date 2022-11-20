@@ -179,7 +179,7 @@ pub enum WalletSubCommand {
 }
 
 /// Config options wallet operations can take.
-#[derive(Debug, Args, Clone, PartialEq)]
+#[derive(Debug, Parser, Clone, PartialEq)]
 pub struct WalletOpts {
     /// Selects the wallet to use.
     #[clap(name = "WALLET_NAME", short = 'w', long = "wallet")]
