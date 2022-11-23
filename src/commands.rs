@@ -13,19 +13,19 @@
 //! All subcommands are defined in the below enums.
 
 #![allow(clippy::large_enum_variant)]
-use clap::{AppSettings, Args, Parser, Subcommand};
+use clap::{AppSettings, Parser, Subcommand};
 
 use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
 use bdk::bitcoin::{Address, Network, OutPoint, Script};
 
+use crate::utils::{parse_outpoint, parse_recipient};
 #[cfg(any(
     feature = "compact_filters",
     feature = "electrum",
     feature = "esplora",
     feature = "rpc"
 ))]
-use crate::utils::parse_proxy_auth;
-use crate::utils::{parse_outpoint, parse_recipient};
+use {crate::utils::parse_proxy_auth, clap::Args};
 
 #[derive(PartialEq, Clone, Debug, Parser)]
 /// The BDK Command Line Wallet App

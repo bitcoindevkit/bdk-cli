@@ -272,7 +272,7 @@ where
             let mut psbts = psbt
                 .iter()
                 .map(|s| {
-                    let psbt = base64::decode(&s).map_err(|e| Error::Generic(e.to_string()))?;
+                    let psbt = base64::decode(s).map_err(|e| Error::Generic(e.to_string()))?;
                     let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
                     Ok(psbt)
                 })
