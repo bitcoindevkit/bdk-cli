@@ -24,7 +24,7 @@ use crate::commands::*;
 use crate::utils::*;
 use bdk::{database::BatchDatabase, wallet::AddressIndex, Error, FeeRate, KeychainKind, Wallet};
 
-use structopt::StructOpt;
+use clap::Parser;
 
 use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
 #[cfg(any(
@@ -272,7 +272,7 @@ where
             let mut psbts = psbt
                 .iter()
                 .map(|s| {
-                    let psbt = base64::decode(&s).map_err(|e| Error::Generic(e.to_string()))?;
+                    let psbt = base64::decode(s).map_err(|e| Error::Generic(e.to_string()))?;
                     let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
                     Ok(psbt)
                 })

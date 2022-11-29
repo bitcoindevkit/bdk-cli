@@ -25,7 +25,7 @@ use crate::commands::CliOpts;
 use crate::handlers::*;
 use bdk::{bitcoin, Error};
 use bdk_macros::{maybe_async, maybe_await};
-use structopt::StructOpt;
+use clap::Parser;
 
 #[cfg(any(feature = "repl", target_arch = "wasm32"))]
 const REPL_LINE_SPLIT_REGEX: &str = r#""([^"]*)"|'([^']*)'|([\w\-]+)"#;
@@ -36,7 +36,7 @@ const REPL_LINE_SPLIT_REGEX: &str = r#""([^"]*)"|'([^']*)'|([\w\-]+)"#;
 fn main() {
     env_logger::init();
 
-    let cli_opts: CliOpts = CliOpts::from_args();
+    let cli_opts: CliOpts = CliOpts::parse();
 
     let network = cli_opts.network;
     debug!("network: {:?}", network);

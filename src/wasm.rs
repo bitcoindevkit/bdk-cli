@@ -9,6 +9,7 @@ use bitcoin::*;
 use bdk::blockchain::AnyBlockchain;
 use bdk::database::AnyDatabase;
 use bdk::miniscript::{MiniscriptKey, Translator};
+use clap::Parser;
 use js_sys::Promise;
 use regex::Regex;
 use std::collections::HashMap;
@@ -17,7 +18,6 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::str::FromStr;
-use structopt::StructOpt;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
 
