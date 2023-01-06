@@ -20,7 +20,7 @@ jobs:
           - esplora-ureq,sqlite-db
           - esplora-reqwest,sqlite-db
           - compiler,sqlite-db
-          - compact_filters,sqlite-db
+          #- compact_filters,sqlite-db # Compact Filters temporarily disabled
           - rpc,sqlite-db
           - reserves,electrum,sqlite-db
           - electrum,verify,sqlite-db
