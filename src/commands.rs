@@ -565,6 +565,9 @@ pub enum KeySubCommand {
         #[clap(name = "PATH", short = 'p', long = "path")]
         path: DerivationPath,
     },
+    #[cfg(feature = "hardware-signer")]
+    /// List the public descriptors of the available hardware wallets
+    Hardware {},
 }
 
 /// Subcommands available in REPL mode.
