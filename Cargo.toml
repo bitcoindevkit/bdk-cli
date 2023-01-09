@@ -57,11 +57,14 @@ sqlite-db = ["bdk/sqlite"]
 # Available blockchain client options
 rpc = ["bdk/rpc"]
 electrum = ["bdk/electrum"]
-compact_filters = ["bdk/compact_filters"]
 esplora = []
 esplora-ureq = ["esplora", "bdk/use-esplora-ureq"]
 async-interface = ["bdk/async-interface"]
 esplora-reqwest = ["esplora", "bdk/use-esplora-reqwest", "bdk/reqwest-default-tls", "async-interface"]
+
+# Compact Filters are temporarily diabled to avoid rockdb vulnerability.
+# Ref: https://github.com/bitcoindevkit/bdk-cli/issues/112
+#compact_filters = ["bdk/compact_filters"]
 
 # Use this to consensus verify transactions at sync time
 verify = ["bdk/verify"]

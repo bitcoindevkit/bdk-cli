@@ -38,8 +38,9 @@ jobs:
       - name: Test Esplora-reqwest
         run: cargo test --features esplora-reqwest
 
-      - name: Test Compact Filters
-        run: cargo test --features compact_filters
+      # Temporarily disable compact filters
+      #- name: Test Compact Filters
+      #  run: cargo test --features compact_filters
 
       - name: Test RPC
         run: cargo test --features rpc
