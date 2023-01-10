@@ -31,7 +31,7 @@ This project provides a command-line Bitcoin wallet application using the latest
 And yes, it can do Taproot!!
 
 This crate can be used for the following purposes:
- - Instantly create a miniscript based wallet and connect to your backend of choice (Electrum, Esplora, Core RPC, CBF etc) and quickly play around with your own complex bitcoin scripting workflow. With one or many wallets, connected with one or many backends.
+ - Instantly create a miniscript based wallet and connect to your backend of choice (Electrum, Esplora, Core RPC, etc) and quickly play around with your own complex bitcoin scripting workflow. With one or many wallets, connected with one or many backends.
  - The `tests/integration.rs` module is used to document high level complex workflows between BDK and different Bitcoin infrastructure systems, like Core, Electrum and Lightning(soon TM).
  - (Planned) Expose the basic command handler via `wasm` to integrate `bdk-cli` functionality natively into the web platform. See also the [playground](https://bitcoindevkit.org/bdk-cli/playground/) page.
 
@@ -44,7 +44,6 @@ bdk-cli can be compiled with different features to suit your experimental needs.
   - Blockchain Options
      - `rpc` : Connects the wallet to bitcoin core via RPC.
      - `electrum` : Connects the wallet to an electrum server.
-     - `compact_filters` : Deploy a BIP157 node to get blockchain data from the bitcoin p2p network.
      - `esplora-ureq` or `esplora-reqwest` : Connects the wallet to an esplora server synchronously or asynchronously.
   - Extra Utility Tools
      - `repl` : use bdk-cli as a [REPL](https://codewith.mu/en/tutorials/1.0/repl) shell (useful for quick manual testing of wallet operations).
@@ -78,7 +77,7 @@ RUST_LOG=debug cargo run --features esplora-ureq -- wallet --descriptor "wpkh(tp
 ```
 
 At most one blockchain feature can be enabled, available blockchain client features are:
-`electrum`, `esplora-ureq` (blocking), `esplora-reqwest` (async), `compact_filters` and `rpc`.
+`electrum`, `esplora-ureq` (blocking), `esplora-reqwest` (async) and `rpc`.
 
 ### From crates.io
 You can install the binary for the latest tag of `bdk-cli` with online wallet features 
@@ -106,15 +105,6 @@ To sync a wallet to a Bitcoin Core node (assuming a regtest node at 127.0.0.1:18
 
 ```shell
 cargo run --features rpc -- --network regtest wallet --node 127.0.0.1:18443 --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
-```
-
-To sync a wallet to a Bitcoin Core node (assuming a regtest node at 127.0.0.1:18444) serving compact filters:
-Note: 
-- This will increase build time by few minutes for the binaries because of `librocksdb`.
-- Bitcoin Core v0.21.0 or higher is required to serve compact filters.  
-
-```shell
-cargo run --features compact_filters -- --network regtest wallet --node 127.0.0.1:18444 --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
 ```
 
 To get a wallet balance with customized logging:
