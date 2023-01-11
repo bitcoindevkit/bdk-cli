@@ -1,8 +1,8 @@
 # Changelog
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+All notable changes to this project prior to release **0.26.0** are documented in this file. Future
+changelog information can be found in each release's git tag and can be viewed with `git tag -ln100 "v*"`.
+Changelog info is also documented on the [GitHub releases](https://github.com/bitcoindevkit/bdk-cli/releases)
+page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [Unreleased]
 
