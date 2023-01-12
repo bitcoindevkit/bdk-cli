@@ -44,9 +44,6 @@ Tag and publish new release:
 
 - [ ] Double check that your local `master` is up-to-date with the upstream repo.
 - [ ] Create a new branch called `release/MAJOR.MINOR+1` from `master`.
-- [ ] Bump the `release/MAJOR.MINOR+1` branch to `MAJOR.MINOR+1.0` version.
-  - Change the `Cargo.toml` version value to `MAJOR.MINOR+1.0`.
-  - The commit message should be "Bump version to MAJOR.MINOR+1.0".
 - [ ] Add a tag to the `HEAD` commit in the `release/MAJOR.MINOR+1` branch.
   - The tag name should be `vMAJOR.MINOR+1.0`
   - The first line of the tag message should be "Release MAJOR.MINOR+1.0".
