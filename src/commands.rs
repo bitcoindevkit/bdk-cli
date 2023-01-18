@@ -144,7 +144,7 @@ pub enum CliSubCommand {
 }
 
 /// Backend Node operation subcommands.
-#[derive(Debug, Subcommand, Clone, PartialEq)]
+#[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
 #[clap(rename_all = "lower")]
 #[cfg(any(feature = "regtest-node"))]
 pub enum NodeSubCommand {
@@ -179,7 +179,7 @@ pub enum WalletSubCommand {
 }
 
 /// Config options wallet operations can take.
-#[derive(Debug, Parser, Clone, PartialEq)]
+#[derive(Debug, Parser, Clone, PartialEq, Eq)]
 pub struct WalletOpts {
     /// Selects the wallet to use.
     #[clap(name = "WALLET_NAME", short = 'w', long = "wallet")]
@@ -212,7 +212,7 @@ pub struct WalletOpts {
 
 /// Options to configure a SOCKS5 proxy for a blockchain client connection.
 #[cfg(any(feature = "compact_filters", feature = "electrum", feature = "esplora"))]
-#[derive(Debug, Args, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, PartialEq, Eq)]
 pub struct ProxyOpts {
     /// Sets the SOCKS5 proxy for a blockchain client.
     #[clap(name = "PROXY_ADDRS:PORT", long = "proxy", short = 'p')]
@@ -234,7 +234,7 @@ pub struct ProxyOpts {
 
 /// Options to configure a BIP157 Compact Filter backend.
 #[cfg(feature = "compact_filters")]
-#[derive(Debug, Args, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, PartialEq, Eq)]
 pub struct CompactFilterOpts {
     /// Sets the full node network address.
     #[clap(
@@ -261,7 +261,7 @@ pub struct CompactFilterOpts {
 
 /// Options to configure a bitcoin core rpc backend.
 #[cfg(feature = "rpc")]
-#[derive(Debug, Args, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, PartialEq, Eq)]
 pub struct RpcOpts {
     /// Sets the full node address for rpc connection.
     #[clap(
@@ -298,7 +298,7 @@ pub struct RpcOpts {
 
 /// Options to configure electrum backend.
 #[cfg(feature = "electrum")]
-#[derive(Debug, Args, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, PartialEq, Eq)]
 pub struct ElectrumOpts {
     /// Sets the SOCKS5 proxy timeout for the Electrum client.
     #[clap(name = "PROXY_TIMEOUT", short = 't', long = "timeout")]
@@ -324,7 +324,7 @@ pub struct ElectrumOpts {
 
 /// Options to configure Esplora backend.
 #[cfg(feature = "esplora")]
-#[derive(Debug, Args, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, PartialEq, Eq)]
 pub struct EsploraOpts {
     /// Use the esplora server if given as parameter.
     #[clap(
@@ -477,7 +477,7 @@ pub enum OfflineWalletSubCommand {
 }
 
 /// Wallet subcommands that needs a blockchain backend.
-#[derive(Debug, Subcommand, Clone, PartialEq)]
+#[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
 #[clap(rename_all = "snake")]
 #[cfg(any(
     feature = "electrum",
@@ -530,7 +530,7 @@ pub enum OnlineWalletSubCommand {
 }
 
 /// Subcommands for Key operations.
-#[derive(Debug, Subcommand, Clone, PartialEq)]
+#[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
 pub enum KeySubCommand {
     /// Generates new random seed mnemonic phrase and corresponding master extended key.
     Generate {
