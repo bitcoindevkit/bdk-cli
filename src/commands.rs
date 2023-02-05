@@ -179,7 +179,7 @@ pub enum WalletSubCommand {
 }
 
 /// Config options wallet operations can take.
-#[derive(Debug, Parser, Clone, PartialEq)]
+#[derive(Debug, Parser, Clone, Eq, PartialEq)]
 pub struct WalletOpts {
     /// Selects the wallet to use.
     #[clap(name = "WALLET_NAME", short = 'w', long = "wallet")]
@@ -212,7 +212,7 @@ pub struct WalletOpts {
 
 /// Options to configure a SOCKS5 proxy for a blockchain client connection.
 #[cfg(any(feature = "compact_filters", feature = "electrum", feature = "esplora"))]
-#[derive(Debug, Args, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, Eq, PartialEq)]
 pub struct ProxyOpts {
     /// Sets the SOCKS5 proxy for a blockchain client.
     #[clap(name = "PROXY_ADDRS:PORT", long = "proxy", short = 'p')]
@@ -234,7 +234,7 @@ pub struct ProxyOpts {
 
 /// Options to configure a BIP157 Compact Filter backend.
 #[cfg(feature = "compact_filters")]
-#[derive(Debug, Args, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, Eq, PartialEq)]
 pub struct CompactFilterOpts {
     /// Sets the full node network address.
     #[clap(
@@ -261,7 +261,7 @@ pub struct CompactFilterOpts {
 
 /// Options to configure a bitcoin core rpc backend.
 #[cfg(feature = "rpc")]
-#[derive(Debug, Args, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, Eq, PartialEq)]
 pub struct RpcOpts {
     /// Sets the full node address for rpc connection.
     #[clap(
@@ -298,7 +298,7 @@ pub struct RpcOpts {
 
 /// Options to configure electrum backend.
 #[cfg(feature = "electrum")]
-#[derive(Debug, Args, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, Eq, PartialEq)]
 pub struct ElectrumOpts {
     /// Sets the SOCKS5 proxy timeout for the Electrum client.
     #[clap(name = "PROXY_TIMEOUT", short = 't', long = "timeout")]
@@ -324,7 +324,7 @@ pub struct ElectrumOpts {
 
 /// Options to configure Esplora backend.
 #[cfg(feature = "esplora")]
-#[derive(Debug, Args, Clone, PartialEq)]
+#[derive(Debug, Args, Clone, Eq, PartialEq)]
 pub struct EsploraOpts {
     /// Use the esplora server if given as parameter.
     #[clap(
@@ -530,7 +530,7 @@ pub enum OnlineWalletSubCommand {
 }
 
 /// Subcommands for Key operations.
-#[derive(Debug, Subcommand, Clone, PartialEq)]
+#[derive(Debug, Subcommand, Clone, Eq, PartialEq)]
 pub enum KeySubCommand {
     /// Generates new random seed mnemonic phrase and corresponding master extended key.
     Generate {
@@ -1206,10 +1206,10 @@ mod test {
         let result_obj = result.as_object().unwrap();
 
         let mnemonic = result_obj.get("mnemonic").unwrap().as_str().unwrap();
-        let mnemonic: Vec<&str> = mnemonic.split(' ').collect();
+        let mnemonic = mnemonic.split(' ');
         let xprv = result_obj.get("xprv").unwrap().as_str().unwrap();
 
-        assert_eq!(mnemonic.len(), 12);
+        assert_eq!(mnemonic.count(), 12);
         assert_eq!(&xprv[0..4], "tprv");
     }
 
@@ -1651,7 +1651,7 @@ mod test {
         let split_regex = Regex::new(crate::REPL_LINE_SPLIT_REGEX).unwrap();
         let line = r#"restore -m "word1 word2 word3" -p 'test! 123 -test' "#;
         let split_line: Vec<&str> = split_regex
-            .captures_iter(&line)
+            .captures_iter(line)
             .map(|c| {
                 c.get(1)
                     .or_else(|| c.get(2))
@@ -1678,7 +1678,7 @@ mod test {
         let split_regex = Regex::new(crate::REPL_LINE_SPLIT_REGEX).unwrap();
         let line = r#"restore -m 'word1 word2 word3' -p "test *123 -test" "#;
         let split_line: Vec<&str> = split_regex
-            .captures_iter(&line)
+            .captures_iter(line)
             .map(|c| {
                 c.get(1)
                     .or_else(|| c.get(2))
