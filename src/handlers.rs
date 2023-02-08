@@ -755,7 +755,7 @@ pub(crate) fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
 ))]
 #[cfg(test)]
 mod test {
-    use super::*;
+    use super::is_final;
     use bdk::bitcoin::psbt::PartiallySignedTransaction;
     use std::str::FromStr;
 
