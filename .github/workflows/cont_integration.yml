@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         rust:
-          - 1.60.0 # STABLE
+          - 1.65.0 # STABLE
           - 1.57.0 # MSRV
         features:
           - default
