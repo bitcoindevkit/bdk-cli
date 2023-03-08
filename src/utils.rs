@@ -43,8 +43,18 @@ use bdk::database::any::SledDbConfiguration;
 #[cfg(feature = "sqlite-db")]
 use bdk::database::any::SqliteDbConfiguration;
 use bdk::database::{AnyDatabase, AnyDatabaseConfig, BatchDatabase, ConfigurableDatabase};
+#[cfg(feature = "hardware-signer")]
+use bdk::hwi::{interface::HWIClient, types::HWIChain};
+#[cfg(feature = "hardware-signer")]
+use bdk::wallet::hardwaresigner::HWISigner;
+#[cfg(feature = "hardware-signer")]
+use bdk::wallet::signer::{SignerError, SignerOrdering};
 use bdk::wallet::wallet_name_from_descriptor;
+#[cfg(feature = "hardware-signer")]
+use bdk::KeychainKind;
 use bdk::{Error, Wallet};
+#[cfg(feature = "hardware-signer")]
+use std::sync::Arc;
 
 /// Create a randomized wallet name from the descriptor checksum.
 /// If wallet options already includes a name, use that instead.
@@ -497,5 +507,41 @@ where
     let descriptor = wallet_opts.descriptor.as_str();
     let change_descriptor = wallet_opts.change_descriptor.as_deref();
     let wallet = Wallet::new(descriptor, change_descriptor, network, database)?;
+
+    #[cfg(feature = "hardware-signer")]
+    let wallet = add_hardware_signers(wallet, network)?;
+
+    Ok(wallet)
+}
+
+/// Add hardware wallets as signers to the wallet
+#[cfg(feature = "hardware-signer")]
+fn add_hardware_signers<D>(wallet: Wallet<D>, network: Network) -> Result<Wallet<D>, Error>
+where
+    D: BatchDatabase,
+{
+    let mut wallet = wallet;
+    let chain = match network {
+        Network::Bitcoin => HWIChain::Main,
+        Network::Testnet => HWIChain::Test,
+        Network::Regtest => HWIChain::Regtest,
+        Network::Signet => HWIChain::Signet,
+    };
+    let devices = HWIClient::enumerate().map_err(|e| SignerError::from(e))?;
+    for device in devices {
+        let device = device.map_err(|e| SignerError::from(e))?;
+        // Creating a custom signer from the device
+        let custom_signer =
+            HWISigner::from_device(&device, chain.clone()).map_err(|e| SignerError::from(e))?;
+
+        // Adding the hardware signer to the BDK wallet
+        wallet.add_signer(
+            KeychainKind::External,
+            SignerOrdering(200),
+            Arc::new(custom_signer),
+        );
+        println!("Added {} as a signer to the wallet.", device.model);
+    }
+
     Ok(wallet)
 }

@@ -71,6 +71,9 @@ esplora-reqwest = ["esplora", "bdk/use-esplora-reqwest", "bdk/reqwest-default-tl
 # Use this to consensus verify transactions at sync time
 verify = ["bdk/verify"]
 
+# Use hardware wallets to sign transactions
+hardware-signer = ["bdk/hardware-signer"]
+
 # Extra utility tools
 # Compile policies
 compiler = ["bdk/compiler"]

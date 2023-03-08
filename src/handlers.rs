@@ -50,6 +50,11 @@ use bdk::descriptor::Segwitv0;
 use bdk::descriptor::{Descriptor, Legacy, Miniscript};
 #[cfg(all(feature = "reserves", feature = "electrum"))]
 use bdk::electrum_client::{Client, ElectrumApi};
+#[cfg(feature = "hardware-signer")]
+use bdk::hwi::{
+    interface::HWIClient,
+    types::{HWIChain, HWIDescriptor},
+};
 use bdk::keys::bip39::{Language, Mnemonic, WordCount};
 use bdk::keys::DescriptorKey::Secret;
 use bdk::keys::KeyError::{InvalidNetwork, Message};
@@ -57,6 +62,8 @@ use bdk::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, Genera
 use bdk::miniscript::miniscript;
 #[cfg(feature = "compiler")]
 use bdk::miniscript::policy::Concrete;
+#[cfg(feature = "hardware-signer")]
+use bdk::wallet::signer::SignerError;
 use bdk::SignOptions;
 #[cfg(all(feature = "reserves", feature = "electrum"))]
 use bdk::{bitcoin::Address, blockchain::Capability};
@@ -486,6 +493,26 @@ pub(crate) fn handle_key_subcommand(
             } else {
                 Err(Error::Key(Message("Invalid key variant".to_string())))
             }
+        }
+        #[cfg(feature = "hardware-signer")]
+        KeySubCommand::Hardware {} => {
+            let chain = match network {
+                Network::Bitcoin => HWIChain::Main,
+                Network::Testnet => HWIChain::Test,
+                Network::Regtest => HWIChain::Regtest,
+                Network::Signet => HWIChain::Signet,
+            };
+            let devices = HWIClient::enumerate().map_err(|e| SignerError::from(e))?;
+            let descriptors = devices.iter().map(|device_| {
+                let device = device_.clone()
+                    .map_err(|e| SignerError::from(e))?;
+                let client = HWIClient::get_client(&device, true, chain.clone())
+                    .map_err(|e| SignerError::from(e))?;
+                let descriptors: HWIDescriptor<String> = client.get_descriptors(None)
+                    .map_err(|e| SignerError::from(e))?;
+                Ok(json!({"device": device.model, "receiving": descriptors.receive[0].to_string(), "change": descriptors.internal[0]})) 
+            }).collect::<Result<Vec<_>, Error>>()?;
+            Ok(json!(descriptors))
         }
     }
 }
