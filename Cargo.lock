@@ -135,7 +135,7 @@ dependencies = [
 
 [[package]]
 name = "bdk-cli"
-version = "0.27.0"
+version = "0.27.1"
 dependencies = [
  "base64 0.13.1",
  "bdk",
@@ -176,9 +176,9 @@ dependencies = [
 
 [[package]]
 name = "bdk-reserves"
-version = "0.27.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab1509bf82cf0c5d8a72a2c88c684ad2661c5dc96b1bfd0a74e9f118bfe3fd57"
+checksum = "06cb7208a257fce1f716e578a8d9e4c599f0bc5d0bb6535ed0b57c3e940b3bdb"
 dependencies = [
  "bdk",
  "bitcoinconsensus",
