@@ -1,10 +1,20 @@
 # Changelog
-All notable changes to this project prior to release **0.26.0** are documented in this file. Future
-changelog information can be found in each release's git tag and can be viewed with `git tag -ln100 "v*"`.
+Changelog information can be found in each release's git tag and can be viewed with `git tag -ln100 "v*"`.
 Changelog info is also documented on the [GitHub releases](https://github.com/bitcoindevkit/bdk-cli/releases)
 page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [Unreleased]
+
+## [0.27.1]
+- Added hardware signers through the use of HWI.
+- Bumped rustc stable to 1.65.
+- Bumped electrsd version to v0.22.*.
+
+## [0.26.0]
+ - Check that a `PSBT` is signed before broadcast, else throw a useful error message to user.
+ - Miniscript Translation capability to an `AliasMap` in wasm, to enhance the paly ground interface.
+ - cli-app framework from `structop` to `clap`.
+ - Temporarily disable `compact_filters` until `bdk v1.0.0` launch.
 
 ## [0.6.0]
 
@@ -71,7 +81,9 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [0.1.0-beta.1]
 
-[unreleased]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.6.0...HEAD
+[unreleased]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.27.1...HEAD
+[0.27.1]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.26.0...v0.27.1
+[0.26.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.6.0...v0.26.0
 [0.6.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.3.0...v0.4.0
