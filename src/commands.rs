@@ -320,6 +320,16 @@ pub struct ElectrumOpts {
         default_value = "10"
     )]
     pub stop_gap: usize,
+
+    /// Enable or disable domain validation when connecting to Electrum servers.
+    #[clap(
+        name = "VALIDATE_DOMAIN",
+        long = "validate_domain",
+        possible_values = &["true", "false"],
+        case_insensitive = true,
+        default_value = "true"
+    )]
+    pub validate_domain: bool,
 }
 
 /// Options to configure Esplora backend.
