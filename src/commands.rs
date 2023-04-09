@@ -322,14 +322,8 @@ pub struct ElectrumOpts {
     pub stop_gap: usize,
 
     /// Enable or disable domain validation when connecting to Electrum servers.
-    #[clap(
-        name = "VALIDATE_DOMAIN",
-        long = "validate_domain",
-        possible_values = &["true", "false"],
-        case_insensitive = true,
-        default_value = "true"
-    )]
-    pub validate_domain: bool,
+    #[clap(name = "VALIDATE_DOMAIN", long = "validate_domain", takes_value(false))]
+    pub validate_domain: Option<bool>,
 }
 
 /// Options to configure Esplora backend.
@@ -718,7 +712,7 @@ mod test {
                             "--change_descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
                             "--server","ssl://electrum.blockstream.info:50002",
                             "--stop_gap", "20",
-                            "--validate_domain", "true",
+                            "--validate_domain"
                             "get_new_address"];
 
         let cli_opts = CliOpts::from_iter(&cli_args);
