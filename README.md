@@ -27,34 +27,34 @@
 
 ## About
 
-This project provides a command-line Bitcoin wallet application using the latest [BDK APIs](https://docs.rs/bdk/latest/bdk/wallet/struct.Wallet.html). This might look tiny and innocent, but by harnessing the power of BDK it provides a powerful generic descriptor based command line wallet tool.
+This project provides a command-line Bitcoin wallet application using the latest [BDK APIs](https://docs.rs/bdk/latest/bdk/wallet/struct.Wallet.html). This might look tiny and innocent, but by harnessing the power of BDK it provides a powerful generic descriptor-based command line wallet tool.
 And yes, it can do Taproot!!
 
 This crate can be used for the following purposes:
- - Instantly create a miniscript based wallet and connect to your backend of choice (Electrum, Esplora, Core RPC, etc) and quickly play around with your own complex bitcoin scripting workflow. With one or many wallets, connected with one or many backends.
- - The `tests/integration.rs` module is used to document high level complex workflows between BDK and different Bitcoin infrastructure systems, like Core, Electrum and Lightning(soon TM).
+ - Instantly create a miniscript-based wallet and connect to your backend of choice (Electrum, Esplora, Core RPC, etc) and quickly play around with your complex Bitcoin scripting workflow. With one or many wallets, connected with one or many backends.
+ - The `tests/integration.rs` module is used to document high-level complex workflows between BDK and different Bitcoin infrastructure systems, like Core, Electrum, and Lightning(soon TM).
  - (Planned) Expose the basic command handler via `wasm` to integrate `bdk-cli` functionality natively into the web platform. See also the [playground](https://bitcoindevkit.org/bdk-cli/playground/) page.
 
-If you are considering using BDK in your own wallet project bdk-cli is a nice playground to get started with. It allows easy testnet and regtest wallet operations, to try out what's possible with descriptors, miniscript, and BDK APIs. For more information on BDK refer to the [website](https://bitcoindevkit.org/) and the [rust docs](https://docs.rs/bdk/latest/bdk/index.html)
+If you are considering using BDK in your wallet project, bdk-cli is a nice playground to get started with. It allows easy testnet and regtest wallet operations, to try out what's possible with descriptors, miniscript, and BDK APIs. For more information on BDK refer to the [website](https://bitcoindevkit.org/) and the [Rust docs](https://docs.rs/bdk/latest/bdk/index.html)
 
 bdk-cli can be compiled with different features to suit your experimental needs.
   - Database Options
-     - `key-value-db` : Sets the wallet database to a `sled` db.
-     - `sqlite-db` : Sets the wallet database to a `sqlite3` db.
+     - `key-value-db`: Sets the wallet database to a `sled` db.
+     - `sqlite-db`: Sets the wallet database to a `sqlite3` db.
   - Blockchain Options
-     - `rpc` : Connects the wallet to bitcoin core via RPC.
-     - `electrum` : Connects the wallet to an electrum server.
-     - `esplora-ureq` or `esplora-reqwest` : Connects the wallet to an esplora server synchronously or asynchronously.
+     - `rpc`: Connects the wallet to Bitcoin core via RPC.
+     - `electrum`: Connects the wallet to an Electrum server.
+     - `esplora-ureq` or `esplora-reqwest`: Connects the wallet to an Esplora server synchronously or asynchronously.
   - Extra Utility Tools
-     - `repl` : use bdk-cli as a [REPL](https://codewith.mu/en/tutorials/1.0/repl) shell (useful for quick manual testing of wallet operations).
-     - `compiler` : opens up bdk-cli policy compiler commands.
-     - `verify` : uses `bitcoinconsensus` to verify transactions at every `sync` call of the wallet.
-     - `reserves` : opens up bdk-cli **Proof of Reserves** operation commands using the [bdk-reserves plugin](https://github.com/bitcoindevkit/bdk-reserves). (requires the `electrum` feature)
+     - `repl`: use bdk-cli as a [REPL](https://codewith.mu/en/tutorials/1.0/repl) shell (useful for quick manual testing of wallet operations).
+     - `compiler`: opens up bdk-cli policy compiler commands.
+     - `verify`: uses `bitcoinconsensus` to verify transactions at every `sync` call of the wallet.
+     - `reserves`: opens up bdk-cli **Proof of Reserves** operation commands using the [bdk-reserves plugin](https://github.com/bitcoindevkit/bdk-reserves). (requires the `electrum` feature)
    - Automated Node Backend
-     - `regtest-bitcoin` : Auto deploys a regtest `bitcoind` node, connects the wallet, and exposes core rpc commands via `bdk-cli node` subcommands.
-     - `regtest-electrum` : Auto deploys `electrsd` and connected `bitcoind` nodes, exposes core rpc commands via `bdk-cli node` and provides a wallet connected to the local `electrsd`.
+     - `regtest-bitcoin`: Auto deploys a regtest `bitcoind` node, connects the wallet, and exposes core RPC commands via `bdk-cli node` subcommands.
+     - `regtest-electrum`: Auto deploys `electrsd` and connected `bitcoind` nodes, exposes core RPC commands via `bdk-cli node`, and provides a wallet connected to the local `electrsd`.
     
-The `default` feature set is `repl` and `sqlite-db`. With the `default` features, `bdk-cli` can be used as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
+The `default` feature set is `repl` and `sqlite-db`. With the `default` features, `bdk-cli` can be used as an **air-gapped** wallet and can do everything that doesn't require a network connection.
 
 
 ## Install bdk-cli
@@ -68,7 +68,7 @@ bdk-cli help # to verify it worked
 ```
 
 If no blockchain client feature is enabled online wallet commands `sync` and `broadcast` will be 
-disabled. To enable these commands a blockchain client feature such as `electrum` or another 
+disabled. To enable these commands a blockchain client feature such as `Electrum` or another 
 blockchain client feature must be enabled. Below is an example of how to run the `bdk-cli` binary with
 the `esplora-ureq` blockchain client feature.
 
@@ -76,12 +76,12 @@ the `esplora-ureq` blockchain client feature.
 RUST_LOG=debug cargo run --features esplora-ureq -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
 ```
 
-At most one blockchain feature can be enabled, available blockchain client features are:
-`electrum`, `esplora-ureq` (blocking), `esplora-reqwest` (async) and `rpc`.
+At most one blockchain feature can be enabled, available blockchain client features are
+`electrum`, `esplora-ureq` (blocking), `esplora-reqwest` (async), and `RPC`.
 
 ### From crates.io
 You can install the binary for the latest tag of `bdk-cli` with online wallet features 
-directly from [crates.io](https://crates.io/crates/bdk-cli) with a command as below:
+directly from [crates.io](https://crates.io/crates/bdk-cli) with the command as below:
 ```sh
 cargo install bdk-cli --features electrum
 ```
@@ -101,7 +101,7 @@ To sync a wallet to the default electrum server:
 cargo run --features electrum -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
 ```
 
-To sync a wallet to a Bitcoin Core node (assuming a regtest node at 127.0.0.1:18443) using the core rpc:
+To sync a wallet to a Bitcoin Core node (assuming the regtest node at 127.0.0.1:18443) using the core RPC:
 
 ```shell
 cargo run --features rpc -- --network regtest wallet --node 127.0.0.1:18443 --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
@@ -121,5 +121,5 @@ cargo run -- key generate
 
 ## Resources
 Docs: [bitcoindevkit.org CLI Section](https://bitcoindevkit.org/bdk-cli/installation/)  
-Episode on the _Bitcoin Developers Show_: [Youtube](https://www.youtube.com/watch?v=-Q8OD8NCEe4)  
+An Episode of the _Bitcoin Developers Show_: [Youtube](https://www.youtube.com/watch?v=-Q8OD8NCEe4)  
 Video Tutorials: [Youtube Playlist](https://www.youtube.com/playlist?list=PLmyfVqsSelG3jSobvpY3GoNKDtAumsrg3)  
