@@ -5,6 +5,9 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [Unreleased]
 
+## [0.28.0]
+
+
 ## [0.27.1]
 - Added hardware signers through the use of HWI.
 - Bumped rustc stable to 1.65.
@@ -81,7 +84,8 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [0.1.0-beta.1]
 
-[unreleased]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.27.1...HEAD
+[unreleased]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.26.0...v0.27.1
 [0.26.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.6.0...v0.26.0
 [0.6.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.5.0...v0.6.0
