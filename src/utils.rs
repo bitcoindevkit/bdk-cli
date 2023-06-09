@@ -400,7 +400,7 @@ pub(crate) fn new_blockchain(
             retry: wallet_opts.proxy_opts.retries,
             timeout: wallet_opts.electrum_opts.timeout,
             stop_gap: wallet_opts.electrum_opts.stop_gap,
-            validate_domain: true,
+            validate_domain: wallet_opts.electrum_opts.validate_domain.unwrap_or(true),
         })
     };
 
