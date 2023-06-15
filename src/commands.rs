@@ -527,6 +527,12 @@ pub enum OnlineWalletSubCommand {
         #[clap(name = "CONFIRMATIONS", long = "confirmations", default_value = "6")]
         confirmations: u32,
     },
+    /// Sends a Payjoin Transaction. Takes a valid payjoin bip21 uri.
+    SendPayjoin {
+        /// Sets the bip21 uri to send to.
+        #[clap(name = "URI", long = "uri")]
+        uri: String,
+    },
 }
 
 /// Subcommands for Key operations.
@@ -622,7 +628,7 @@ mod test {
         feature = "compact_filters",
         feature = "rpc"
     ))]
-    use super::OnlineWalletSubCommand::{Broadcast, Sync};
+    use super::OnlineWalletSubCommand::{Broadcast, SendPayjoin, Sync};
     use super::WalletSubCommand::OfflineWalletSubCommand;
     #[cfg(any(
         feature = "electrum",
