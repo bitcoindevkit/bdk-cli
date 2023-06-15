@@ -87,8 +87,9 @@ use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use serde_json::json;
 use std::str::FromStr;
+// Import some modules for payjoin functionality
 
-/// Execute an offline wallet sub-command
+// Execute an offline wallet sub-command
 ///
 /// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
 pub fn handle_offline_wallet_subcommand<D>(
@@ -321,7 +322,11 @@ where
     B: Blockchain,
     D: BatchDatabase,
 {
+    use crate::bitcoin::psbt::Input;
     use bdk::SyncOptions;
+    use payjoin::PjUriExt;
+    use payjoin::UriExt;
+    use std::convert::TryFrom;
 
     match online_subcommand {
         Sync => {
@@ -392,6 +397,138 @@ where
             let spendable =
                 maybe_await!(wallet.verify_proof(&psbt, &msg, max_confirmation_height))?;
             Ok(json!({ "spendable": spendable }))
+        }
+
+        #[cfg(not(feature = "async-interface"))]
+        // Payjoin Logic goes here
+        SendPayjoin { uri } => {
+            // convert the bip21 uri into a payjoin uri, and handle error if necessary
+            let uri = payjoin::Uri::try_from(uri).map_err(|e| {
+                Error::Generic(format!("Unable to convert BIP21 into Payjoin URI: {}", e))
+            })?;
+
+            // ensure uri is payjoin capable
+            let uri = uri
+                .check_pj_supported()
+                .map_err(|e| Error::Generic(format!("Payjoin not supported: {}", e.to_string())))?;
+
+            // ensure amount of satoshis is specified in uri, handle error if not
+            let sats = match uri.amount {
+                Some(amount) => Ok(amount.to_sat()),
+                None => Err(Error::Generic("URI was empty".to_string())),
+            }?;
+
+            // call wallet build tx to create psbt
+            let mut tx_builder = wallet.build_tx();
+
+            // assuming uri address is of type address
+            let scrm = uri.address.script_pubkey();
+
+            // create tx with payjoin uri
+            tx_builder
+                .add_recipient(scrm.clone(), sats)
+                .fee_rate(FeeRate::from_sat_per_vb(1.0))
+                .enable_rbf();
+
+            // create original psbt
+            let (mut original_psbt, _tx_details) = tx_builder
+                .finish()
+                .map_err(|e| Error::Generic(format!("Unable to build transaction: {}", e)))?;
+
+            // check + sign psbt
+            let finalized = wallet.sign(&mut original_psbt, SignOptions::default())?;
+
+            // handle error if the psbt is not finalized
+            if !finalized {
+                return Err(Error::Generic("PSBT not finalized".to_string()));
+            }
+
+            // set payjoin params
+            // TODO use fee_rate
+            let pj_params = payjoin::send::Configuration::with_fee_contribution(
+                payjoin::bitcoin::Amount::from_sat(100),
+                None,
+            );
+
+            // save a clone for after processing the response
+            let mut ocean_psbt = original_psbt.clone();
+
+            // Construct the request with the PSBT and parameters
+            let (req, ctx) = uri
+                .create_pj_request(original_psbt, pj_params) // not clone here
+                .map_err(|e| Error::Generic(format!("Error building payjoin request: {}", e)))?;
+
+            // reqwest client
+            let client = reqwest::blocking::Client::builder()
+                .danger_accept_invalid_certs(true)
+                .build()
+                .map_err(|e| Error::Generic(format!("Error building payjoin client: {}", e)))?;
+
+            // send the request, and receive response
+            let response = client
+                .post(req.url)
+                .body(req.body)
+                .header("Content-Type", "text/plain")
+                .send()
+                .map_err(|e| Error::Generic(format!("Error with HTTP request: {}", e)))?;
+
+            // process the response
+            let mut payjoin_psbt = ctx
+                .process_response(response)
+                .map_err(|e| Error::Generic(format!("Error processing payjoin response: {}", e)))?;
+
+            // need to reintroduce utxo from original psbt
+            fn input_pairs(
+                psbt: &mut PartiallySignedTransaction,
+            ) -> Box<dyn Iterator<Item = (&bdk::bitcoin::TxIn, &mut Input)> + '_> {
+                Box::new(psbt.unsigned_tx.input.iter().zip(&mut psbt.inputs))
+            }
+
+            // get original inputs from original psbt clone (ocean_psbt)
+            let mut original_inputs = input_pairs(&mut ocean_psbt).peekable();
+
+            for (proposed_txin, proposed_psbtin) in input_pairs(&mut payjoin_psbt) {
+                if let Some((original_txin, original_psbtin)) = original_inputs.peek() {
+                    if proposed_txin.previous_output == original_txin.previous_output {
+                        proposed_psbtin.witness_utxo = original_psbtin.witness_utxo.clone();
+                        proposed_psbtin.non_witness_utxo = original_psbtin.non_witness_utxo.clone();
+                    }
+                    original_inputs.next();
+                }
+            }
+
+            // basic flow for broadcasting: sign, extract tx, and then broadcast
+
+            // sign
+            wallet.sign(&mut payjoin_psbt, SignOptions::default())?;
+
+            // finalize
+            let finalized = wallet.finalize_psbt(&mut payjoin_psbt, SignOptions::default())?;
+
+            match finalized {
+                true => {
+
+                    // Signing was successful
+                }
+                false => {
+                    // signing failed
+                    return Err(Error::Generic(
+                        "Signing the payjoin transaction failed.".to_string(),
+                    ));
+                }
+            }
+
+            // Extract the finalized transaction
+            let finalized_tx = payjoin_psbt.extract_tx();
+            dbg!("Finalized Transaction:");
+            dbg!(finalized_tx.clone());
+
+            // Broadcast the transaction
+            blockchain.broadcast(&finalized_tx)?;
+
+            Ok(serde_json::Value::String(
+                "Successfully sent payjoin transaction".to_string(),
+            ))
         }
     }
 }

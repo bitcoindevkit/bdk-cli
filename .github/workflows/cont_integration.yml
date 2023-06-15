@@ -59,8 +59,12 @@ jobs:
           cargo update -p cc --precise 1.0.81
           cargo update -p tokio --precise 1.29.1
           cargo update -p flate2 --precise 1.0.26
+          cargo update -p reqwest --precise "0.11.18"
+          cargo update -p h2 --precise "0.3.20"
+          cargo update -p rustls --precise "0.20.8"
+
       - name: Build
-        run: cargo build --no-default-features --features repl,${{ matrix.features }} --locked
+        run: cargo build --no-default-features --features repl,${{ matrix.features }}
       - name: Clippy
         run: cargo clippy -- -D warnings
       - name: Test

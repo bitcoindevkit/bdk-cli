@@ -11,7 +11,7 @@ keywords = ["bitcoin", "wallet", "descriptor", "psbt", "taproot"]
 readme = "README.md"
 license = "MIT"
 
-[dependencies]
+[dependencies] 
 bdk = { version = "0.27.1", default-features = false, features = ["all-keys"] }
 bdk-macros = "0.6"
 clap = { version = "3.2.22", features = ["derive"] }
@@ -21,6 +21,12 @@ zeroize = "<1.4.0"
 dirs-next = "2.0"
 env_logger = "0.7"
 base64 = "^0.13"
+# payjoin dependencies
+payjoin = { version = "=0.8.2", features = ["send"] } 
+# reqwest 
+reqwest = { version = "0.10.10", features = ["blocking"] }
+
+
 
 # Optional dependencies
 rustyline = { version = "~9.0", optional = true }
