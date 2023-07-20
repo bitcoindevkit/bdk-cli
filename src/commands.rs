@@ -146,7 +146,7 @@ pub enum CliSubCommand {
 /// Backend Node operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
 #[clap(rename_all = "lower")]
-#[cfg(any(feature = "regtest-node"))]
+#[cfg(feature = "regtest-node")]
 pub enum NodeSubCommand {
     /// Get info.
     GetInfo,
