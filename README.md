@@ -13,7 +13,7 @@
     <a href="https://github.com/bitcoindevkit/bdk-cli/actions?query=workflow%3ACI"><img alt="CI Status" src="https://github.com/bitcoindevkit/bdk-cli/workflows/CI/badge.svg"></a>
     <a href="https://codecov.io/gh/bitcoindevkit/bdk-cli"><img src="https://codecov.io/gh/bitcoindevkit/bdk-cli/branch/master/graph/badge.svg"/></a>
     <a href="https://docs.rs/bdk-cli"><img alt="API Docs" src="https://img.shields.io/badge/docs.rs-bdk_cli-green"/></a>
-    <a href="https://blog.rust-lang.org/2020/08/27/Rust-1.56.0.html"><img alt="Rustc Version 1.56+" src="https://img.shields.io/badge/rustc-1.56%2B-lightgrey.svg"/></a>
+    <a href="https://blog.rust-lang.org/2022/04/07/Rust-1.60.0.html"><img alt="Rustc Version 1.60.0+" src="https://img.shields.io/badge/rustc-1.60.0%2B-lightgrey.svg"/></a>
     <a href="https://discord.gg/d7NkDKm"><img alt="Chat on Discord" src="https://img.shields.io/discord/753336465005608961?logo=discord"></a>
   </p>
 
@@ -118,6 +118,18 @@ To generate a new extended master key, suitable for use in a descriptor:
 ```shell
 cargo run -- key generate
 ```
+
+## Minimum Supported Rust Version (MSRV)
+
+This library should always compile with any valid combination of features on Rust **1.60.0**.
+
+To build with the MSRV you will need to pin the below dependency versions:
+
+```shell
+cargo update -p tempfile --precise 3.6.0
+cargo update -p hashlink --precise 0.8.0
+```
+
 
 ## Resources
 Docs: [bitcoindevkit.org CLI Section](https://bitcoindevkit.org/bdk-cli/installation/)  

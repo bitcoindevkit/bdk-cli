@@ -10,8 +10,8 @@ jobs:
     strategy:
       matrix:
         rust:
-          - 1.65.0 # STABLE
-          - 1.57.0 # MSRV
+          - 1.71.0 # STABLE
+          - 1.60.0 # MSRV
         features:
           - default
           - electrum,sqlite-db
@@ -48,6 +48,11 @@ jobs:
           profile: minimal
           override: true
           components: rustfmt, clippy
+      - name: Pin dependencies
+        if: ${{ matrix.rust }} == "1.60.0" #MSRV
+        run: |
+          cargo update -p tempfile --precise 3.6.0
+          cargo update -p hashlink --precise 0.8.0
       - name: Build
         run: cargo build --no-default-features --features repl,${{ matrix.features }} --locked
       - name: Clippy
@@ -80,7 +85,7 @@ jobs:
       - run: sudo apt-get update || exit 1
       - run: sudo apt-get install -y libclang-common-10-dev clang-10 libc6-dev-i386 || exit 1
       - name: Set default toolchain
-        run: rustup default 1.57.0 # MSRV
+        run: rustup default 1.60.0 # MSRV
       - name: Set profile
         run: rustup set profile minimal
       - name: Add target wasm32
