@@ -27,7 +27,7 @@ rustyline = { version = "~9.0", optional = true }
 fd-lock = { version = "=3.0.2", optional = true }
 regex = { version = "1", optional = true }
 bdk-reserves = { version = "0.27.1", optional = true }
-electrsd = { version= "0.22", features = ["bitcoind_22_0"], optional = true}
+electrsd = { version= "0.23.3", features = ["bitcoind_22_0"], optional = true}
 
 # Platform-specific dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -40,8 +40,6 @@ rand = { version = "^0.6", features = ["wasm-bindgen"] }
 serde = { version = "^1.0", features = ["derive"] }
 regex = { version = "1" }
 getrandom = "0.2"
-# zip is used by electrsd and versions after 0.6.3 don't work with our MSRV 1.57.0
-zip = { version = "=0.6.3", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"] }
@@ -86,7 +84,7 @@ reserves = ["bdk-reserves"]
 #
 # This is most useful for integrations testing as well as quick demo testing
 # by devs using bdk and various types of background nodes.
-regtest-node = ["electrsd", "zip"]
+regtest-node = ["electrsd"]
 regtest-bitcoin = ["regtest-node" , "rpc"]
 regtest-electrum = ["regtest-node", "electrum", "electrsd/electrs_0_8_10"]
 #TODO: Check why esplora in electrsd isn't working.

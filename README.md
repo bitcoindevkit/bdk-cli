@@ -56,6 +56,23 @@ bdk-cli can be compiled with different features to suit your experimental needs.
     
 The `default` feature set is `repl` and `sqlite-db`. With the `default` features, `bdk-cli` can be used as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
 
+### Minimum Supported Rust Version (MSRV)
+
+This tool can be compiled with Rust 1.57.0. Feature combinations that don't include the following are known to work:
+
+- esplora-reqwest
+- regtest-bitcoin
+- regtest-electrum
+
+To build with the 1.57.0 MSRV you will need to pin the following dependency versions: 
+
+```shell
+# for sqlite feature, hashlink versions after 0.8.1 depend on Hashbrown 0.13 with MSRV 1.61.0
+cargo update -p hashlink --precise 0.8.1
+
+# log versions starting with 0.4.19 have MSRV 1.60.0
+cargo update -p log --precise 0.4.18
+```
 
 ## Install bdk-cli
 ### From source
