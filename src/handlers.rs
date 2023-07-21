@@ -180,10 +180,10 @@ where
             let (psbt, details) = tx_builder.finish()?;
             if wallet_opts.verbose {
                 Ok(
-                    json!({"psbt": base64::encode(&serialize(&psbt)),"details": details, "serialized_psbt": psbt}),
+                    json!({"psbt": base64::encode(serialize(&psbt)),"details": details, "serialized_psbt": psbt}),
                 )
             } else {
-                Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"details": details}))
+                Ok(json!({"psbt": base64::encode(serialize(&psbt)),"details": details}))
             }
         }
         BumpFee {
@@ -217,7 +217,7 @@ where
             }
 
             let (psbt, details) = tx_builder.finish()?;
-            Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"details": details,}))
+            Ok(json!({"psbt": base64::encode(serialize(&psbt)),"details": details,}))
         }
         Policies => Ok(json!({
             "external": wallet.policies(KeychainKind::External)?,
@@ -232,7 +232,7 @@ where
             assume_height,
             trust_witness_utxo,
         } => {
-            let psbt = base64::decode(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
+            let psbt = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
             let mut psbt: PartiallySignedTransaction = deserialize(&psbt)?;
             let signopt = SignOptions {
                 assume_height,
@@ -242,14 +242,14 @@ where
             let finalized = wallet.sign(&mut psbt, signopt)?;
             if wallet_opts.verbose {
                 Ok(
-                    json!({"psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized, "serialized_psbt": psbt}),
+                    json!({"psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized, "serialized_psbt": psbt}),
                 )
             } else {
-                Ok(json!({"psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized,}))
+                Ok(json!({"psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized,}))
             }
         }
         ExtractPsbt { psbt } => {
-            let psbt = base64::decode(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
+            let psbt = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
             let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
             Ok(json!({"raw_tx": serialize_hex(&psbt.extract_tx()),}))
         }
@@ -258,7 +258,7 @@ where
             assume_height,
             trust_witness_utxo,
         } => {
-            let psbt = base64::decode(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
+            let psbt = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
             let mut psbt: PartiallySignedTransaction = deserialize(&psbt)?;
 
             let signopt = SignOptions {
@@ -269,10 +269,10 @@ where
             let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
             if wallet_opts.verbose {
                 Ok(
-                    json!({ "psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized, "serialized_psbt": psbt}),
+                    json!({ "psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized, "serialized_psbt": psbt}),
                 )
             } else {
-                Ok(json!({ "psbt": base64::encode(&serialize(&psbt)),"is_finalized": finalized,}))
+                Ok(json!({ "psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized,}))
             }
         }
         CombinePsbt { psbt } => {
@@ -297,7 +297,7 @@ where
                         Ok(acc)
                     },
                 )?;
-            Ok(json!({ "psbt": base64::encode(&serialize(&final_psbt)) }))
+            Ok(json!({ "psbt": base64::encode(serialize(&final_psbt)) }))
         }
     }
 }
@@ -510,7 +510,7 @@ pub(crate) fn handle_key_subcommand(
                     .map_err(|e| SignerError::from(e))?;
                 let descriptors: HWIDescriptor<String> = client.get_descriptors(None)
                     .map_err(|e| SignerError::from(e))?;
-                Ok(json!({"device": device.model, "receiving": descriptors.receive[0].to_string(), "change": descriptors.internal[0]})) 
+                Ok(json!({"device": device.model, "receiving": descriptors.receive[0].to_string(), "change": descriptors.internal[0]}))
             }).collect::<Result<Vec<_>, Error>>()?;
             Ok(json!(descriptors))
         }
