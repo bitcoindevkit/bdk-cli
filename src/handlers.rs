@@ -26,6 +26,7 @@ use bdk::{database::BatchDatabase, wallet::AddressIndex, Error, FeeRate, Keychai
 
 use clap::Parser;
 
+use crate::bitcoin::psbt::Input;
 use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
 #[cfg(any(
     feature = "electrum",
@@ -87,7 +88,6 @@ use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use serde_json::json;
 use std::str::FromStr;
-use crate::bitcoin::psbt::Input;
 // Import some modules for payjoin functionality from payjoin crate
 use payjoin::{PjUriExt, UriExt};
 use std::convert::TryFrom;
@@ -476,18 +476,14 @@ where
                 .map_err(|e| Error::Generic(format!("Error processing payjoin response: {}", e)))?;
 
             // need to reintroduce utxo from original psbt
-            fn input_pairs(psbt: &mut PartiallySignedTransaction) -> Box<dyn Iterator<Item = (&bdk::bitcoin::TxIn, &mut Input)> + '_> {
-                Box::new(
-                    psbt.unsigned_tx
-                        .input
-                        .iter()
-                        .zip(&mut psbt.inputs)
-                )
+            fn input_pairs(
+                psbt: &mut PartiallySignedTransaction,
+            ) -> Box<dyn Iterator<Item = (&bdk::bitcoin::TxIn, &mut Input)> + '_> {
+                Box::new(psbt.unsigned_tx.input.iter().zip(&mut psbt.inputs))
             }
-            
+
             // get original inputs from original psbt clone (ocean_psbt)
             let mut original_inputs = input_pairs(&mut ocean_psbt).peekable();
-
 
             for (proposed_txin, mut proposed_psbtin) in input_pairs(&mut payjoin_psbt) {
                 if let Some((original_txin, original_psbtin)) = original_inputs.peek() {
@@ -498,7 +494,6 @@ where
                     original_inputs.next();
                 }
             }
-
 
             // basic flow for broadcasting: sign, extract tx, and then broadcast
 
