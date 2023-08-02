@@ -60,7 +60,7 @@ jobs:
           cargo update -p tokio --precise 1.29.1
           cargo update -p flate2 --precise 1.0.26
       - name: Build
-        run: cargo build --no-default-features --features repl,${{ matrix.features }} --locked
+        run: cargo build --no-default-features --features repl,${{ matrix.features }}
       - name: Clippy
         run: cargo clippy -- -D warnings
       - name: Test
