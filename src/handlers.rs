@@ -26,7 +26,6 @@ use bdk::{database::BatchDatabase, wallet::AddressIndex, Error, FeeRate, Keychai
 
 use clap::Parser;
 
-
 use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
 #[cfg(any(
     feature = "electrum",
@@ -88,9 +87,9 @@ use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use serde_json::json;
 use std::str::FromStr;
-// Import some modules for payjoin functionality from payjoin crate
+// Import some modules for payjoin functionality
 
-/// Execute an offline wallet sub-command
+// Execute an offline wallet sub-command
 ///
 /// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
 pub fn handle_offline_wallet_subcommand<D>(
@@ -323,7 +322,11 @@ where
     B: Blockchain,
     D: BatchDatabase,
 {
-    use bdk::{signer::InputSigner, wallet::tx_builder, SyncOptions};
+    use crate::bitcoin::psbt::Input;
+    use bdk::SyncOptions;
+    use payjoin::PjUriExt;
+    use payjoin::UriExt;
+    use std::convert::TryFrom;
 
     match online_subcommand {
         Sync => {
@@ -396,6 +399,7 @@ where
             Ok(json!({ "spendable": spendable }))
         }
 
+        #[cfg(not(feature = "async-interface"))]
         // Payjoin Logic goes here
         SendPayjoin { uri } => {
             // convert the bip21 uri into a payjoin uri, and handle error if necessary
@@ -406,7 +410,7 @@ where
             // ensure uri is payjoin capable
             let uri = uri
                 .check_pj_supported()
-                .map_err(|e| Error::Generic(format!("Payjoin not supported: {}", e)))?;
+                .map_err(|e| Error::Generic(format!("Payjoin not supported: {}", e.to_string())))?;
 
             // ensure amount of satoshis is specified in uri, handle error if not
             let sats = match uri.amount {
@@ -483,7 +487,7 @@ where
             // get original inputs from original psbt clone (ocean_psbt)
             let mut original_inputs = input_pairs(&mut ocean_psbt).peekable();
 
-            for (proposed_txin, mut proposed_psbtin) in input_pairs(&mut payjoin_psbt) {
+            for (proposed_txin, proposed_psbtin) in input_pairs(&mut payjoin_psbt) {
                 if let Some((original_txin, original_psbtin)) = original_inputs.peek() {
                     if proposed_txin.previous_output == original_txin.previous_output {
                         proposed_psbtin.witness_utxo = original_psbtin.witness_utxo.clone();

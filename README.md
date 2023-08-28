@@ -143,6 +143,8 @@ cargo update -p flate2 --precise 1.0.26
 cargo update -p reqwest --precise "0.11.18"
 # h2 0.3.21 has MSRV 1.63.0+
 cargo update -p h2 --precise "0.3.20"
+# rustls 0.20.9 has MSRV 1.60.0+
+cargo update -p rustls --precise "0.20.8"
 ```
 
 ## Resources

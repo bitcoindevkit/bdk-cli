@@ -527,6 +527,7 @@ pub enum OnlineWalletSubCommand {
         #[clap(name = "CONFIRMATIONS", long = "confirmations", default_value = "6")]
         confirmations: u32,
     },
+    #[cfg(not(feature = "async-interface"))]
     /// Sends a Payjoin Transaction. Takes a valid payjoin bip21 uri.
     SendPayjoin {
         /// Sets the bip21 uri to send to.
