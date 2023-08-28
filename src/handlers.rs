@@ -26,7 +26,7 @@ use bdk::{database::BatchDatabase, wallet::AddressIndex, Error, FeeRate, Keychai
 
 use clap::Parser;
 
-use crate::bitcoin::psbt::Input;
+
 use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
 #[cfg(any(
     feature = "electrum",
@@ -89,8 +89,6 @@ use rustyline::Editor;
 use serde_json::json;
 use std::str::FromStr;
 // Import some modules for payjoin functionality from payjoin crate
-use payjoin::{PjUriExt, UriExt};
-use std::convert::TryFrom;
 
 /// Execute an offline wallet sub-command
 ///
