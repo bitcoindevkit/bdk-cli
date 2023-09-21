@@ -135,16 +135,17 @@ cargo update -p tempfile --precise 3.6.0
 cargo update -p base64ct --precise 1.5.3
 # cc 1.0.82 is throwing error with rust 1.57.0, "error[E0599]: no method named `retain_mut`..."
 cargo update -p cc --precise 1.0.81
-# tokio 0.30.0 has MSRV 1.63.0
-cargo update -p tokio --precise 1.29.1
+
+cargo update -p rustls --precise "0.20.8"
 # flate2 1.0.27 has MSRV 1.63.0+
 cargo update -p flate2 --precise 1.0.26
+
+cargo update -p h2:0.3.21 --precise "0.3.20"
 # reqwest 0.11.19 has MSRV 1.63.0+
-cargo update -p reqwest --precise "0.11.18"
-# h2 0.3.21 has MSRV 1.63.0+
-cargo update -p h2 --precise "0.3.20"
-# rustls 0.20.9 has MSRV 1.60.0+
-cargo update -p rustls --precise "0.20.8"
+cargo update -p reqwest:0.11.20 --precise "0.11.18"
+# tokio 0.32.0 has MSRV 1.63.0
+cargo update -p tokio:1.32.0 --precise 1.29.1
+cargo update -p tokio-util:0.7.9 --precise 0.7.8
 
 ```
 
