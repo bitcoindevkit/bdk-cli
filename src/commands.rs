@@ -320,6 +320,10 @@ pub struct ElectrumOpts {
         default_value = "10"
     )]
     pub stop_gap: usize,
+
+    /// Enable domain validation when connecting to Electrum servers [default: true].
+    #[clap(name = "VALIDATE_DOMAIN", long = "validate_domain")]
+    pub validate_domain: Option<bool>,
 }
 
 /// Options to configure Esplora backend.
@@ -663,6 +667,7 @@ mod test {
                         timeout: None,
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
                         stop_gap: 10,
+                        validate_domain: None,
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
@@ -707,6 +712,7 @@ mod test {
                             "--change_descriptor", "wpkh(tpubDEnoLuPdBep9bzw5LoGYpsxUQYheRQ9gcgrJhJEcdKFB9cWQRyYmkCyRoTqeD4tJYiVVgt6A3rN6rWn9RYhR9sBsGxji29LYWHuKKbdb1ev/1/*)",
                             "--server","ssl://electrum.blockstream.info:50002",
                             "--stop_gap", "20",
+                            "--validate_domain", "false",
                             "get_new_address"];
 
         let cli_opts = CliOpts::from_iter(&cli_args);
@@ -723,7 +729,8 @@ mod test {
                     electrum_opts: ElectrumOpts {
                         timeout: Some(10),
                         server: "ssl://electrum.blockstream.info:50002".to_string(),
-                        stop_gap: 20
+                        stop_gap: 20,
+                        validate_domain: Some(false),
                     },
                     proxy_opts: ProxyOpts{
                         proxy: Some("127.0.0.1:9150".to_string()),
@@ -927,6 +934,7 @@ mod test {
                         timeout: None,
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
                         stop_gap: 10,
+                        validate_domain: None,
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
@@ -1006,6 +1014,7 @@ mod test {
                         timeout: None,
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
                         stop_gap: 10,
+                        validate_domain: None,
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
@@ -1078,6 +1087,7 @@ mod test {
                         timeout: None,
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
                         stop_gap: 10,
+                        validate_domain: None,
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
@@ -1149,6 +1159,7 @@ mod test {
                         timeout: None,
                         server: "ssl://electrum.blockstream.info:60002".to_string(),
                         stop_gap: 10,
+                        validate_domain: None,
                     },
                     #[cfg(feature = "esplora")]
                     esplora_opts: EsploraOpts {
@@ -1486,6 +1497,7 @@ mod test {
                     timeout: None,
                     server: "ssl://electrum.blockstream.info:60002".to_string(),
                     stop_gap: 10,
+                    validate_domain: None,
                 },
             },
         };
