@@ -22,7 +22,7 @@ dirs-next = "2.0"
 env_logger = "0.7"
 base64 = "^0.13"
 # payjoin dependencies
-payjoin = { version = "=0.8.2", features = ["send"] } 
+payjoin = { version = "=0.8.2", features = ["send"] }
 # reqwest 
 reqwest = { version = "0.10.10", features = ["blocking"] }
 

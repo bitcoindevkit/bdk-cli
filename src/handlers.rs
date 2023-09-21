@@ -322,10 +322,10 @@ where
     B: Blockchain,
     D: BatchDatabase,
 {
-    use crate::bitcoin::psbt::Input;
     use bdk::SyncOptions;
-    use payjoin::PjUriExt;
-    use payjoin::UriExt;
+    #[cfg(any(feature = "electrum", feature = "esplora-ureq",))]
+    use payjoin::{bitcoin::psbt::Input, PjUriExt, UriExt};
+
     use std::convert::TryFrom;
 
     match online_subcommand {
@@ -399,7 +399,7 @@ where
             Ok(json!({ "spendable": spendable }))
         }
 
-        #[cfg(not(feature = "async-interface"))]
+        #[cfg(any(feature = "electrum", feature = "esplora-ureq",))]
         // Payjoin Logic goes here
         SendPayjoin { uri } => {
             // convert the bip21 uri into a payjoin uri, and handle error if necessary
