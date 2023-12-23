@@ -15,8 +15,9 @@
 #![allow(clippy::large_enum_variant)]
 use clap::{AppSettings, Parser, Subcommand};
 
-use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
-use bdk::bitcoin::{Address, Network, OutPoint, Script};
+use bdk::bitcoin::address::NetworkUnchecked;
+use bdk::bitcoin::bip32::{DerivationPath, ExtendedPrivKey};
+use bdk::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 
 use crate::utils::{parse_outpoint, parse_recipient};
 #[cfg(any(
@@ -371,7 +372,7 @@ pub enum OfflineWalletSubCommand {
         // Clap Doesn't support complex vector parsing https://github.com/clap-rs/clap/issues/1704.
         // Address and amount parsing is done at run time in handler function.
         #[clap(name = "ADDRESS:SAT", long = "to", required = true, value_parser = parse_recipient)]
-        recipients: Vec<(Script, u64)>,
+        recipients: Vec<(ScriptBuf, u64)>,
         /// Sends all the funds (or all the selected utxos). Requires only one recipient with value 0.
         #[clap(long = "send_all", short = 'a')]
         send_all: bool,
@@ -420,7 +421,7 @@ pub enum OfflineWalletSubCommand {
         txid: String,
         /// Allows the wallet to reduce the amount to the specified address in order to increase fees.
         #[clap(name = "SHRINK_ADDRESS", long = "shrink")]
-        shrink_address: Option<Address>,
+        shrink_address: Option<Address<NetworkUnchecked>>,
         /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
         #[clap(long = "offline_signer")]
         offline_signer: bool,
@@ -603,9 +604,9 @@ mod test {
     use crate::handlers::handle_key_subcommand;
     #[cfg(all(feature = "reserves", feature = "electrum"))]
     use crate::handlers::{handle_ext_reserves_subcommand, handle_online_wallet_subcommand};
-    use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
+    use bdk::bitcoin::bip32::{DerivationPath, ExtendedPrivKey};
     #[cfg(all(feature = "reserves", feature = "electrum"))]
-    use bdk::bitcoin::{consensus::Encodable, util::psbt::PartiallySignedTransaction};
+    use bdk::bitcoin::{consensus::Encodable, psbt::PartiallySignedTransaction};
     use bdk::bitcoin::{Address, Network, OutPoint};
     use bdk::miniscript::bitcoin::network::constants::Network::Testnet;
     #[cfg(all(feature = "reserves", feature = "electrum"))]
@@ -977,10 +978,12 @@ mod test {
 
         let script1 = Address::from_str("n2Z3YNXtceeJhFkTknVaNjT1mnCGWesykJ")
             .unwrap()
+            .payload
             .script_pubkey();
 
         let script2 = Address::from_str("mjDZ34icH4V2k9GmC8niCrhzVuR3z8Mgkf")
             .unwrap()
+            .payload
             .script_pubkey();
 
         let outpoint1 = OutPoint::from_str(

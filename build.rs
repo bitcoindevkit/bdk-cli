@@ -7,7 +7,7 @@ fn main() {
         env::var_os("CARGO_FEATURE_COMPACT_FILTERS").map(|_| "compact_filters".to_string());
     let rpc = env::var_os("CARGO_FEATURE_RPC").map(|_| "rpc".to_string());
 
-    let blockchain_features: Vec<String> = vec![electrum, esplora, compact_filters, rpc]
+    let blockchain_features: Vec<String> = [electrum, esplora, compact_filters, rpc]
         .iter()
         .filter_map(|f| f.to_owned())
         .collect();
@@ -20,7 +20,7 @@ fn main() {
         env::var_os("CARGO_FEATURE_KEY_VALUE_DB").map(|_| "key-value-db".to_string());
     let sqlite_db = env::var_os("CARGO_FEATURE_SQLITE_DB").map(|_| "sqlite-db".to_string());
 
-    let database_features: Vec<String> = vec![key_value_db, sqlite_db]
+    let database_features: Vec<String> = [key_value_db, sqlite_db]
         .iter()
         .filter_map(|f| f.to_owned())
         .collect();
