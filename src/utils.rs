@@ -22,7 +22,7 @@ use bdk::bitcoin::TxOut;
 use crate::commands::WalletOpts;
 use crate::nodes::Nodes;
 use bdk::bitcoin::secp256k1::Secp256k1;
-use bdk::bitcoin::{Address, Network, OutPoint, Script};
+use bdk::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 #[cfg(feature = "compact_filters")]
 use bdk::blockchain::compact_filters::{BitcoinPeerConfig, CompactFiltersBlockchainConfig};
 #[cfg(feature = "esplora")]
@@ -79,7 +79,7 @@ pub(crate) fn maybe_descriptor_wallet_name(
 }
 
 /// Parse the recipient (Address,Amount) argument from cli input.
-pub(crate) fn parse_recipient(s: &str) -> Result<(Script, u64), String> {
+pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
     let parts: Vec<_> = s.split(':').collect();
     if parts.len() != 2 {
         return Err("Invalid format".to_string());
@@ -87,7 +87,7 @@ pub(crate) fn parse_recipient(s: &str) -> Result<(Script, u64), String> {
     let addr = Address::from_str(parts[0]).map_err(|e| e.to_string())?;
     let val = u64::from_str(parts[1]).map_err(|e| e.to_string())?;
 
-    Ok((addr.script_pubkey(), val))
+    Ok((addr.payload.script_pubkey(), val))
 }
 
 #[cfg(any(

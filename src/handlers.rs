@@ -11,6 +11,7 @@
 //! This module describes all the command handling logic used by bdk-cli.
 
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
 
 use crate::commands::OfflineWalletSubCommand::*;
 #[cfg(any(
@@ -26,7 +27,8 @@ use bdk::{database::BatchDatabase, wallet::AddressIndex, Error, FeeRate, Keychai
 
 use clap::Parser;
 
-use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
+use bdk::bitcoin::bip32::{DerivationPath, KeySource};
+use bdk::bitcoin::consensus::encode::serialize_hex;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -34,9 +36,9 @@ use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
     feature = "rpc"
 ))]
 use bdk::bitcoin::hashes::hex::FromHex;
+use bdk::bitcoin::psbt::PartiallySignedTransaction;
+use bdk::bitcoin::script::PushBytesBuf;
 use bdk::bitcoin::secp256k1::Secp256k1;
-use bdk::bitcoin::util::bip32::{DerivationPath, KeySource};
-use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Network, Txid};
 #[cfg(any(
     feature = "electrum",
@@ -113,9 +115,9 @@ where
                 }))
             }
         }
-        ListUnspent => Ok(serde_json::to_value(&wallet.list_unspent()?)?),
+        ListUnspent => Ok(serde_json::to_value(wallet.list_unspent()?)?),
         ListTransactions => Ok(serde_json::to_value(
-            &wallet.list_transactions(wallet_opts.verbose)?,
+            wallet.list_transactions(wallet_opts.verbose)?,
         )?),
         GetBalance => Ok(json!({"satoshi": wallet.get_balance()?})),
         CreateTx {
@@ -160,10 +162,16 @@ where
             }
 
             if let Some(base64_data) = add_data {
-                let op_return_data = base64::decode(&base64_data).unwrap();
-                tx_builder.add_data(op_return_data.as_slice());
+                let op_return_data = base64::decode(base64_data).unwrap();
+                tx_builder.add_data(
+                    &PushBytesBuf::try_from(op_return_data)
+                        .map_err(|e| Error::Generic(e.to_string()))?,
+                );
             } else if let Some(string_data) = add_string {
-                tx_builder.add_data(string_data.as_bytes());
+                tx_builder.add_data(
+                    &PushBytesBuf::try_from(Vec::from(string_data))
+                        .map_err(|e| Error::Generic(e.to_string()))?,
+                );
             }
 
             let policies = vec![
@@ -178,12 +186,11 @@ where
             }
 
             let (psbt, details) = tx_builder.finish()?;
+            let base64_psbt = base64::encode(psbt.serialize());
             if wallet_opts.verbose {
-                Ok(
-                    json!({"psbt": base64::encode(serialize(&psbt)),"details": details, "serialized_psbt": psbt}),
-                )
+                Ok(json!({"psbt": base64_psbt,"details": details, "serialized_psbt": psbt}))
             } else {
-                Ok(json!({"psbt": base64::encode(serialize(&psbt)),"details": details}))
+                Ok(json!({"psbt": base64_psbt,"details": details}))
             }
         }
         BumpFee {
@@ -200,7 +207,7 @@ where
             tx_builder.fee_rate(FeeRate::from_sat_per_vb(fee_rate));
 
             if let Some(address) = shrink_address {
-                let script_pubkey = address.script_pubkey();
+                let script_pubkey = address.payload.script_pubkey();
                 tx_builder.allow_shrinking(script_pubkey)?;
             }
 
@@ -217,7 +224,7 @@ where
             }
 
             let (psbt, details) = tx_builder.finish()?;
-            Ok(json!({"psbt": base64::encode(serialize(&psbt)),"details": details,}))
+            Ok(json!({"psbt": base64::encode(psbt.serialize()),"details": details,}))
         }
         Policies => Ok(json!({
             "external": wallet.policies(KeychainKind::External)?,
@@ -233,7 +240,8 @@ where
             trust_witness_utxo,
         } => {
             let psbt = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
-            let mut psbt: PartiallySignedTransaction = deserialize(&psbt)?;
+            let mut psbt: PartiallySignedTransaction =
+                PartiallySignedTransaction::deserialize(&psbt)?;
             let signopt = SignOptions {
                 assume_height,
                 trust_witness_utxo: trust_witness_utxo.unwrap_or(false),
@@ -242,15 +250,15 @@ where
             let finalized = wallet.sign(&mut psbt, signopt)?;
             if wallet_opts.verbose {
                 Ok(
-                    json!({"psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized, "serialized_psbt": psbt}),
+                    json!({"psbt": base64::encode(psbt.serialize()),"is_finalized": finalized, "serialized_psbt": psbt}),
                 )
             } else {
-                Ok(json!({"psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized,}))
+                Ok(json!({"psbt": base64::encode(psbt.serialize()),"is_finalized": finalized,}))
             }
         }
         ExtractPsbt { psbt } => {
             let psbt = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
-            let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
+            let psbt: PartiallySignedTransaction = PartiallySignedTransaction::deserialize(&psbt)?;
             Ok(json!({"raw_tx": serialize_hex(&psbt.extract_tx()),}))
         }
         FinalizePsbt {
@@ -259,7 +267,8 @@ where
             trust_witness_utxo,
         } => {
             let psbt = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
-            let mut psbt: PartiallySignedTransaction = deserialize(&psbt)?;
+            let mut psbt: PartiallySignedTransaction =
+                PartiallySignedTransaction::deserialize(&psbt)?;
 
             let signopt = SignOptions {
                 assume_height,
@@ -267,12 +276,11 @@ where
                 ..Default::default()
             };
             let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
+            let base64_psbt = base64::encode(psbt.serialize());
             if wallet_opts.verbose {
-                Ok(
-                    json!({ "psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized, "serialized_psbt": psbt}),
-                )
+                Ok(json!({ "psbt": base64_psbt,"is_finalized": finalized, "serialized_psbt": psbt}))
             } else {
-                Ok(json!({ "psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized,}))
+                Ok(json!({ "psbt": base64_psbt,"is_finalized": finalized,}))
             }
         }
         CombinePsbt { psbt } => {
@@ -280,7 +288,8 @@ where
                 .iter()
                 .map(|s| {
                     let psbt = base64::decode(s).map_err(|e| Error::Generic(e.to_string()))?;
-                    let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
+                    let psbt: PartiallySignedTransaction =
+                        PartiallySignedTransaction::deserialize(&psbt)?;
                     Ok(psbt)
                 })
                 .collect::<Result<Vec<_>, Error>>()?;
@@ -297,7 +306,7 @@ where
                         Ok(acc)
                     },
                 )?;
-            Ok(json!({ "psbt": base64::encode(serialize(&final_psbt)) }))
+            Ok(json!({ "psbt": base64::encode(final_psbt.serialize()) }))
         }
     }
 }
