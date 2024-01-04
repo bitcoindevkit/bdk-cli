@@ -527,6 +527,13 @@ pub enum OnlineWalletSubCommand {
         #[clap(name = "CONFIRMATIONS", long = "confirmations", default_value = "6")]
         confirmations: u32,
     },
+    #[cfg(any(feature = "electrum", feature = "esplora-ureq",))]
+    /// Sends a Payjoin Transaction. Takes a valid payjoin bip21 uri.
+    SendPayjoin {
+        /// Sets the bip21 uri to send to.
+        #[clap(name = "URI", long = "uri")]
+        uri: String,
+    },
 }
 
 /// Subcommands for Key operations.
@@ -616,6 +623,8 @@ mod test {
     use std::str::{self, FromStr};
 
     use super::OfflineWalletSubCommand::{BumpFee, CreateTx, GetNewAddress};
+    #[cfg(any(feature = "electrum", feature = "esplora-ureq",))]
+    use super::OnlineWalletSubCommand::SendPayjoin;
     #[cfg(any(
         feature = "electrum",
         feature = "esplora",
