@@ -28,7 +28,7 @@ The codebase is maintained using the "contributor workflow" where everyone
 without exception contributes patch proposals using "pull requests". This
 facilitates social contribution, easy testing and peer review.
 
-To contribute a patch, the worflow is a as follows:
+To contribute a patch, the workflow is as follows:
 
   1. Fork Repository
   2. Create topic branch
@@ -76,7 +76,7 @@ This is also enforced by the CI.
 Security
 --------
 
-Security is a high priority of BDK; disclosure of security vulnerabilites helps
+Security is a high priority of BDK; disclosure of security vulnerabilities helps
 prevent user loss of funds.
 
 Note that BDK is currently considered "pre-production" during this time, there
