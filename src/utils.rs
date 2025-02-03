@@ -10,49 +10,46 @@
 //!
 //! This module includes all the utility tools used by the App.
 
+use bdk::Error;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 #[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk::electrum_client::{Client, ElectrumApi};
+use bdk_wallet::electrum_client::{Client, ElectrumApi};
 
 #[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk::bitcoin::TxOut;
+use bdk_wallet::bitcoin::TxOut;
 
 use crate::commands::WalletOpts;
 use crate::nodes::Nodes;
-use bdk::bitcoin::secp256k1::Secp256k1;
-use bdk::bitcoin::{Address, Network, OutPoint, Script};
-#[cfg(feature = "compact_filters")]
-use bdk::blockchain::compact_filters::{BitcoinPeerConfig, CompactFiltersBlockchainConfig};
-#[cfg(feature = "esplora")]
-use bdk::blockchain::esplora::EsploraBlockchainConfig;
-#[cfg(feature = "rpc")]
-use bdk::blockchain::rpc::{Auth, RpcConfig, RpcSyncParams};
-#[cfg(feature = "electrum")]
-use bdk::blockchain::ElectrumBlockchainConfig;
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "compact_filters",
-    feature = "rpc"
-))]
-use bdk::blockchain::{AnyBlockchain, AnyBlockchainConfig, ConfigurableBlockchain};
-#[cfg(feature = "key-value-db")]
-use bdk::database::any::SledDbConfiguration;
-#[cfg(feature = "sqlite-db")]
-use bdk::database::any::SqliteDbConfiguration;
-use bdk::database::{AnyDatabase, AnyDatabaseConfig, BatchDatabase, ConfigurableDatabase};
 #[cfg(feature = "hardware-signer")]
 use bdk::hwi::{interface::HWIClient, types::HWIChain};
 #[cfg(feature = "hardware-signer")]
 use bdk::wallet::hardwaresigner::HWISigner;
 #[cfg(feature = "hardware-signer")]
 use bdk::wallet::signer::{SignerError, SignerOrdering};
-use bdk::wallet::wallet_name_from_descriptor;
+use bdk_wallet::bitcoin::secp256k1::Secp256k1;
+use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
+#[cfg(feature = "compact_filters")]
+use bdk_wallet::blockchain::compact_filters::{BitcoinPeerConfig, CompactFiltersBlockchainConfig};
+#[cfg(feature = "esplora")]
+use bdk_wallet::blockchain::esplora::EsploraBlockchainConfig;
+#[cfg(feature = "rpc")]
+use bdk_wallet::blockchain::rpc::{Auth, RpcConfig, RpcSyncParams};
+#[cfg(feature = "electrum")]
+use bdk_wallet::blockchain::ElectrumBlockchainConfig;
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "compact_filters",
+    feature = "rpc"
+))]
+use bdk_wallet::blockchain::{AnyBlockchain, AnyBlockchainConfig, ConfigurableBlockchain};
+#[cfg(feature = "sqlite-db")]
+use bdk_wallet::rusqlite::{Connection, OpenFlags};
 #[cfg(feature = "hardware-signer")]
-use bdk::KeychainKind;
-use bdk::{Error, Wallet};
+use bdk_wallet::KeychainKind;
+use bdk_wallet::{wallet_name_from_descriptor, PersistedWallet, Wallet};
 #[cfg(feature = "hardware-signer")]
 use std::sync::Arc;
 
@@ -71,7 +68,8 @@ pub(crate) fn maybe_descriptor_wallet_name(
         wallet_opts.change_descriptor.as_deref(),
         network,
         &Secp256k1::new(),
-    )?;
+    )
+    .map_err(|e| Error::Generic(e.to_string()))?;
     let mut wallet_opts = wallet_opts;
     wallet_opts.wallet = Some(wallet_name);
 
@@ -79,12 +77,14 @@ pub(crate) fn maybe_descriptor_wallet_name(
 }
 
 /// Parse the recipient (Address,Amount) argument from cli input.
-pub(crate) fn parse_recipient(s: &str) -> Result<(Script, u64), String> {
+pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
     let parts: Vec<_> = s.split(':').collect();
     if parts.len() != 2 {
         return Err("Invalid format".to_string());
     }
-    let addr = Address::from_str(parts[0]).map_err(|e| e.to_string())?;
+    let addr = Address::from_str(parts[0])
+        .map_err(|e| e.to_string())?
+        .assume_checked();
     let val = u64::from_str(parts[1]).map_err(|e| e.to_string())?;
 
     Ok((addr.script_pubkey(), val))
@@ -149,6 +149,13 @@ pub(crate) fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
     OutPoint::from_str(s).map_err(|e| e.to_string())
 }
 
+/// Parse an address string into `Address<NetworkChecked>`.
+pub(crate) fn parse_address(address_str: &str) -> Result<Address, String> {
+    let unchecked_address =
+        Address::from_str(address_str).map_err(|e| format!("Failed to parse address: {}", e))?;
+    Ok(unchecked_address.assume_checked())
+}
+
 /// Prepare bdk-cli home directory
 ///
 /// This function is called to check if [`crate::CliOpts`] datadir is set.
@@ -157,7 +164,7 @@ pub(crate) fn prepare_home_dir(home_path: Option<PathBuf>) -> Result<PathBuf, Er
     let dir = home_path.unwrap_or_else(|| {
         let mut dir = PathBuf::new();
         dir.push(
-            &dirs_next::home_dir()
+            dirs_next::home_dir()
                 .ok_or_else(|| Error::Generic("home dir not found".to_string()))
                 .unwrap(),
         );
@@ -174,11 +181,7 @@ pub(crate) fn prepare_home_dir(home_path: Option<PathBuf>) -> Result<PathBuf, Er
 }
 
 /// Prepare bdk_cli wallet directory.
-#[cfg(any(
-    feature = "key-value-db",
-    feature = "sqlite-db",
-    feature = "compact_filters"
-))]
+#[cfg(any(feature = "sqlite-db", feature = "compact_filters"))]
 fn prepare_wallet_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf, Error> {
     let mut dir = home_path.to_owned();
 
@@ -193,21 +196,11 @@ fn prepare_wallet_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf, Er
 }
 
 /// Prepare wallet database directory.
-#[cfg(any(feature = "key-value-db", feature = "sqlite-db",))]
+#[cfg(feature = "sqlite-db")]
 fn prepare_wallet_db_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf, Error> {
     let mut db_dir = prepare_wallet_dir(wallet_name, home_path)?;
 
-    #[cfg(feature = "key-value-db")]
-    db_dir.push("wallet.sled");
-
-    #[cfg(feature = "sqlite-db")]
     db_dir.push("wallet.sqlite");
-
-    #[cfg(not(feature = "sqlite-db"))]
-    if !db_dir.exists() {
-        log::info!("Creating database directory {}", db_dir.as_path().display());
-        std::fs::create_dir(&db_dir).map_err(|e| Error::Generic(e.to_string()))?;
-    }
 
     Ok(db_dir)
 }
@@ -265,34 +258,19 @@ pub(crate) fn prepare_electrum_datadir(home_path: &Path) -> Result<PathBuf, Erro
 }
 
 #[allow(unused_variables)]
+#[cfg(feature = "sqlite-db")]
 /// Open the wallet database.
 pub(crate) fn open_database(
     wallet_opts: &WalletOpts,
     home_path: &Path,
-) -> Result<AnyDatabase, Error> {
+) -> Result<Connection, Error> {
     let wallet_name = wallet_opts.wallet.as_ref().expect("wallet name");
-    #[cfg(any(feature = "key-value-db", feature = "sqlite-db",))]
     let database_path = prepare_wallet_db_dir(wallet_name, home_path)?;
 
-    #[cfg(feature = "key-value-db")]
-    let config = AnyDatabaseConfig::Sled(SledDbConfiguration {
-        path: database_path
-            .into_os_string()
-            .into_string()
-            .expect("path string"),
-        tree_name: wallet_name.to_string(),
-    });
-    #[cfg(feature = "sqlite-db")]
-    let config = AnyDatabaseConfig::Sqlite(SqliteDbConfiguration {
-        path: database_path
-            .into_os_string()
-            .into_string()
-            .expect("path string"),
-    });
-    #[cfg(not(any(feature = "key-value-db", feature = "sqlite-db")))]
-    let config = AnyDatabaseConfig::Memory(());
+    let db_file = database_path.join("wallet.sqlite");
 
-    let database = AnyDatabase::from_config(&config)?;
+    let database = Connection::open_with_flags(db_file, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+
     log::debug!("database opened successfully");
     Ok(database)
 }
@@ -496,17 +474,17 @@ pub(crate) fn new_blockchain(
 }
 
 /// Create a new wallet from given wallet configuration options.
-pub(crate) fn new_wallet<D>(
+pub(crate) fn new_wallet(
     network: Network,
     wallet_opts: &WalletOpts,
-    database: D,
-) -> Result<Wallet<D>, Error>
-where
-    D: BatchDatabase,
-{
-    let descriptor = wallet_opts.descriptor.as_str();
-    let change_descriptor = wallet_opts.change_descriptor.as_deref();
-    let wallet = Wallet::new(descriptor, change_descriptor, network, database)?;
+    mut database: Connection,
+) -> Result<PersistedWallet<Connection>, Error> {
+    let descriptor = wallet_opts.descriptor.clone();
+    let change_descriptor = wallet_opts.change_descriptor.clone();
+    let wallet = Wallet::create(descriptor, change_descriptor.unwrap())
+        .network(network)
+        .create_wallet(&mut database)
+        .map_err(|e| Error::Generic(e.to_string()))?;
 
     #[cfg(feature = "hardware-signer")]
     let wallet = add_hardware_signers(wallet, network)?;
@@ -516,16 +494,18 @@ where
 
 /// Add hardware wallets as signers to the wallet
 #[cfg(feature = "hardware-signer")]
-fn add_hardware_signers<D>(wallet: Wallet<D>, network: Network) -> Result<Wallet<D>, Error>
-where
-    D: BatchDatabase,
-{
+fn add_hardware_signers(
+    wallet: PersistedWallet<Connection>,
+    network: Network,
+) -> Result<PersistedWallet<Connection>, Error> {
     let mut wallet = wallet;
     let chain = match network {
         Network::Bitcoin => HWIChain::Main,
         Network::Testnet => HWIChain::Test,
         Network::Regtest => HWIChain::Regtest,
         Network::Signet => HWIChain::Signet,
+        Network::Testnet4 => HWIChain::Test,
+        _ => Err(Error::Generic("Unsupported network".to_string()))?,
     };
     let devices = HWIClient::enumerate().map_err(|e| SignerError::from(e))?;
     for device in devices {
