@@ -11,6 +11,7 @@
 //! This module describes all the command handling logic used by bdk-cli.
 
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
 
 use crate::commands::OfflineWalletSubCommand::*;
 #[cfg(any(
@@ -22,51 +23,47 @@ use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::OnlineWalletSubCommand::*;
 use crate::commands::*;
 use crate::utils::*;
-use bdk::{database::BatchDatabase, wallet::AddressIndex, Error, FeeRate, KeychainKind, Wallet};
+use bdk::Error;
+use bdk_wallet::bip39::{Language, Mnemonic};
+use bdk_wallet::bitcoin::script::PushBytesBuf;
+use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
+use bdk_wallet::rusqlite::Connection;
 
+use bdk_wallet::keys::bip39::WordCount;
+use bdk_wallet::{KeychainKind, PersistedWallet};
 use clap::Parser;
 
-use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
+use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
+use bdk_wallet::bitcoin::consensus::encode::{serialize, serialize_hex};
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
     feature = "compact_filters",
     feature = "rpc"
 ))]
-use bdk::bitcoin::hashes::hex::FromHex;
-use bdk::bitcoin::secp256k1::Secp256k1;
-use bdk::bitcoin::util::bip32::{DerivationPath, KeySource};
-use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-use bdk::bitcoin::{Network, Txid};
+use bdk_wallet::bitcoin::hashes::hex::FromHex;
+use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Network, Txid};
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
     feature = "compact_filters",
     feature = "rpc"
 ))]
-use bdk::blockchain::{log_progress, Blockchain};
-use bdk::descriptor::Segwitv0;
+use bdk_wallet::blockchain::{log_progress, Blockchain};
+use bdk_wallet::descriptor::Segwitv0;
 #[cfg(feature = "compiler")]
-use bdk::descriptor::{Descriptor, Legacy, Miniscript};
+use bdk_wallet::descriptor::{Descriptor, Legacy, Miniscript};
 #[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk::electrum_client::{Client, ElectrumApi};
+use bdk_wallet::electrum_client::{Client, ElectrumApi};
 #[cfg(feature = "hardware-signer")]
-use bdk::hwi::{
+use bdk_wallet::hwi::{
     interface::HWIClient,
     types::{HWIChain, HWIDescriptor},
 };
-use bdk::keys::bip39::{Language, Mnemonic, WordCount};
-use bdk::keys::DescriptorKey::Secret;
-use bdk::keys::KeyError::{InvalidNetwork, Message};
-use bdk::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
-use bdk::miniscript::miniscript;
-#[cfg(feature = "compiler")]
-use bdk::miniscript::policy::Concrete;
-#[cfg(feature = "hardware-signer")]
-use bdk::wallet::signer::SignerError;
-use bdk::SignOptions;
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk::{bitcoin::Address, blockchain::Capability};
+use bdk_wallet::keys::DescriptorKey::Secret;
+use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
+use bdk_wallet::miniscript::miniscript;
+
 use bdk_macros::maybe_async;
 #[cfg(any(
     feature = "electrum",
@@ -79,6 +76,13 @@ use bdk_macros::maybe_await;
 use bdk_reserves::reserves::verify_proof;
 #[cfg(feature = "reserves")]
 use bdk_reserves::reserves::ProofOfReserves;
+#[cfg(feature = "compiler")]
+use bdk_wallet::miniscript::policy::Concrete;
+#[cfg(feature = "hardware-signer")]
+use bdk_wallet::wallet::signer::SignerError;
+use bdk_wallet::SignOptions;
+#[cfg(all(feature = "reserves", feature = "electrum"))]
+use bdk_wallet::{bitcoin::Address, blockchain::Capability};
 #[cfg(feature = "repl")]
 use regex::Regex;
 #[cfg(feature = "repl")]
@@ -91,17 +95,14 @@ use std::str::FromStr;
 /// Execute an offline wallet sub-command
 ///
 /// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
-pub fn handle_offline_wallet_subcommand<D>(
-    wallet: &Wallet<D>,
+pub fn handle_offline_wallet_subcommand(
+    wallet: &mut PersistedWallet<Connection>,
     wallet_opts: &WalletOpts,
     offline_subcommand: OfflineWalletSubCommand,
-) -> Result<serde_json::Value, Error>
-where
-    D: BatchDatabase,
-{
+) -> Result<serde_json::Value, Error> {
     match offline_subcommand {
         GetNewAddress => {
-            let addr = wallet.get_address(AddressIndex::New)?;
+            let addr = wallet.reveal_next_address(KeychainKind::External);
             if wallet_opts.verbose {
                 Ok(json!({
                     "address": addr.address,
@@ -113,11 +114,28 @@ where
                 }))
             }
         }
-        ListUnspent => Ok(serde_json::to_value(&wallet.list_unspent()?)?),
-        ListTransactions => Ok(serde_json::to_value(
-            &wallet.list_transactions(wallet_opts.verbose)?,
+        ListUnspent => Ok(serde_json::to_value(
+            wallet.list_unspent().collect::<Vec<_>>(),
         )?),
-        GetBalance => Ok(json!({"satoshi": wallet.get_balance()?})),
+        ListTransactions => {
+            let transactions: Vec<_> = wallet
+                .transactions()
+                .map(|tx| {
+                    json!({
+                        "txid": tx.tx_node.txid,
+                        "is_coinbase": tx.tx_node.is_coinbase(),
+                        "wtxid": tx.tx_node.compute_wtxid(),
+                        "version": tx.tx_node.version,
+                        "is_rbf": tx.tx_node.is_explicitly_rbf(),
+                        "inputs": tx.tx_node.input,
+                        "outputs": tx.tx_node.output,
+                    })
+                })
+                .collect();
+
+            Ok(serde_json::to_value(transactions)?)
+        }
+        GetBalance => Ok(json!({"satoshi": wallet.balance()})),
         CreateTx {
             recipients,
             send_all,
@@ -136,11 +154,15 @@ where
             if send_all {
                 tx_builder.drain_wallet().drain_to(recipients[0].0.clone());
             } else {
+                let recipients = recipients
+                    .into_iter()
+                    .map(|(script, amount)| (script, Amount::from_sat(amount)))
+                    .collect();
                 tx_builder.set_recipients(recipients);
             }
 
-            if enable_rbf {
-                tx_builder.enable_rbf();
+            if !enable_rbf {
+                tx_builder.set_exact_sequence(Sequence::MAX);
             }
 
             if offline_signer {
@@ -148,11 +170,13 @@ where
             }
 
             if let Some(fee_rate) = fee_rate {
-                tx_builder.fee_rate(FeeRate::from_sat_per_vb(fee_rate));
+                if let Some(fee_rate) = FeeRate::from_sat_per_vb(fee_rate as u64) {
+                    tx_builder.fee_rate(fee_rate);
+                }
             }
 
             if let Some(utxos) = utxos {
-                tx_builder.add_utxos(&utxos[..])?.manually_selected_only();
+                tx_builder.add_utxos(&utxos[..]);
             }
 
             if let Some(unspendable) = unspendable {
@@ -161,9 +185,10 @@ where
 
             if let Some(base64_data) = add_data {
                 let op_return_data = base64::decode(&base64_data).unwrap();
-                tx_builder.add_data(op_return_data.as_slice());
+                tx_builder.add_data(&PushBytesBuf::try_from(op_return_data).unwrap());
             } else if let Some(string_data) = add_string {
-                tx_builder.add_data(string_data.as_bytes());
+                let data = PushBytesBuf::try_from(string_data.as_bytes().to_vec()).unwrap();
+                tx_builder.add_data(&data);
             }
 
             let policies = vec![
@@ -177,13 +202,19 @@ where
                 tx_builder.policy_path(policy, keychain);
             }
 
-            let (psbt, details) = tx_builder.finish()?;
+            let psbt = tx_builder
+                .finish()
+                .map_err(|e| Error::Generic(e.to_string()))?;
+
+            let serialized_psbt = psbt.serialize();
+            let psbt_base64 = base64::encode(&serialized_psbt);
+
             if wallet_opts.verbose {
                 Ok(
-                    json!({"psbt": base64::encode(serialize(&psbt)),"details": details, "serialized_psbt": psbt}),
+                    json!({"psbt": psbt_base64, "serialized_psbt": serialized_psbt, "details": psbt}),
                 )
             } else {
-                Ok(json!({"psbt": base64::encode(serialize(&psbt)),"details": details}))
+                Ok(json!({"psbt": psbt_base64, "details": psbt}))
             }
         }
         BumpFee {
@@ -196,12 +227,16 @@ where
         } => {
             let txid = Txid::from_str(txid.as_str()).map_err(|s| Error::Generic(s.to_string()))?;
 
-            let mut tx_builder = wallet.build_fee_bump(txid)?;
-            tx_builder.fee_rate(FeeRate::from_sat_per_vb(fee_rate));
+            let mut tx_builder = wallet
+                .build_fee_bump(txid)
+                .map_err(|e| Error::Generic(e.to_string()))?;
+            let fee_rate =
+                FeeRate::from_sat_per_vb(fee_rate as u64).unwrap_or(FeeRate::BROADCAST_MIN);
+            tx_builder.fee_rate(fee_rate);
 
             if let Some(address) = shrink_address {
                 let script_pubkey = address.script_pubkey();
-                tx_builder.allow_shrinking(script_pubkey)?;
+                tx_builder.drain_to(script_pubkey);
             }
 
             if offline_signer {
@@ -209,70 +244,100 @@ where
             }
 
             if let Some(utxos) = utxos {
-                tx_builder.add_utxos(&utxos[..])?;
+                tx_builder.add_utxos(&utxos[..]);
             }
 
             if let Some(unspendable) = unspendable {
                 tx_builder.unspendable(unspendable);
             }
 
-            let (psbt, details) = tx_builder.finish()?;
-            Ok(json!({"psbt": base64::encode(serialize(&psbt)),"details": details,}))
+            let psbt = tx_builder
+                .finish()
+                .map_err(|e| Error::Generic(e.to_string()))?;
+
+            let serialized_psbt = psbt.serialize();
+            let psbt_base64 = base64::encode(serialized_psbt);
+
+            Ok(json!({"psbt": psbt_base64, "details": psbt}))
         }
-        Policies => Ok(json!({
-            "external": wallet.policies(KeychainKind::External)?,
-            "internal": wallet.policies(KeychainKind::Internal)?,
-        })),
+        Policies => {
+            let external_policy = wallet
+                .policies(KeychainKind::External)
+                .map_err(|e| Error::Generic(e.to_string()))?;
+            let internal_policy = wallet
+                .policies(KeychainKind::Internal)
+                .map_err(|e| Error::Generic(e.to_string()))?;
+
+            Ok(json!({
+                "external": external_policy,
+                "internal": internal_policy,
+            }))
+        }
         PublicDescriptor => Ok(json!({
-            "external": wallet.public_descriptor(KeychainKind::External)?.map(|d| d.to_string()),
-            "internal": wallet.public_descriptor(KeychainKind::Internal)?.map(|d| d.to_string()),
+            "external": wallet.public_descriptor(KeychainKind::External).to_string(),
+            "internal": wallet.public_descriptor(KeychainKind::Internal).to_string(),
         })),
         Sign {
             psbt,
             assume_height,
             trust_witness_utxo,
         } => {
-            let psbt = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
-            let mut psbt: PartiallySignedTransaction = deserialize(&psbt)?;
+            let psbt_bytes = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
+            let mut psbt =
+                Psbt::deserialize(&psbt_bytes).map_err(|e| Error::Generic(e.to_string()))?;
             let signopt = SignOptions {
                 assume_height,
                 trust_witness_utxo: trust_witness_utxo.unwrap_or(false),
                 ..Default::default()
             };
-            let finalized = wallet.sign(&mut psbt, signopt)?;
+            let finalized = wallet
+                .sign(&mut psbt, signopt)
+                .map_err(|e| Error::Generic(e.to_string()))?;
             if wallet_opts.verbose {
                 Ok(
-                    json!({"psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized, "serialized_psbt": psbt}),
+                    json!({"psbt": base64::encode(serialize(&psbt_bytes)),"is_finalized": finalized, "serialized_psbt": psbt}),
                 )
             } else {
-                Ok(json!({"psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized,}))
+                Ok(
+                    json!({"psbt": base64::encode(serialize(&psbt_bytes)),"is_finalized": finalized,}),
+                )
             }
         }
         ExtractPsbt { psbt } => {
-            let psbt = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
-            let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
-            Ok(json!({"raw_tx": serialize_hex(&psbt.extract_tx()),}))
+            let psbt_serialized =
+                base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
+            let psbt =
+                Psbt::deserialize(&psbt_serialized).map_err(|e| Error::Generic(e.to_string()))?;
+            let raw_tx = psbt
+                .extract_tx()
+                .map_err(|e| Error::Generic(e.to_string()))?;
+            Ok(json!({"raw_tx": serialize_hex(&raw_tx),}))
         }
         FinalizePsbt {
             psbt,
             assume_height,
             trust_witness_utxo,
         } => {
-            let psbt = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
-            let mut psbt: PartiallySignedTransaction = deserialize(&psbt)?;
+            let psbt_bytes = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
+            let mut psbt: Psbt =
+                Psbt::deserialize(&psbt_bytes).map_err(|e| Error::Generic(e.to_string()))?;
 
             let signopt = SignOptions {
                 assume_height,
                 trust_witness_utxo: trust_witness_utxo.unwrap_or(false),
                 ..Default::default()
             };
-            let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
+            let finalized = wallet
+                .finalize_psbt(&mut psbt, signopt)
+                .map_err(|e| Error::Generic(e.to_string()))?;
             if wallet_opts.verbose {
                 Ok(
-                    json!({ "psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized, "serialized_psbt": psbt}),
+                    json!({ "psbt": base64::encode(serialize(&psbt_bytes)),"is_finalized": finalized, "serialized_psbt": psbt}),
                 )
             } else {
-                Ok(json!({ "psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized,}))
+                Ok(
+                    json!({ "psbt": base64::encode(serialize(&psbt_bytes)),"is_finalized": finalized,}),
+                )
             }
         }
         CombinePsbt { psbt } => {
@@ -280,7 +345,8 @@ where
                 .iter()
                 .map(|s| {
                     let psbt = base64::decode(s).map_err(|e| Error::Generic(e.to_string()))?;
-                    let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
+                    let psbt: Psbt =
+                        Psbt::deserialize(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
                     Ok(psbt)
                 })
                 .collect::<Result<Vec<_>, Error>>()?;
@@ -288,16 +354,14 @@ where
             let init_psbt = psbts
                 .pop()
                 .ok_or_else(|| Error::Generic("Invalid PSBT input".to_string()))?;
-            let final_psbt = psbts
-                .into_iter()
-                .try_fold::<_, _, Result<PartiallySignedTransaction, Error>>(
-                    init_psbt,
-                    |mut acc, x| {
-                        acc.combine(x)?;
-                        Ok(acc)
-                    },
-                )?;
-            Ok(json!({ "psbt": base64::encode(serialize(&final_psbt)) }))
+            let final_psbt = psbts.into_iter().try_fold::<_, _, Result<Psbt, Error>>(
+                init_psbt,
+                |mut acc, x| {
+                    let _ = acc.combine(x);
+                    Ok(acc)
+                },
+            )?;
+            Ok(json!({ "psbt": base64::encode(final_psbt.serialize()) }))
         }
     }
 }
@@ -449,13 +513,15 @@ pub(crate) fn handle_key_subcommand(
                 Mnemonic::generate((mnemonic_type, Language::English))
                     .map_err(|_| Error::Generic("Mnemonic generation error".to_string()))?;
             let mnemonic = mnemonic.into_key();
-            let xkey: ExtendedKey = (mnemonic.clone(), password).into_extended_key()?;
+            let xkey: ExtendedKey = (mnemonic.clone(), password)
+                .into_extended_key()
+                .map_err(|e| Error::Generic(format!("Extended key generation error: {:?}", e)))?;
             let xprv = xkey.into_xprv(network).ok_or_else(|| {
                 Error::Generic("Privatekey info not found (should not happen)".to_string())
             })?;
             let fingerprint = xprv.fingerprint(&secp);
             let phrase = mnemonic
-                .word_iter()
+                .words()
                 .fold("".to_string(), |phrase, w| phrase + w + " ")
                 .trim()
                 .to_string();
@@ -466,7 +532,9 @@ pub(crate) fn handle_key_subcommand(
         KeySubCommand::Restore { mnemonic, password } => {
             let mnemonic = Mnemonic::parse_in(Language::English, mnemonic)
                 .map_err(|e| Error::Generic(e.to_string()))?;
-            let xkey: ExtendedKey = (mnemonic, password).into_extended_key()?;
+            let xkey: ExtendedKey = (mnemonic, password)
+                .into_extended_key()
+                .map_err(|e| Error::Generic(format!("Extended key generation error: {:?}", e)))?;
             let xprv = xkey.into_xprv(network).ok_or_else(|| {
                 Error::Generic("Privatekey info not found (should not happen)".to_string())
             })?;
@@ -475,15 +543,18 @@ pub(crate) fn handle_key_subcommand(
             Ok(json!({ "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }))
         }
         KeySubCommand::Derive { xprv, path } => {
-            if xprv.network != network {
-                return Err(Error::Key(InvalidNetwork));
+            if xprv.network != network.into() {
+                return Err(Error::Key(bdk::keys::KeyError::InvalidNetwork));
             }
-            let derived_xprv = &xprv.derive_priv(&secp, &path)?;
+            let derived_xprv = &xprv
+                .derive_priv(&secp, &path)
+                .map_err(|e| Error::Generic(e.to_string()))?;
 
             let origin: KeySource = (xprv.fingerprint(&secp), path);
 
-            let derived_xprv_desc_key: DescriptorKey<Segwitv0> =
-                derived_xprv.into_descriptor_key(Some(origin), DerivationPath::default())?;
+            let derived_xprv_desc_key: DescriptorKey<Segwitv0> = derived_xprv
+                .into_descriptor_key(Some(origin), DerivationPath::default())
+                .map_err(|e| Error::Generic(e.to_string()))?;
 
             if let Secret(desc_seckey, _, _) = derived_xprv_desc_key {
                 let desc_pubkey = desc_seckey
@@ -491,7 +562,9 @@ pub(crate) fn handle_key_subcommand(
                     .map_err(|e| Error::Generic(e.to_string()))?;
                 Ok(json!({"xpub": desc_pubkey.to_string(), "xprv": desc_seckey.to_string()}))
             } else {
-                Err(Error::Key(Message("Invalid key variant".to_string())))
+                Err(Error::Key(bdk::keys::KeyError::Message(
+                    "Invalid key variant".to_string(),
+                )))
             }
         }
         #[cfg(feature = "hardware-signer")]
@@ -625,9 +698,9 @@ pub(crate) fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
         } => {
             let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, network)?;
             let database = open_database(&wallet_opts, &home_dir)?;
-            let wallet = new_wallet(network, &wallet_opts, database)?;
+            let mut wallet = new_wallet(network, &wallet_opts, database)?;
             let result =
-                handle_offline_wallet_subcommand(&wallet, &wallet_opts, offline_subcommand)?;
+                handle_offline_wallet_subcommand(&mut wallet, &wallet_opts, offline_subcommand)?;
             serde_json::to_string_pretty(&result)
         }
         CliSubCommand::Key {
@@ -649,7 +722,7 @@ pub(crate) fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, cli_opts.network)?;
             let database = open_database(&wallet_opts, &home_dir)?;
 
-            let wallet = new_wallet(cli_opts.network, &wallet_opts, database)?;
+            let mut wallet = new_wallet(cli_opts.network, &wallet_opts, database)?;
 
             let mut rl = Editor::<()>::new();
 
@@ -729,7 +802,7 @@ pub(crate) fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                                 subcommand:
                                     WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
                             } => handle_offline_wallet_subcommand(
-                                &wallet,
+                                &mut wallet,
                                 &wallet_opts,
                                 offline_subcommand,
                             ),
