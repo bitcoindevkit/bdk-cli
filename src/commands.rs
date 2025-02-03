@@ -15,10 +15,12 @@
 #![allow(clippy::large_enum_variant)]
 use clap::{AppSettings, Parser, Subcommand};
 
-use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
-use bdk::bitcoin::{Address, Network, OutPoint, Script};
+use bdk_wallet::bitcoin::{
+    bip32::{DerivationPath, Xpriv},
+    Address, Network, OutPoint, ScriptBuf,
+};
 
-use crate::utils::{parse_outpoint, parse_recipient};
+use crate::utils::{parse_address, parse_outpoint, parse_recipient};
 #[cfg(any(
     feature = "compact_filters",
     feature = "electrum",
@@ -371,12 +373,12 @@ pub enum OfflineWalletSubCommand {
         // Clap Doesn't support complex vector parsing https://github.com/clap-rs/clap/issues/1704.
         // Address and amount parsing is done at run time in handler function.
         #[clap(name = "ADDRESS:SAT", long = "to", required = true, value_parser = parse_recipient)]
-        recipients: Vec<(Script, u64)>,
+        recipients: Vec<(ScriptBuf, u64)>,
         /// Sends all the funds (or all the selected utxos). Requires only one recipient with value 0.
         #[clap(long = "send_all", short = 'a')]
         send_all: bool,
         /// Enables Replace-By-Fee (BIP125).
-        #[clap(long = "enable_rbf", short = 'r')]
+        #[clap(long = "enable_rbf", short = 'r', default_value_t = true)]
         enable_rbf: bool,
         /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
         #[clap(long = "offline_signer")]
@@ -419,7 +421,7 @@ pub enum OfflineWalletSubCommand {
         #[clap(name = "TXID", long = "txid")]
         txid: String,
         /// Allows the wallet to reduce the amount to the specified address in order to increase fees.
-        #[clap(name = "SHRINK_ADDRESS", long = "shrink")]
+        #[clap(name = "SHRINK_ADDRESS", long = "shrink", value_parser = parse_address)]
         shrink_address: Option<Address>,
         /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
         #[clap(long = "offline_signer")]
@@ -560,7 +562,7 @@ pub enum KeySubCommand {
     Derive {
         /// Extended private key to derive from.
         #[clap(name = "XPRV", short = 'x', long = "xprv")]
-        xprv: ExtendedPrivKey,
+        xprv: Xpriv,
         /// Path to use to derive extended public key from extended private key.
         #[clap(name = "PATH", short = 'p', long = "path")]
         path: DerivationPath,
@@ -603,13 +605,13 @@ mod test {
     use crate::handlers::handle_key_subcommand;
     #[cfg(all(feature = "reserves", feature = "electrum"))]
     use crate::handlers::{handle_ext_reserves_subcommand, handle_online_wallet_subcommand};
-    use bdk::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
+    use bdk_wallet::bitcoin::bip32::{DerivationPath, Xpriv};
     #[cfg(all(feature = "reserves", feature = "electrum"))]
-    use bdk::bitcoin::{consensus::Encodable, util::psbt::PartiallySignedTransaction};
-    use bdk::bitcoin::{Address, Network, OutPoint};
-    use bdk::miniscript::bitcoin::network::constants::Network::Testnet;
+    use bdk_wallet::bitcoin::{consensus::Encodable, util::psbt::PartiallySignedTransaction};
+    use bdk_wallet::bitcoin::{Address, Network, OutPoint};
+    use bdk_wallet::miniscript::bitcoin::network::Network::Testnet;
     #[cfg(all(feature = "reserves", feature = "electrum"))]
-    use bdk::{
+    use bdk_wallet::{
         blockchain::ElectrumBlockchain, database::MemoryDatabase, electrum_client::Client,
         SyncOptions, Wallet,
     };
@@ -977,10 +979,12 @@ mod test {
 
         let script1 = Address::from_str("n2Z3YNXtceeJhFkTknVaNjT1mnCGWesykJ")
             .unwrap()
+            .assume_checked()
             .script_pubkey();
 
         let script2 = Address::from_str("mjDZ34icH4V2k9GmC8niCrhzVuR3z8Mgkf")
             .unwrap()
+            .assume_checked()
             .script_pubkey();
 
         let outpoint1 = OutPoint::from_str(
@@ -1108,7 +1112,7 @@ mod test {
                 },
                 subcommand: OfflineWalletSubCommand(BumpFee {
                     txid: "35aab0d0213f8996f9e236a28630319b93109754819e8abf48a0835708d33506".to_string(),
-                    shrink_address: Some(Address::from_str("tb1ql7w62elx9ucw4pj5lgw4l028hmuw80sndtntxt").unwrap()),
+                    shrink_address: Some(Address::from_str("tb1ql7w62elx9ucw4pj5lgw4l028hmuw80sndtntxt").unwrap().assume_checked()),
                     offline_signer: false,
                     utxos: None,
                     unspendable: None,
@@ -1239,7 +1243,7 @@ mod test {
     fn test_key_derive() {
         let network = Testnet;
         let key_generate_cmd = KeySubCommand::Derive {
-            xprv: ExtendedPrivKey::from_str("tprv8ZgxMBicQKsPfQjJy8ge2cvBfDjLxJSkvNLVQiw7BQ5gTjKadG2rrcQB5zjcdaaUTz5EDNJaS77q4DzjqjogQBfMsaXFFNP3UqoBnwt2kyT").unwrap(),
+            xprv: Xpriv::from_str("tprv8ZgxMBicQKsPfQjJy8ge2cvBfDjLxJSkvNLVQiw7BQ5gTjKadG2rrcQB5zjcdaaUTz5EDNJaS77q4DzjqjogQBfMsaXFFNP3UqoBnwt2kyT").unwrap(),
             path: DerivationPath::from_str("m/84'/1'/0'/0").unwrap(),
         };
 
@@ -1522,7 +1526,9 @@ mod test {
         wallet.sync(&blockchain, SyncOptions::default()).unwrap();
         let balance = wallet.get_balance().unwrap();
 
-        let addr = wallet.get_address(bdk::wallet::AddressIndex::New).unwrap();
+        let addr = wallet
+            .get_address(bdk_wallet::wallet::AddressIndex::New)
+            .unwrap();
         assert_eq!(
             "tb1qanjjv4cs20dgv32vncrxw702l8g4qtn2m9wn7d",
             addr.to_string()
