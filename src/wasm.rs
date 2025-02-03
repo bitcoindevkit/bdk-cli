@@ -2,13 +2,13 @@ use crate::commands::*;
 use crate::handlers::*;
 use crate::nodes::Nodes;
 use crate::utils::*;
-use bdk::*;
+use bdk_wallet::*;
 
 use bitcoin::*;
 
-use bdk::blockchain::AnyBlockchain;
-use bdk::database::AnyDatabase;
-use bdk::miniscript::{MiniscriptKey, Translator};
+use bdk_wallet::blockchain::AnyBlockchain;
+use bdk_wallet::database::AnyDatabase;
+use bdk_wallet::miniscript::{MiniscriptKey, Translator};
 use clap::Parser;
 use js_sys::Promise;
 use regex::Regex;
@@ -22,9 +22,9 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
 
 #[cfg(feature = "compiler")]
-use bdk::keys::{GeneratableDefaultOptions, GeneratedKey};
+use bdk_wallet::keys::{GeneratableDefaultOptions, GeneratedKey};
 #[cfg(feature = "compiler")]
-use bdk::miniscript::{self, policy::Concrete, Descriptor, TranslatePk};
+use bdk_wallet::miniscript::{self, policy::Concrete, Descriptor, TranslatePk};
 #[cfg(feature = "compiler")]
 use serde::Deserialize;
 

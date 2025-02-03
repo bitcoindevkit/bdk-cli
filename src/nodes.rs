@@ -17,7 +17,7 @@
 #[cfg(feature = "regtest-node")]
 use {
     crate::commands::NodeSubCommand,
-    bdk::{
+    bdk_wallet::{
         bitcoin::{Address, Amount},
         Error,
     },

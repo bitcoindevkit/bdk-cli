@@ -23,8 +23,9 @@ use log::{debug, error, warn};
 
 use crate::commands::CliOpts;
 use crate::handlers::*;
-use bdk::{bitcoin, Error};
+use bdk::Error;
 use bdk_macros::{maybe_async, maybe_await};
+use bdk_wallet::bitcoin;
 use clap::Parser;
 
 #[cfg(any(feature = "repl", target_arch = "wasm32"))]
