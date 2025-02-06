@@ -1,4 +1,5 @@
 use crate::commands::*;
+use crate::error::BDKCliError as Error;
 use crate::handlers::*;
 use crate::nodes::Nodes;
 use crate::utils::*;
@@ -6,14 +7,11 @@ use bdk_wallet::*;
 
 use bitcoin::*;
 
-use bdk_wallet::blockchain::AnyBlockchain;
-use bdk_wallet::database::AnyDatabase;
 use bdk_wallet::miniscript::{MiniscriptKey, Translator};
 use clap::Parser;
 use js_sys::Promise;
 use regex::Regex;
 use std::collections::HashMap;
-use std::error::Error;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -30,7 +28,7 @@ use serde::Deserialize;
 
 #[wasm_bindgen]
 pub struct WasmWallet {
-    wallet: Rc<Wallet<AnyDatabase>>,
+    wallet: Rc<Wallet>,
     wallet_opts: Rc<WalletOpts>,
     blockchain: Rc<AnyBlockchain>,
     network: Network,
@@ -44,11 +42,8 @@ pub fn log_init() {
 #[wasm_bindgen]
 impl WasmWallet {
     #[wasm_bindgen(constructor)]
-    pub fn new(network: String, wallet_opts: Vec<JsValue>) -> Result<WasmWallet, String> {
-        fn new_inner(
-            network: String,
-            wallet_opts: Vec<JsValue>,
-        ) -> Result<WasmWallet, Box<dyn Error>> {
+    pub fn new(network: String, wallet_opts: Vec<JsValue>) -> Result<WasmWallet, Error> {
+        fn new_inner(network: String, wallet_opts: Vec<JsValue>) -> Result<WasmWallet, Error> {
             // Both open_database and new_blockchain need a home path to be passed
             // in, even tho it won't be used
             let dummy_home_dir = PathBuf::new();
@@ -80,11 +75,11 @@ impl WasmWallet {
 
         async fn run_command_inner(
             command: String,
-            wallet: Rc<Wallet<AnyDatabase>>,
+            wallet: Rc<Wallet>,
             wallet_opts: Rc<WalletOpts>,
             blockchain: Rc<AnyBlockchain>,
             network: Network,
-        ) -> Result<serde_json::Value, Box<dyn Error>> {
+        ) -> Result<serde_json::Value, Error> {
             let split_regex = Regex::new(crate::REPL_LINE_SPLIT_REGEX)?;
             let split_line: Vec<&str> = split_regex
                 .captures_iter(&command)
@@ -131,40 +126,40 @@ struct AliasMap {
 }
 
 #[cfg(feature = "compiler")]
-impl Translator<String, String, bdk::Error> for AliasMap {
+impl Translator<String, String, Error> for AliasMap {
     // Provides the translation public keys P -> Q
-    fn pk(&mut self, pk: &String) -> Result<String, bdk::Error> {
+    fn pk(&mut self, pk: &String) -> Result<String, Error> {
         self.inner
             .get(pk)
             .map(|a| a.into_key())
-            .ok_or(bdk::Error::Generic("Couldn't map alias".to_string())) // Dummy Err
+            .ok_or(Error::Generic("Couldn't map alias".to_string())) // Dummy Err
     }
 
-    fn sha256(&mut self, sha256: &String) -> Result<String, bdk::Error> {
+    fn sha256(&mut self, sha256: &String) -> Result<String, Error> {
         Ok(sha256.to_string())
     }
 
-    fn hash256(&mut self, hash256: &String) -> Result<String, bdk::Error> {
+    fn hash256(&mut self, hash256: &String) -> Result<String, Error> {
         Ok(hash256.to_string())
     }
 
-    fn ripemd160(&mut self, ripemd160: &String) -> Result<String, bdk::Error> {
+    fn ripemd160(&mut self, ripemd160: &String) -> Result<String, Error> {
         Ok(ripemd160.to_string())
     }
 
-    fn hash160(&mut self, hash160: &String) -> Result<String, bdk::Error> {
+    fn hash160(&mut self, hash160: &String) -> Result<String, Error> {
         Ok(hash160.to_string())
     }
 }
 
 #[wasm_bindgen]
 #[cfg(feature = "compiler")]
-pub fn compile(policy: String, aliases: String, script_type: String) -> Result<JsValue, String> {
+pub fn compile(policy: String, aliases: String, script_type: String) -> Result<JsValue, Error> {
     fn compile_inner(
         policy: String,
         aliases: String,
         script_type: String,
-    ) -> Result<String, Box<dyn Error>> {
+    ) -> Result<String, Error> {
         use std::collections::HashMap;
         let aliases: HashMap<String, Alias> = serde_json::from_str(&aliases)?;
         let mut aliases = AliasMap { inner: aliases };
@@ -175,11 +170,10 @@ pub fn compile(policy: String, aliases: String, script_type: String) -> Result<J
             "sh" => Descriptor::new_sh(policy.compile()?)?,
             "wsh" => Descriptor::new_wsh(policy.compile()?)?,
             "sh-wsh" => Descriptor::new_sh_wsh(policy.compile()?)?,
-            _ => return Err(Box::<dyn Error>::from("InvalidScriptType")),
+            _ => return Err(Error::Generic("InvalidScriptType".to_string())),
         };
 
-        let descriptor: Result<Descriptor<String>, bdk::Error> =
-            descriptor.translate_pk(&mut aliases);
+        let descriptor: Result<Descriptor<String>, Error> = descriptor.translate_pk(&mut aliases);
         let descriptor = descriptor?;
 
         Ok(descriptor.to_string().into())
@@ -213,10 +207,8 @@ impl Alias {
                 key.to_wif()
             }
             Alias::GenExt { extra: path } => {
-                let generated: GeneratedKey<
-                    bitcoin::util::bip32::ExtendedPrivKey,
-                    miniscript::Legacy,
-                > = GeneratableDefaultOptions::generate_default().unwrap();
+                let generated: GeneratedKey<bitcoin::bip32::Xpriv, miniscript::Legacy> =
+                    GeneratableDefaultOptions::generate_default().unwrap();
 
                 let mut xprv = generated.into_key();
                 xprv.network = Network::Testnet;

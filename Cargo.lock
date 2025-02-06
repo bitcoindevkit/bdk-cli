@@ -209,7 +209,6 @@ dependencies = [
  "clap",
  "dirs-next",
  "electrsd",
- "electrum-client 0.23.0",
  "env_logger",
  "fd-lock",
  "getrandom 0.2.10",
@@ -881,23 +880,6 @@ name = "electrum-client"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d627e4feaf3009c10c8a0eb06d6ceb4ce1ff861849157fb35e8155d9706babb6"
-dependencies = [
- "bitcoin 0.32.5",
- "byteorder",
- "libc",
- "log",
- "rustls 0.23.22",
- "serde",
- "serde_json",
- "webpki-roots 0.25.4",
- "winapi",
-]
-
-[[package]]
-name = "electrum-client"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8ed4d35bb98a55540bb5b735731486febddf9cc9b6e96f5b3fd2536eed81a4e"
 dependencies = [
  "bitcoin 0.32.5",
  "byteorder",

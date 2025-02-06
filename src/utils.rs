@@ -10,7 +10,7 @@
 //!
 //! This module includes all the utility tools used by the App.
 
-use bdk::Error;
+use crate::error::BDKCliError as Error;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -68,8 +68,7 @@ pub(crate) fn maybe_descriptor_wallet_name(
         wallet_opts.change_descriptor.as_deref(),
         network,
         &Secp256k1::new(),
-    )
-    .map_err(|e| Error::Generic(e.to_string()))?;
+    )?;
     let mut wallet_opts = wallet_opts;
     wallet_opts.wallet = Some(wallet_name);
 
@@ -97,10 +96,10 @@ pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
     feature = "rpc"
 ))]
 /// Parse the proxy (Socket:Port) argument from the cli input.
-pub(crate) fn parse_proxy_auth(s: &str) -> Result<(String, String), String> {
+pub(crate) fn parse_proxy_auth(s: &str) -> Result<(String, String), Error> {
     let parts: Vec<_> = s.split(':').collect();
     if parts.len() != 2 {
-        return Err("Invalid format".to_string());
+        return Err(Error::Generic("Invalid format".to_string()));
     }
 
     let user = parts[0].to_string();
@@ -116,9 +115,7 @@ pub fn get_outpoints_for_address(
     client: &Client,
     max_confirmation_height: Option<usize>,
 ) -> Result<Vec<(OutPoint, TxOut)>, Error> {
-    let unspents = client
-        .script_list_unspent(&address.script_pubkey())
-        .map_err(Error::Electrum)?;
+    let unspents = client.script_list_unspent(&address.script_pubkey())?;
 
     unspents
         .iter()
@@ -128,9 +125,7 @@ pub fn get_outpoints_for_address(
         .map(|utxo| {
             let tx = match client.transaction_get(&utxo.tx_hash) {
                 Ok(tx) => tx,
-                Err(e) => {
-                    return Err(e).map_err(Error::Electrum);
-                }
+                Err(e) => return Err(e).map_err(|e| Error::Generic(e.to_string()))?,
             };
 
             Ok((
@@ -145,14 +140,13 @@ pub fn get_outpoints_for_address(
 }
 
 /// Parse a outpoint (Txid:Vout) argument from cli input.
-pub(crate) fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
-    OutPoint::from_str(s).map_err(|e| e.to_string())
+pub(crate) fn parse_outpoint(s: &str) -> Result<OutPoint, Error> {
+    Ok(OutPoint::from_str(s)?)
 }
 
 /// Parse an address string into `Address<NetworkChecked>`.
-pub(crate) fn parse_address(address_str: &str) -> Result<Address, String> {
-    let unchecked_address =
-        Address::from_str(address_str).map_err(|e| format!("Failed to parse address: {}", e))?;
+pub(crate) fn parse_address(address_str: &str) -> Result<Address, Error> {
+    let unchecked_address = Address::from_str(address_str)?;
     Ok(unchecked_address.assume_checked())
 }
 

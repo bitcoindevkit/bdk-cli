@@ -11,6 +11,7 @@
 #![warn(missing_docs)]
 
 mod commands;
+mod error;
 mod handlers;
 mod nodes;
 mod utils;
@@ -22,8 +23,8 @@ use bitcoin::Network;
 use log::{debug, error, warn};
 
 use crate::commands::CliOpts;
+use crate::error::BDKCliError as Error;
 use crate::handlers::*;
-use bdk::Error;
 use bdk_macros::{maybe_async, maybe_await};
 use bdk_wallet::bitcoin;
 use clap::Parser;

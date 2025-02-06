@@ -1041,7 +1041,7 @@ mod test {
                 subcommand: WalletSubCommand::OfflineWalletSubCommand(CreateTx {
                     recipients: vec![(script1, 123456), (script2, 78910)],
                     send_all: false,
-                    enable_rbf: false,
+                    enable_rbf: true,
                     offline_signer: false,
                     utxos: Some(vec!(outpoint1, outpoint2)),
                     unspendable: None,

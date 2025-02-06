@@ -22,47 +22,44 @@ use crate::commands::OfflineWalletSubCommand::*;
 ))]
 use crate::commands::OnlineWalletSubCommand::*;
 use crate::commands::*;
+use crate::error::BDKCliError as Error;
 use crate::utils::*;
-use bdk::Error;
 use bdk_wallet::bip39::{Language, Mnemonic};
 use bdk_wallet::bitcoin::script::PushBytesBuf;
 use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
 use bdk_wallet::rusqlite::Connection;
 
 use bdk_wallet::keys::bip39::WordCount;
-use bdk_wallet::{KeychainKind, PersistedWallet};
+use bdk_wallet::{KeychainKind, PersistedWallet, SignOptions};
 use clap::Parser;
 
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "compact_filters",
+    feature = "rpc"
+))]
+use bdk_reserves::bdk::{
+    blockchain::{log_progress, Blockchain},
+    SyncOptions,
+};
 use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
 use bdk_wallet::bitcoin::consensus::encode::{serialize, serialize_hex};
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "compact_filters",
-    feature = "rpc"
-))]
-use bdk_wallet::bitcoin::hashes::hex::FromHex;
 use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Network, Txid};
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "compact_filters",
-    feature = "rpc"
-))]
-use bdk_wallet::blockchain::{log_progress, Blockchain};
 use bdk_wallet::descriptor::Segwitv0;
 #[cfg(feature = "compiler")]
 use bdk_wallet::descriptor::{Descriptor, Legacy, Miniscript};
 #[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk_wallet::electrum_client::{Client, ElectrumApi};
-#[cfg(feature = "hardware-signer")]
-use bdk_wallet::hwi::{
-    interface::HWIClient,
-    types::{HWIChain, HWIDescriptor},
-};
+use electrum_client::{Client, ElectrumApi};
+
 use bdk_wallet::keys::DescriptorKey::Secret;
 use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
 use bdk_wallet::miniscript::miniscript;
+#[cfg(feature = "hardware-signer")]
+use hwi::{
+    types::{HWIChain, HWIDescriptor},
+    HWIClient,
+};
 
 use bdk_macros::maybe_async;
 #[cfg(any(
@@ -72,23 +69,16 @@ use bdk_macros::maybe_async;
     feature = "rpc"
 ))]
 use bdk_macros::maybe_await;
+#[cfg(all(feature = "reserves", feature = "electrum"))]
+use bdk_reserves::bdk::{bitcoin::Address, blockchain::Capability};
 #[cfg(feature = "reserves")]
-use bdk_reserves::reserves::verify_proof;
-#[cfg(feature = "reserves")]
-use bdk_reserves::reserves::ProofOfReserves;
+use bdk_reserves::reserves::{verify_proof, ProofOfReserves};
 #[cfg(feature = "compiler")]
 use bdk_wallet::miniscript::policy::Concrete;
-#[cfg(feature = "hardware-signer")]
-use bdk_wallet::wallet::signer::SignerError;
-use bdk_wallet::SignOptions;
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk_wallet::{bitcoin::Address, blockchain::Capability};
 #[cfg(feature = "repl")]
 use regex::Regex;
 #[cfg(feature = "repl")]
-use rustyline::error::ReadlineError;
-#[cfg(feature = "repl")]
-use rustyline::Editor;
+use rustyline::{error::ReadlineError, Editor};
 use serde_json::json;
 use std::str::FromStr;
 
@@ -197,14 +187,11 @@ pub fn handle_offline_wallet_subcommand(
             ];
 
             for (policy, keychain) in policies.into_iter().flatten() {
-                let policy = serde_json::from_str::<BTreeMap<String, Vec<usize>>>(&policy)
-                    .map_err(|s| Error::Generic(s.to_string()))?;
+                let policy = serde_json::from_str::<BTreeMap<String, Vec<usize>>>(&policy)?;
                 tx_builder.policy_path(policy, keychain);
             }
 
-            let psbt = tx_builder
-                .finish()
-                .map_err(|e| Error::Generic(e.to_string()))?;
+            let psbt = tx_builder.finish()?;
 
             let serialized_psbt = psbt.serialize();
             let psbt_base64 = base64::encode(&serialized_psbt);
@@ -225,11 +212,9 @@ pub fn handle_offline_wallet_subcommand(
             unspendable,
             fee_rate,
         } => {
-            let txid = Txid::from_str(txid.as_str()).map_err(|s| Error::Generic(s.to_string()))?;
+            let txid = Txid::from_str(txid.as_str())?;
 
-            let mut tx_builder = wallet
-                .build_fee_bump(txid)
-                .map_err(|e| Error::Generic(e.to_string()))?;
+            let mut tx_builder = wallet.build_fee_bump(txid)?;
             let fee_rate =
                 FeeRate::from_sat_per_vb(fee_rate as u64).unwrap_or(FeeRate::BROADCAST_MIN);
             tx_builder.fee_rate(fee_rate);
@@ -251,9 +236,7 @@ pub fn handle_offline_wallet_subcommand(
                 tx_builder.unspendable(unspendable);
             }
 
-            let psbt = tx_builder
-                .finish()
-                .map_err(|e| Error::Generic(e.to_string()))?;
+            let psbt = tx_builder.finish()?;
 
             let serialized_psbt = psbt.serialize();
             let psbt_base64 = base64::encode(serialized_psbt);
@@ -261,12 +244,8 @@ pub fn handle_offline_wallet_subcommand(
             Ok(json!({"psbt": psbt_base64, "details": psbt}))
         }
         Policies => {
-            let external_policy = wallet
-                .policies(KeychainKind::External)
-                .map_err(|e| Error::Generic(e.to_string()))?;
-            let internal_policy = wallet
-                .policies(KeychainKind::Internal)
-                .map_err(|e| Error::Generic(e.to_string()))?;
+            let external_policy = wallet.policies(KeychainKind::External)?;
+            let internal_policy = wallet.policies(KeychainKind::Internal)?;
 
             Ok(json!({
                 "external": external_policy,
@@ -282,17 +261,14 @@ pub fn handle_offline_wallet_subcommand(
             assume_height,
             trust_witness_utxo,
         } => {
-            let psbt_bytes = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
-            let mut psbt =
-                Psbt::deserialize(&psbt_bytes).map_err(|e| Error::Generic(e.to_string()))?;
+            let psbt_bytes = base64::decode(psbt)?;
+            let mut psbt = Psbt::deserialize(&psbt_bytes)?;
             let signopt = SignOptions {
                 assume_height,
                 trust_witness_utxo: trust_witness_utxo.unwrap_or(false),
                 ..Default::default()
             };
-            let finalized = wallet
-                .sign(&mut psbt, signopt)
-                .map_err(|e| Error::Generic(e.to_string()))?;
+            let finalized = wallet.sign(&mut psbt, signopt)?;
             if wallet_opts.verbose {
                 Ok(
                     json!({"psbt": base64::encode(serialize(&psbt_bytes)),"is_finalized": finalized, "serialized_psbt": psbt}),
@@ -304,13 +280,9 @@ pub fn handle_offline_wallet_subcommand(
             }
         }
         ExtractPsbt { psbt } => {
-            let psbt_serialized =
-                base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
-            let psbt =
-                Psbt::deserialize(&psbt_serialized).map_err(|e| Error::Generic(e.to_string()))?;
-            let raw_tx = psbt
-                .extract_tx()
-                .map_err(|e| Error::Generic(e.to_string()))?;
+            let psbt_serialized = base64::decode(psbt)?;
+            let psbt = Psbt::deserialize(&psbt_serialized)?;
+            let raw_tx = psbt.extract_tx()?;
             Ok(json!({"raw_tx": serialize_hex(&raw_tx),}))
         }
         FinalizePsbt {
@@ -318,18 +290,15 @@ pub fn handle_offline_wallet_subcommand(
             assume_height,
             trust_witness_utxo,
         } => {
-            let psbt_bytes = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
-            let mut psbt: Psbt =
-                Psbt::deserialize(&psbt_bytes).map_err(|e| Error::Generic(e.to_string()))?;
+            let psbt_bytes = base64::decode(psbt)?;
+            let mut psbt: Psbt = Psbt::deserialize(&psbt_bytes)?;
 
             let signopt = SignOptions {
                 assume_height,
                 trust_witness_utxo: trust_witness_utxo.unwrap_or(false),
                 ..Default::default()
             };
-            let finalized = wallet
-                .finalize_psbt(&mut psbt, signopt)
-                .map_err(|e| Error::Generic(e.to_string()))?;
+            let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
             if wallet_opts.verbose {
                 Ok(
                     json!({ "psbt": base64::encode(serialize(&psbt_bytes)),"is_finalized": finalized, "serialized_psbt": psbt}),
@@ -344,10 +313,8 @@ pub fn handle_offline_wallet_subcommand(
             let mut psbts = psbt
                 .iter()
                 .map(|s| {
-                    let psbt = base64::decode(s).map_err(|e| Error::Generic(e.to_string()))?;
-                    let psbt: Psbt =
-                        Psbt::deserialize(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
-                    Ok(psbt)
+                    let psbt = base64::decode(s)?;
+                    Ok(Psbt::deserialize(&psbt)?)
                 })
                 .collect::<Result<Vec<_>, Error>>()?;
 
@@ -376,17 +343,11 @@ pub fn handle_offline_wallet_subcommand(
     feature = "compact_filters",
     feature = "rpc"
 ))]
-pub(crate) fn handle_online_wallet_subcommand<B, D>(
-    wallet: &Wallet<D>,
+pub(crate) fn handle_online_wallet_subcommand(
+    wallet: &Wallet,
     blockchain: &B,
     online_subcommand: OnlineWalletSubCommand,
-) -> Result<serde_json::Value, Error>
-where
-    B: Blockchain,
-    D: BatchDatabase,
-{
-    use bdk::SyncOptions;
-
+) -> Result<serde_json::Value, Error> {
     match online_subcommand {
         Sync => {
             maybe_await!(wallet.sync(
@@ -401,11 +362,11 @@ where
             let tx = match (psbt, tx) {
                 (Some(psbt), None) => {
                     let psbt = base64::decode(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
-                    let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
+                    let psbt: Psbt = Psbt::deserialize(&psbt)?;
                     is_final(&psbt)?;
                     psbt.extract_tx()
                 }
-                (None, Some(tx)) => deserialize(&Vec::<u8>::from_hex(&tx)?)?,
+                (None, Some(tx)) => Psbt::deserialize(&Vec::<u8>::from_hex(&tx)?)?,
                 (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
@@ -435,8 +396,8 @@ where
             msg,
             confirmations,
         } => {
-            let psbt = base64::decode(&psbt).unwrap();
-            let psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
+            let psbt = base64::decode(&psbt)?;
+            let psbt: Psbt = Psbt::deserialize(&psbt)?;
             let current_height = blockchain.get_height()?;
             let max_confirmation_height = if confirmations == 0 {
                 None
@@ -467,7 +428,7 @@ where
     feature = "compact_filters",
     feature = "rpc"
 ))]
-pub(crate) fn is_final(psbt: &PartiallySignedTransaction) -> Result<(), Error> {
+pub(crate) fn is_final(psbt: &Psbt) -> Result<(), Error> {
     let unsigned_tx_inputs = psbt.unsigned_tx.input.len();
     let psbt_inputs = psbt.inputs.len();
     if unsigned_tx_inputs != psbt_inputs {
@@ -513,9 +474,7 @@ pub(crate) fn handle_key_subcommand(
                 Mnemonic::generate((mnemonic_type, Language::English))
                     .map_err(|_| Error::Generic("Mnemonic generation error".to_string()))?;
             let mnemonic = mnemonic.into_key();
-            let xkey: ExtendedKey = (mnemonic.clone(), password)
-                .into_extended_key()
-                .map_err(|e| Error::Generic(format!("Extended key generation error: {:?}", e)))?;
+            let xkey: ExtendedKey = (mnemonic.clone(), password).into_extended_key()?;
             let xprv = xkey.into_xprv(network).ok_or_else(|| {
                 Error::Generic("Privatekey info not found (should not happen)".to_string())
             })?;
@@ -530,11 +489,8 @@ pub(crate) fn handle_key_subcommand(
             )
         }
         KeySubCommand::Restore { mnemonic, password } => {
-            let mnemonic = Mnemonic::parse_in(Language::English, mnemonic)
-                .map_err(|e| Error::Generic(e.to_string()))?;
-            let xkey: ExtendedKey = (mnemonic, password)
-                .into_extended_key()
-                .map_err(|e| Error::Generic(format!("Extended key generation error: {:?}", e)))?;
+            let mnemonic = Mnemonic::parse_in(Language::English, mnemonic)?;
+            let xkey: ExtendedKey = (mnemonic, password).into_extended_key()?;
             let xprv = xkey.into_xprv(network).ok_or_else(|| {
                 Error::Generic("Privatekey info not found (should not happen)".to_string())
             })?;
@@ -544,27 +500,20 @@ pub(crate) fn handle_key_subcommand(
         }
         KeySubCommand::Derive { xprv, path } => {
             if xprv.network != network.into() {
-                return Err(Error::Key(bdk::keys::KeyError::InvalidNetwork));
+                return Err(Error::Generic("Invalid network".to_string()));
             }
-            let derived_xprv = &xprv
-                .derive_priv(&secp, &path)
-                .map_err(|e| Error::Generic(e.to_string()))?;
+            let derived_xprv = &xprv.derive_priv(&secp, &path)?;
 
             let origin: KeySource = (xprv.fingerprint(&secp), path);
 
-            let derived_xprv_desc_key: DescriptorKey<Segwitv0> = derived_xprv
-                .into_descriptor_key(Some(origin), DerivationPath::default())
-                .map_err(|e| Error::Generic(e.to_string()))?;
+            let derived_xprv_desc_key: DescriptorKey<Segwitv0> =
+                derived_xprv.into_descriptor_key(Some(origin), DerivationPath::default())?;
 
             if let Secret(desc_seckey, _, _) = derived_xprv_desc_key {
-                let desc_pubkey = desc_seckey
-                    .to_public(&secp)
-                    .map_err(|e| Error::Generic(e.to_string()))?;
+                let desc_pubkey = desc_seckey.to_public(&secp)?;
                 Ok(json!({"xpub": desc_pubkey.to_string(), "xprv": desc_seckey.to_string()}))
             } else {
-                Err(Error::Key(bdk::keys::KeyError::Message(
-                    "Invalid key variant".to_string(),
-                )))
+                Err(Error::Generic("Invalid key variant".to_string()))
             }
         }
         #[cfg(feature = "hardware-signer")]
@@ -574,15 +523,14 @@ pub(crate) fn handle_key_subcommand(
                 Network::Testnet => HWIChain::Test,
                 Network::Regtest => HWIChain::Regtest,
                 Network::Signet => HWIChain::Signet,
+                Network::Testnet4 => HWIChain::Test,
+                _ => Err(Error::Generic("Invalid network".to_string()))?,
             };
-            let devices = HWIClient::enumerate().map_err(|e| SignerError::from(e))?;
+            let devices = HWIClient::enumerate()?;
             let descriptors = devices.iter().map(|device_| {
-                let device = device_.clone()
-                    .map_err(|e| SignerError::from(e))?;
-                let client = HWIClient::get_client(&device, true, chain.clone())
-                    .map_err(|e| SignerError::from(e))?;
-                let descriptors: HWIDescriptor<String> = client.get_descriptors(None)
-                    .map_err(|e| SignerError::from(e))?;
+                let device = device_.clone().map_err(|e| Error::Generic(e.to_string()))?;
+                let client = HWIClient::get_client(&device, true, chain.clone())?;
+                let descriptors: HWIDescriptor<String> = client.get_descriptors(None)?;
                 Ok(json!({"device": device.model, "receiving": descriptors.receive[0].to_string(), "change": descriptors.internal[0]}))
             }).collect::<Result<Vec<_>, Error>>()?;
             Ok(json!(descriptors))
@@ -612,8 +560,7 @@ pub(crate) fn handle_compile_subcommand(
         "wsh" => Descriptor::new_wsh(segwit_policy),
         "sh-wsh" => Descriptor::new_sh_wsh(segwit_policy),
         _ => panic!("Invalid type"),
-    }
-    .map_err(Error::Miniscript)?;
+    }?;
 
     Ok(json!({"descriptor": descriptor.to_string()}))
 }
@@ -628,11 +575,10 @@ pub(crate) fn handle_ext_reserves_subcommand(
     psbt: String,
     confirmations: usize,
     addresses: Vec<String>,
-    electrum_opts: ElectrumOpts,
+    electrum_opts: ElectrumApi,
 ) -> Result<serde_json::Value, Error> {
-    let psbt = base64::decode(&psbt)
-        .map_err(|e| Error::Generic(format!("Base64 decode error: {:?}", e)))?;
-    let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
+    let psbt = base64::decode(&psbt)?;
+    let psbt: Psbt = Psbt::deserialize(&psbt)?;
     let client = Client::new(&electrum_opts.server)?;
 
     let current_block_height = client.block_headers_subscribe().map(|data| data.height)?;
@@ -641,8 +587,7 @@ pub(crate) fn handle_ext_reserves_subcommand(
     let outpoints_per_addr = addresses
         .iter()
         .map(|address| {
-            let address = Address::from_str(address)
-                .map_err(|e| Error::Generic(format!("Invalid address: {:?}", e)))?;
+            let address = Address::from_str(address)?;
             get_outpoints_for_address(address, &client, max_confirmation_height)
         })
         .collect::<Result<Vec<Vec<_>>, Error>>()?;
@@ -730,8 +675,7 @@ pub(crate) fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             //     println!("No previous history.");
             // }
 
-            let split_regex = Regex::new(crate::REPL_LINE_SPLIT_REGEX)
-                .map_err(|e| Error::Generic(e.to_string()))?;
+            let split_regex = Regex::new(crate::REPL_LINE_SPLIT_REGEX)?;
 
             #[cfg(any(
                 feature = "electrum",
@@ -855,19 +799,20 @@ pub(crate) fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
 ))]
 #[cfg(test)]
 mod test {
+    use bdk_wallet::bitcoin::Psbt;
+
     use super::is_final;
-    use bdk::bitcoin::psbt::PartiallySignedTransaction;
     use std::str::FromStr;
 
     #[test]
     fn test_psbt_is_final() {
-        let unsigned_psbt = PartiallySignedTransaction::from_str("cHNidP8BAIkBAAAAASWJHzxzyVORV/C3lAynKHVVL7+Rw7/Jj8U9fuvD24olAAAAAAD+////AiBOAAAAAAAAIgAgLzY9yE4jzTFJnHtTjkc+rFAtJ9NB7ENFQ1xLYoKsI1cfqgKVAAAAACIAIFsbWgDeLGU8EA+RGwBDIbcv4gaGG0tbEIhDvwXXa/E7LwEAAAABALUCAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////BALLAAD/////AgD5ApUAAAAAIgAgWxtaAN4sZTwQD5EbAEMhty/iBoYbS1sQiEO/Bddr8TsAAAAAAAAAACZqJKohqe3i9hw/cdHe/T+pmd+jaVN1XGkGiXmZYrSL69g2l06M+QEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQErAPkClQAAAAAiACBbG1oA3ixlPBAPkRsAQyG3L+IGhhtLWxCIQ78F12vxOwEFR1IhA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDIQLKhV/gEZYmlsQXnsL5/Uqv5Y8O31tmWW1LQqIBkiqzCVKuIgYCyoVf4BGWJpbEF57C+f1Kr+WPDt9bZlltS0KiAZIqswkEboH3lCIGA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDBDS6ZSEAACICAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJBG6B95QiAgPyVdlP9KV1voj+PUHLGIpRL5GRHeKYZgzPJ1fMAvjHgwQ0umUhAA==").unwrap();
+        let unsigned_psbt = Psbt::from_str("cHNidP8BAIkBAAAAASWJHzxzyVORV/C3lAynKHVVL7+Rw7/Jj8U9fuvD24olAAAAAAD+////AiBOAAAAAAAAIgAgLzY9yE4jzTFJnHtTjkc+rFAtJ9NB7ENFQ1xLYoKsI1cfqgKVAAAAACIAIFsbWgDeLGU8EA+RGwBDIbcv4gaGG0tbEIhDvwXXa/E7LwEAAAABALUCAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////BALLAAD/////AgD5ApUAAAAAIgAgWxtaAN4sZTwQD5EbAEMhty/iBoYbS1sQiEO/Bddr8TsAAAAAAAAAACZqJKohqe3i9hw/cdHe/T+pmd+jaVN1XGkGiXmZYrSL69g2l06M+QEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQErAPkClQAAAAAiACBbG1oA3ixlPBAPkRsAQyG3L+IGhhtLWxCIQ78F12vxOwEFR1IhA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDIQLKhV/gEZYmlsQXnsL5/Uqv5Y8O31tmWW1LQqIBkiqzCVKuIgYCyoVf4BGWJpbEF57C+f1Kr+WPDt9bZlltS0KiAZIqswkEboH3lCIGA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDBDS6ZSEAACICAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJBG6B95QiAgPyVdlP9KV1voj+PUHLGIpRL5GRHeKYZgzPJ1fMAvjHgwQ0umUhAA==").unwrap();
         assert!(is_final(&unsigned_psbt).is_err());
 
-        let part_signed_psbt = PartiallySignedTransaction::from_str("cHNidP8BAIkBAAAAASWJHzxzyVORV/C3lAynKHVVL7+Rw7/Jj8U9fuvD24olAAAAAAD+////AiBOAAAAAAAAIgAgLzY9yE4jzTFJnHtTjkc+rFAtJ9NB7ENFQ1xLYoKsI1cfqgKVAAAAACIAIFsbWgDeLGU8EA+RGwBDIbcv4gaGG0tbEIhDvwXXa/E7LwEAAAABALUCAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////BALLAAD/////AgD5ApUAAAAAIgAgWxtaAN4sZTwQD5EbAEMhty/iBoYbS1sQiEO/Bddr8TsAAAAAAAAAACZqJKohqe3i9hw/cdHe/T+pmd+jaVN1XGkGiXmZYrSL69g2l06M+QEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQErAPkClQAAAAAiACBbG1oA3ixlPBAPkRsAQyG3L+IGhhtLWxCIQ78F12vxOyICA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDSDBFAiEAnNPpu6wNX2HXYz8s2q5nXug4cWfvCGD3SSH2CNKm+yECIEQO7/URhUPsGoknMTE+GrYJf9Wxqn9QsuN9FGj32cQpAQEFR1IhA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDIQLKhV/gEZYmlsQXnsL5/Uqv5Y8O31tmWW1LQqIBkiqzCVKuIgYCyoVf4BGWJpbEF57C+f1Kr+WPDt9bZlltS0KiAZIqswkEboH3lCIGA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDBDS6ZSEAACICAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJBG6B95QiAgPyVdlP9KV1voj+PUHLGIpRL5GRHeKYZgzPJ1fMAvjHgwQ0umUhAA==").unwrap();
+        let part_signed_psbt = Psbt::from_str("cHNidP8BAIkBAAAAASWJHzxzyVORV/C3lAynKHVVL7+Rw7/Jj8U9fuvD24olAAAAAAD+////AiBOAAAAAAAAIgAgLzY9yE4jzTFJnHtTjkc+rFAtJ9NB7ENFQ1xLYoKsI1cfqgKVAAAAACIAIFsbWgDeLGU8EA+RGwBDIbcv4gaGG0tbEIhDvwXXa/E7LwEAAAABALUCAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////BALLAAD/////AgD5ApUAAAAAIgAgWxtaAN4sZTwQD5EbAEMhty/iBoYbS1sQiEO/Bddr8TsAAAAAAAAAACZqJKohqe3i9hw/cdHe/T+pmd+jaVN1XGkGiXmZYrSL69g2l06M+QEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQErAPkClQAAAAAiACBbG1oA3ixlPBAPkRsAQyG3L+IGhhtLWxCIQ78F12vxOyICA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDSDBFAiEAnNPpu6wNX2HXYz8s2q5nXug4cWfvCGD3SSH2CNKm+yECIEQO7/URhUPsGoknMTE+GrYJf9Wxqn9QsuN9FGj32cQpAQEFR1IhA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDIQLKhV/gEZYmlsQXnsL5/Uqv5Y8O31tmWW1LQqIBkiqzCVKuIgYCyoVf4BGWJpbEF57C+f1Kr+WPDt9bZlltS0KiAZIqswkEboH3lCIGA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDBDS6ZSEAACICAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJBG6B95QiAgPyVdlP9KV1voj+PUHLGIpRL5GRHeKYZgzPJ1fMAvjHgwQ0umUhAA==").unwrap();
         assert!(is_final(&part_signed_psbt).is_err());
 
-        let full_signed_psbt = PartiallySignedTransaction::from_str("cHNidP8BAIkBAAAAASWJHzxzyVORV/C3lAynKHVVL7+Rw7/Jj8U9fuvD24olAAAAAAD+////AiBOAAAAAAAAIgAgLzY9yE4jzTFJnHtTjkc+rFAtJ9NB7ENFQ1xLYoKsI1cfqgKVAAAAACIAIFsbWgDeLGU8EA+RGwBDIbcv4gaGG0tbEIhDvwXXa/E7LwEAAAABALUCAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////BALLAAD/////AgD5ApUAAAAAIgAgWxtaAN4sZTwQD5EbAEMhty/iBoYbS1sQiEO/Bddr8TsAAAAAAAAAACZqJKohqe3i9hw/cdHe/T+pmd+jaVN1XGkGiXmZYrSL69g2l06M+QEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQErAPkClQAAAAAiACBbG1oA3ixlPBAPkRsAQyG3L+IGhhtLWxCIQ78F12vxOwEFR1IhA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDIQLKhV/gEZYmlsQXnsL5/Uqv5Y8O31tmWW1LQqIBkiqzCVKuIgYCyoVf4BGWJpbEF57C+f1Kr+WPDt9bZlltS0KiAZIqswkEboH3lCIGA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDBDS6ZSEBBwABCNsEAEgwRQIhAJzT6busDV9h12M/LNquZ17oOHFn7whg90kh9gjSpvshAiBEDu/1EYVD7BqJJzExPhq2CX/Vsap/ULLjfRRo99nEKQFHMEQCIGoFCvJ2zPB7PCpznh4+1jsY03kMie49KPoPDdr7/T9TAiB3jV7wzR9BH11FSbi+8U8gSX95PrBlnp1lOBgTUIUw3QFHUiED8lXZT/Sldb6I/j1ByxiKUS+RkR3imGYMzydXzAL4x4MhAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJUq4AACICAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJBG6B95QiAgPyVdlP9KV1voj+PUHLGIpRL5GRHeKYZgzPJ1fMAvjHgwQ0umUhAA==").unwrap();
+        let full_signed_psbt = Psbt::from_str("cHNidP8BAIkBAAAAASWJHzxzyVORV/C3lAynKHVVL7+Rw7/Jj8U9fuvD24olAAAAAAD+////AiBOAAAAAAAAIgAgLzY9yE4jzTFJnHtTjkc+rFAtJ9NB7ENFQ1xLYoKsI1cfqgKVAAAAACIAIFsbWgDeLGU8EA+RGwBDIbcv4gaGG0tbEIhDvwXXa/E7LwEAAAABALUCAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////BALLAAD/////AgD5ApUAAAAAIgAgWxtaAN4sZTwQD5EbAEMhty/iBoYbS1sQiEO/Bddr8TsAAAAAAAAAACZqJKohqe3i9hw/cdHe/T+pmd+jaVN1XGkGiXmZYrSL69g2l06M+QEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQErAPkClQAAAAAiACBbG1oA3ixlPBAPkRsAQyG3L+IGhhtLWxCIQ78F12vxOwEFR1IhA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDIQLKhV/gEZYmlsQXnsL5/Uqv5Y8O31tmWW1LQqIBkiqzCVKuIgYCyoVf4BGWJpbEF57C+f1Kr+WPDt9bZlltS0KiAZIqswkEboH3lCIGA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDBDS6ZSEBBwABCNsEAEgwRQIhAJzT6busDV9h12M/LNquZ17oOHFn7whg90kh9gjSpvshAiBEDu/1EYVD7BqJJzExPhq2CX/Vsap/ULLjfRRo99nEKQFHMEQCIGoFCvJ2zPB7PCpznh4+1jsY03kMie49KPoPDdr7/T9TAiB3jV7wzR9BH11FSbi+8U8gSX95PrBlnp1lOBgTUIUw3QFHUiED8lXZT/Sldb6I/j1ByxiKUS+RkR3imGYMzydXzAL4x4MhAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJUq4AACICAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJBG6B95QiAgPyVdlP9KV1voj+PUHLGIpRL5GRHeKYZgzPJ1fMAvjHgwQ0umUhAA==").unwrap();
         assert!(is_final(&full_signed_psbt).is_ok());
     }
 }
