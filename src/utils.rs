@@ -15,38 +15,39 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 #[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk_wallet::electrum_client::{Client, ElectrumApi};
-
+use bdk_electrum::electrum_client::{Client, ElectrumApi};
 #[cfg(all(feature = "reserves", feature = "electrum"))]
 use bdk_wallet::bitcoin::TxOut;
 
 use crate::commands::WalletOpts;
 use crate::nodes::Nodes;
-#[cfg(feature = "hardware-signer")]
-use bdk::hwi::{interface::HWIClient, types::HWIChain};
-#[cfg(feature = "hardware-signer")]
-use bdk::wallet::hardwaresigner::HWISigner;
-#[cfg(feature = "hardware-signer")]
-use bdk::wallet::signer::{SignerError, SignerOrdering};
 use bdk_wallet::bitcoin::secp256k1::Secp256k1;
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
-#[cfg(feature = "compact_filters")]
-use bdk_wallet::blockchain::compact_filters::{BitcoinPeerConfig, CompactFiltersBlockchainConfig};
-#[cfg(feature = "esplora")]
-use bdk_wallet::blockchain::esplora::EsploraBlockchainConfig;
+#[cfg(feature = "hardware-signer")]
+use hwi::{interface::HWIClient, signer::HWISigner, types::HWIChain};
+
 #[cfg(feature = "rpc")]
-use bdk_wallet::blockchain::rpc::{Auth, RpcConfig, RpcSyncParams};
+// use bdk_wallet::blockchain::rpc::{RpcConfig, RpcSyncParams};
+use bdk_bitcoind_rpc::bitcoincore_rpc::Auth;
+#[cfg(feature = "compact_filters")]
+// use bdk_reserves::bdk::blockchain::compact_filters::{BitcoinPeerConfig, CompactFiltersBlockchainConfig}; // can't find compact_filters
+#[cfg(feature = "esplora")]
+// use bdk::blockchain::esplora::EsploraBlockchainConfig;
+use bdk_esplora::EsploraAsyncExt;
 #[cfg(feature = "electrum")]
-use bdk_wallet::blockchain::ElectrumBlockchainConfig;
+// use bdk_wallet::blockchain::ElectrumBlockchainConfig;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
     feature = "compact_filters",
     feature = "rpc"
 ))]
-use bdk_wallet::blockchain::{AnyBlockchain, AnyBlockchainConfig, ConfigurableBlockchain};
+// use bdk_wallet::blockchain::{AnyBlockchain, AnyBlockchainConfig, ConfigurableBlockchain};
+use bdk_reserves::bdk::blockchain::ConfigurableBlockchain;
 #[cfg(feature = "sqlite-db")]
 use bdk_wallet::rusqlite::{Connection, OpenFlags};
+#[cfg(feature = "hardware-signer")]
+use bdk_wallet::signer::{SignerError, SignerOrdering};
 #[cfg(feature = "hardware-signer")]
 use bdk_wallet::KeychainKind;
 use bdk_wallet::{wallet_name_from_descriptor, PersistedWallet, Wallet};
@@ -115,8 +116,9 @@ pub fn get_outpoints_for_address(
     client: &Client,
     max_confirmation_height: Option<usize>,
 ) -> Result<Vec<(OutPoint, TxOut)>, Error> {
-    let unspents = client.script_list_unspent(&address.script_pubkey())?;
-
+    let unspents = client
+        .script_list_unspent(&address.script_pubkey())
+        .map_err(|e| Error::Generic(e.to_string()))?;
     unspents
         .iter()
         .filter(|utxo| {
@@ -313,21 +315,9 @@ pub(crate) fn new_backend(_datadir: &Path) -> Result<Nodes, Error> {
     let backend = {
         // Configure node directory according to cli options
         // nodes always have a persistent directory
-        let mut elect_conf = {
-            match _datadir {
-                None => {
-                    let datadir = utils::prepare_electrum_datadir().unwrap();
-                    let mut conf = electrsd::Conf::default();
-                    conf.staticdir = Some(_datadir);
-                    conf
-                }
-                Some(path) => {
-                    let mut conf = electrsd::Conf::default();
-                    conf.staticdir = Some(path.into());
-                    conf
-                }
-            }
-        };
+        let datadir = prepare_electrum_datadir(_datadir)?;
+        let mut elect_conf = electrsd::Conf::default();
+        elect_conf.staticdir = Some(datadir);
         elect_conf.http_enabled = true;
         let elect_exe =
             electrsd::downloaded_exe_path().expect("Electrsd downloaded binaries not found");
@@ -493,20 +483,13 @@ fn add_hardware_signers(
     network: Network,
 ) -> Result<PersistedWallet<Connection>, Error> {
     let mut wallet = wallet;
-    let chain = match network {
-        Network::Bitcoin => HWIChain::Main,
-        Network::Testnet => HWIChain::Test,
-        Network::Regtest => HWIChain::Regtest,
-        Network::Signet => HWIChain::Signet,
-        Network::Testnet4 => HWIChain::Test,
-        _ => Err(Error::Generic("Unsupported network".to_string()))?,
-    };
-    let devices = HWIClient::enumerate().map_err(|e| SignerError::from(e))?;
+    let chain = HWIChain::from(network);
+    let devices = HWIClient::enumerate().map_err(|e| Error::Generic(e.to_string()))?;
     for device in devices {
-        let device = device.map_err(|e| SignerError::from(e))?;
+        let device = device.map_err(|e| Error::Generic(e.to_string()))?;
         // Creating a custom signer from the device
-        let custom_signer =
-            HWISigner::from_device(&device, chain.clone()).map_err(|e| SignerError::from(e))?;
+        let custom_signer = HWISigner::from_device(&device, chain.clone())
+            .map_err(|e| Error::Generic(e.to_string()))?;
 
         // Adding the hardware signer to the BDK wallet
         wallet.add_signer(

@@ -605,16 +605,17 @@ mod test {
     use crate::handlers::handle_key_subcommand;
     #[cfg(all(feature = "reserves", feature = "electrum"))]
     use crate::handlers::{handle_ext_reserves_subcommand, handle_online_wallet_subcommand};
+    #[cfg(all(feature = "reserves", feature = "electrum"))]
+    use bdk_electrum::electrum_client::Client;
+    #[cfg(all(feature = "reserves", feature = "electrum"))]
+    use bdk_reserves::bdk::SyncOptions;
     use bdk_wallet::bitcoin::bip32::{DerivationPath, Xpriv};
     #[cfg(all(feature = "reserves", feature = "electrum"))]
-    use bdk_wallet::bitcoin::{consensus::Encodable, util::psbt::PartiallySignedTransaction};
+    use bdk_wallet::bitcoin::{consensus::Encodable, Psbt};
     use bdk_wallet::bitcoin::{Address, Network, OutPoint};
     use bdk_wallet::miniscript::bitcoin::network::Network::Testnet;
     #[cfg(all(feature = "reserves", feature = "electrum"))]
-    use bdk_wallet::{
-        blockchain::ElectrumBlockchain, database::MemoryDatabase, electrum_client::Client,
-        SyncOptions, Wallet,
-    };
+    use bdk_wallet::{blockchain::ElectrumBlockchain, database::MemoryDatabase, Wallet}; // yet to fix imports
     use std::str::{self, FromStr};
 
     use super::OfflineWalletSubCommand::{BumpFee, CreateTx, GetNewAddress};
@@ -1499,7 +1500,7 @@ mod test {
 
     /// Encodes a partially signed transaction as base64 and returns the  bytes of the resulting string.
     #[cfg(all(feature = "reserves", feature = "electrum"))]
-    fn encode_psbt(psbt: PartiallySignedTransaction) -> Vec<u8> {
+    fn encode_psbt(psbt: Psbt) -> Vec<u8> {
         let mut encoded = Vec::<u8>::new();
         psbt.consensus_encode(&mut encoded).unwrap();
         let base64_psbt = base64::encode(&encoded);

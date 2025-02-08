@@ -24,15 +24,10 @@ use crate::commands::OnlineWalletSubCommand::*;
 use crate::commands::*;
 use crate::error::BDKCliError as Error;
 use crate::utils::*;
-use bdk_wallet::bip39::{Language, Mnemonic};
-use bdk_wallet::bitcoin::script::PushBytesBuf;
-use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
-use bdk_wallet::rusqlite::Connection;
-
-use bdk_wallet::keys::bip39::WordCount;
-use bdk_wallet::{KeychainKind, PersistedWallet, SignOptions};
-use clap::Parser;
-
+#[cfg(all(feature = "reserves", feature = "electrum"))]
+use bdk_electrum::electrum_client::{Client, ElectrumApi};
+#[cfg(all(feature = "reserves", feature = "electrum"))]
+use bdk_reserves::bdk::bitcoin::psbt::PartiallySignedTransaction;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -43,14 +38,20 @@ use bdk_reserves::bdk::{
     blockchain::{log_progress, Blockchain},
     SyncOptions,
 };
+use bdk_wallet::bip39::{Language, Mnemonic};
 use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
 use bdk_wallet::bitcoin::consensus::encode::{serialize, serialize_hex};
-use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Network, Txid};
+use bdk_wallet::bitcoin::script::PushBytesBuf;
+use bdk_wallet::bitcoin::Network;
+use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Txid};
+use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
 use bdk_wallet::descriptor::Segwitv0;
 #[cfg(feature = "compiler")]
 use bdk_wallet::descriptor::{Descriptor, Legacy, Miniscript};
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use electrum_client::{Client, ElectrumApi};
+use bdk_wallet::keys::bip39::WordCount;
+use bdk_wallet::rusqlite::Connection;
+use bdk_wallet::{KeychainKind, PersistedWallet, SignOptions};
+use clap::Parser;
 
 use bdk_wallet::keys::DescriptorKey::Secret;
 use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
@@ -70,9 +71,11 @@ use bdk_macros::maybe_async;
 ))]
 use bdk_macros::maybe_await;
 #[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk_reserves::bdk::{bitcoin::Address, blockchain::Capability};
+use bdk_reserves::bdk::blockchain::Capability;
 #[cfg(feature = "reserves")]
 use bdk_reserves::reserves::{verify_proof, ProofOfReserves};
+#[cfg(all(feature = "reserves", feature = "electrum"))]
+use bdk_wallet::bitcoin::Address;
 #[cfg(feature = "compiler")]
 use bdk_wallet::miniscript::policy::Concrete;
 #[cfg(feature = "repl")]
@@ -518,19 +521,12 @@ pub(crate) fn handle_key_subcommand(
         }
         #[cfg(feature = "hardware-signer")]
         KeySubCommand::Hardware {} => {
-            let chain = match network {
-                Network::Bitcoin => HWIChain::Main,
-                Network::Testnet => HWIChain::Test,
-                Network::Regtest => HWIChain::Regtest,
-                Network::Signet => HWIChain::Signet,
-                Network::Testnet4 => HWIChain::Test,
-                _ => Err(Error::Generic("Invalid network".to_string()))?,
-            };
-            let devices = HWIClient::enumerate()?;
+            let chain = HWIChain::from(network);
+            let devices = HWIClient::enumerate().map_err(|e| Error::Generic(e.to_string()))?;
             let descriptors = devices.iter().map(|device_| {
-                let device = device_.clone().map_err(|e| Error::Generic(e.to_string()))?;
-                let client = HWIClient::get_client(&device, true, chain.clone())?;
-                let descriptors: HWIDescriptor<String> = client.get_descriptors(None)?;
+                let device = device_.as_ref().map_err(|e| Error::Generic(e.to_string()))?;
+                let client = HWIClient::get_client(&device, true, chain.clone()).unwrap();
+                let descriptors: HWIDescriptor<String> = client.get_descriptors(None).map_err(|e|Error::Generic(e.to_string()))?;
                 Ok(json!({"device": device.model, "receiving": descriptors.receive[0].to_string(), "change": descriptors.internal[0]}))
             }).collect::<Result<Vec<_>, Error>>()?;
             Ok(json!(descriptors))
@@ -570,27 +566,38 @@ pub(crate) fn handle_compile_subcommand(
 /// Proof of reserves options are described in [`CliSubCommand::ExternalReserves`].
 #[cfg(all(feature = "reserves", feature = "electrum"))]
 pub(crate) fn handle_ext_reserves_subcommand(
-    network: Network,
+    network: bdk_reserves::bdk::bitcoin::Network,
     message: String,
     psbt: String,
     confirmations: usize,
     addresses: Vec<String>,
-    electrum_opts: ElectrumApi,
+    electrum_opts: ElectrumOpts,
 ) -> Result<serde_json::Value, Error> {
     let psbt = base64::decode(&psbt)?;
-    let psbt: Psbt = Psbt::deserialize(&psbt)?;
-    let client = Client::new(&electrum_opts.server)?;
 
-    let current_block_height = client.block_headers_subscribe().map(|data| data.height)?;
+    let psbt: PartiallySignedTransaction = PartiallySignedTransaction::deserialize(&psbt)
+        .map_err(|e| Error::Generic(e.to_string()))?;
+    let client = Client::new(&electrum_opts.server).map_err(|e| Error::Generic(e.to_string()))?;
+
+    let current_block_height = client
+        .block_headers_subscribe()
+        .map(|data| data.height)
+        .map_err(|e| {
+            Error::Generic(format!(
+                "Failed to get block height from electrum server: {:?}",
+                e
+            ))
+        })?;
     let max_confirmation_height = Some(current_block_height - confirmations);
 
     let outpoints_per_addr = addresses
         .iter()
         .map(|address| {
-            let address = Address::from_str(address)?;
+            let address = Address::from_str(address)?.assume_checked();
             get_outpoints_for_address(address, &client, max_confirmation_height)
         })
-        .collect::<Result<Vec<Vec<_>>, Error>>()?;
+        .collect::<Result<Vec<Vec<_>>, Error>>()
+        .map_err(|e| Error::Generic(e.to_string()))?;
     let outpoints_combined = outpoints_per_addr
         .iter()
         .fold(Vec::new(), |mut outpoints, outs| {
