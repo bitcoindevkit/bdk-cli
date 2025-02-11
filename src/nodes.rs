@@ -16,12 +16,9 @@
 
 #[cfg(feature = "regtest-node")]
 use {
-    crate::commands::NodeSubCommand,
-    bdk_wallet::{
-        bitcoin::{Address, Amount},
-        Error,
-    },
-    electrsd::bitcoind::bitcoincore_rpc::{Client, RpcApi},
+    crate::{commands::NodeSubCommand, error::BDKCliError as Error},
+    bdk_wallet::bitcoin::{Address, Amount},
+    electrsd::corepc_node::{Client, Node},
     serde_json::Value,
     std::str::FromStr,
 };
@@ -34,20 +31,20 @@ pub enum Nodes {
     #[cfg(feature = "regtest-bitcoin")]
     /// A bitcoin core backend. Wallet connected to it via RPC.
     Bitcoin {
-        bitcoind: Box<electrsd::bitcoind::BitcoinD>,
+        bitcoind: Box<Node>,
     },
     #[cfg(feature = "regtest-electrum")]
     /// An Electrum backend with an underlying bitcoin core
     /// Wallet connected to it, via the electrum url.
     Electrum {
-        bitcoind: Box<electrsd::bitcoind::BitcoinD>,
+        bitcoind: Box<Node>,
         electrsd: Box<electrsd::ElectrsD>,
     },
     /// An Esplora backend with an underlying bitcoin core
     /// Wallet connected to it, via the esplora url.
     #[cfg(any(feature = "regtest-esplora-ureq", feature = "regtest-esplora-reqwest"))]
     Esplora {
-        bitcoind: Box<electrsd::bitcoind::BitcoinD>,
+        bitcoind: Box<Node>,
         esplorad: Box<electrsd::ElectrsD>,
     },
 }
@@ -58,42 +55,21 @@ impl Nodes {
     pub fn exec_cmd(&self, cmd: NodeSubCommand) -> Result<serde_json::Value, Error> {
         let client = self.get_client()?;
         match cmd {
-            NodeSubCommand::GetInfo => Ok(serde_json::to_value(
-                client
-                    .get_blockchain_info()
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-            )?),
-
-            NodeSubCommand::GetNewAddress => Ok(serde_json::to_value(
-                client
-                    .get_new_address(None, None)
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-            )?),
+            NodeSubCommand::GetInfo => Ok(serde_json::to_value(client.get_blockchain_info()?)?),
+            NodeSubCommand::GetNewAddress => Ok(serde_json::to_value(client.new_address()?)?),
 
             NodeSubCommand::Generate { block_num } => {
-                let core_addrs = client
-                    .get_new_address(None, None)
-                    .map_err(|e| Error::Generic(e.to_string()))?;
-                let block_hashes = client
-                    .generate_to_address(block_num, &core_addrs)
-                    .map_err(|e| Error::Generic(e.to_string()))?;
+                let core_addrs = client.new_address()?;
+                let block_hashes = client.generate_to_address(block_num as usize, &core_addrs)?;
                 Ok(serde_json::to_value(block_hashes)?)
             }
 
-            NodeSubCommand::GetBalance => Ok(serde_json::to_value(
-                client
-                    .get_balance(None, None)
-                    .map_err(|e| Error::Generic(e.to_string()))?
-                    .to_string(),
-            )?),
+            NodeSubCommand::GetBalance => Ok(serde_json::to_value(client.get_balance()?)?),
 
             NodeSubCommand::SendToAddress { address, amount } => {
-                let address =
-                    Address::from_str(&address).map_err(|e| Error::Generic(e.to_string()))?;
+                let address = Address::from_str(&address)?.assume_checked();
                 let amount = Amount::from_sat(amount);
-                let txid = client
-                    .send_to_address(&address, amount, None, None, None, None, None, None)
-                    .map_err(|e| Error::Generic(e.to_string()))?;
+                let txid = client.send_to_address(&address, amount)?;
                 Ok(serde_json::to_value(&txid)?)
             }
 
@@ -103,9 +79,7 @@ impl Nodes {
                     .iter()
                     .map(|arg| serde_json::Value::from_str(arg))
                     .collect::<Result<Vec<Value>, _>>()?;
-                client
-                    .call::<Value>(cmd, &args)
-                    .map_err(|e| Error::Generic(e.to_string()))
+                Ok(client.call::<Value>(cmd, &args)?)
             }
         }
     }
@@ -119,7 +93,7 @@ impl Nodes {
             #[cfg(feature = "regtest-bitcoin")]
             Self::Bitcoin { bitcoind } => Ok(&bitcoind.client),
             #[cfg(feature = "regtest-electrum")]
-            Self::Electrum { bitcoind, .. } => Ok(&bitcoind.client),
+            Self::Electrum { bitcoind, .. } => Ok(&bitcoind.client), // question: shouldn't we initialize electrsd with bitcoind?
             #[cfg(any(feature = "regtest-esplora-ureq", feature = "regtest-esplora-reqwest"))]
             Self::Esplora { bitcoind, .. } => Ok(&bitcoind.client),
         }

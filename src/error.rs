@@ -18,6 +18,9 @@ pub enum BDKCliError {
     #[error("Create transaction error: {0}")]
     CreateTx(#[from] bdk_wallet::error::CreateTxError),
 
+    #[error("CoreRPC error: {0}")]
+    CoreRPCError(#[from] electrsd::corepc_client::client_sync::Error),
+
     #[error("Descriptor error: {0}")]
     DescriptorError(#[from] bdk_wallet::descriptor::error::Error),
 
