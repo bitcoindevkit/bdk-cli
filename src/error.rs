@@ -2,6 +2,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum BDKCliError {
+    #[error("Anyhow error: {0}")]
+    Anyhow(#[from] electrsd::corepc_node::anyhow::Error),
+
     #[error("BIP39 error: {0}")]
     BIP39Errror(#[from] bdk_wallet::bip39::Error),
 

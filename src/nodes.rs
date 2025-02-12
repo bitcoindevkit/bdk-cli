@@ -20,7 +20,7 @@ use {
     bdk_wallet::bitcoin::{Address, Amount},
     electrsd::corepc_node::{Client, Node},
     serde_json::Value,
-    std::str::FromStr,
+    std::{str::FromStr, sync::Arc},
 };
 
 #[allow(dead_code)]
@@ -31,20 +31,20 @@ pub enum Nodes {
     #[cfg(feature = "regtest-bitcoin")]
     /// A bitcoin core backend. Wallet connected to it via RPC.
     Bitcoin {
-        bitcoind: Box<Node>,
+        bitcoind: Arc<Node>,
     },
     #[cfg(feature = "regtest-electrum")]
     /// An Electrum backend with an underlying bitcoin core
     /// Wallet connected to it, via the electrum url.
     Electrum {
-        bitcoind: Box<Node>,
+        bitcoind: Arc<Node>,
         electrsd: Box<electrsd::ElectrsD>,
     },
     /// An Esplora backend with an underlying bitcoin core
     /// Wallet connected to it, via the esplora url.
     #[cfg(any(feature = "regtest-esplora-ureq", feature = "regtest-esplora-reqwest"))]
     Esplora {
-        bitcoind: Box<Node>,
+        bitcoind: Arc<Node>,
         esplorad: Box<electrsd::ElectrsD>,
     },
 }
@@ -93,7 +93,7 @@ impl Nodes {
             #[cfg(feature = "regtest-bitcoin")]
             Self::Bitcoin { bitcoind } => Ok(&bitcoind.client),
             #[cfg(feature = "regtest-electrum")]
-            Self::Electrum { bitcoind, .. } => Ok(&bitcoind.client), // question: shouldn't we initialize electrsd with bitcoind?
+            Self::Electrum { bitcoind, .. } => Ok(&bitcoind.client),
             #[cfg(any(feature = "regtest-esplora-ureq", feature = "regtest-esplora-reqwest"))]
             Self::Esplora { bitcoind, .. } => Ok(&bitcoind.client),
         }

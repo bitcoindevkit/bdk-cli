@@ -10,49 +10,54 @@
 //!
 //! This module includes all the utility tools used by the App.
 
-use crate::error::BDKCliError as Error;
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
-
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk_electrum::electrum_client::{Client, ElectrumApi};
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk_wallet::bitcoin::TxOut;
-
 use crate::commands::WalletOpts;
+use crate::error::BDKCliError as Error;
 use crate::nodes::Nodes;
 use bdk_wallet::bitcoin::secp256k1::Secp256k1;
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
-#[cfg(feature = "hardware-signer")]
-use hwi::{interface::HWIClient, signer::HWISigner, types::HWIChain};
+use bdk_wallet::{wallet_name_from_descriptor, PersistedWallet, Wallet};
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
-#[cfg(feature = "rpc")]
-// use bdk_wallet::blockchain::rpc::{RpcConfig, RpcSyncParams};
-use bdk_bitcoind_rpc::bitcoincore_rpc::Auth;
-#[cfg(feature = "compact_filters")]
-// use bdk_reserves::bdk::blockchain::compact_filters::{BitcoinPeerConfig, CompactFiltersBlockchainConfig}; // can't find compact_filters
+#[cfg(feature = "hardware-signer")]
+use {
+    bdk_wallet::{
+        signer::{SignerError, SignerOrdering},
+        KeychainKind,
+    },
+    hwi::{interface::HWIClient, signer::HWISigner, types::HWIChain},
+    std::sync::Arc,
+};
+
+#[cfg(all(feature = "reserves", feature = "electrum"))]
+use {
+    bdk_electrum::electrum_client::{Client, ElectrumApi},
+    bdk_wallet::bitcoin::TxOut,
+    electrsd::corepc_client::client_sync::v17::blockchain,
+};
+
 #[cfg(feature = "esplora")]
-// use bdk::blockchain::esplora::EsploraBlockchainConfig;
+// use bdk::blockchain::esplora::EsploraBlockchainConfig; //haven't gotten import
+use bdk_bitcoind_rpc::bitcoincore_rpc::Auth;
 use bdk_esplora::EsploraAsyncExt;
+#[cfg(feature = "compact_filters")]
+use bdk_reserves::bdk::blockchain::compact_filters::{
+    BitcoinPeerConfig, CompactFiltersBlockchainConfig,
+}; // can't find compact_filters
+use bdk_reserves::bdk::blockchain::ConfigurableBlockchain;
+#[cfg(feature = "rpc")]
+use bdk_wallet::blockchain::rpc::{RpcConfig, RpcSyncParams};
 #[cfg(feature = "electrum")]
-// use bdk_wallet::blockchain::ElectrumBlockchainConfig;
+use bdk_wallet::blockchain::ElectrumBlockchainConfig;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
     feature = "compact_filters",
     feature = "rpc"
 ))]
-// use bdk_wallet::blockchain::{AnyBlockchain, AnyBlockchainConfig, ConfigurableBlockchain};
-use bdk_reserves::bdk::blockchain::ConfigurableBlockchain;
+use bdk_wallet::blockchain::{AnyBlockchain, AnyBlockchainConfig, ConfigurableBlockchain};
 #[cfg(feature = "sqlite-db")]
 use bdk_wallet::rusqlite::{Connection, OpenFlags};
-#[cfg(feature = "hardware-signer")]
-use bdk_wallet::signer::{SignerError, SignerOrdering};
-#[cfg(feature = "hardware-signer")]
-use bdk_wallet::KeychainKind;
-use bdk_wallet::{wallet_name_from_descriptor, PersistedWallet, Wallet};
-#[cfg(feature = "hardware-signer")]
-use std::sync::Arc;
 
 /// Create a randomized wallet name from the descriptor checksum.
 /// If wallet options already includes a name, use that instead.
@@ -90,12 +95,6 @@ pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
     Ok((addr.script_pubkey(), val))
 }
 
-#[cfg(any(
-    feature = "electrum",
-    feature = "compact_filters",
-    feature = "esplora",
-    feature = "rpc"
-))]
 /// Parse the proxy (Socket:Port) argument from the cli input.
 pub(crate) fn parse_proxy_auth(s: &str) -> Result<(String, String), Error> {
     let parts: Vec<_> = s.split(':').collect();
@@ -279,18 +278,18 @@ pub(crate) fn new_backend(_datadir: &Path) -> Result<Nodes, Error> {
         // Configure node directory according to cli options
         // nodes always have a persistent directory
         let datadir = prepare_bitcoind_datadir(_datadir)?;
-        let mut bitcoind_conf = electrsd::bitcoind::Conf::default();
+        let mut bitcoind_conf = electrsd::corepc_node::Conf::default();
         bitcoind_conf.staticdir = Some(datadir);
-        let bitcoind_exe = electrsd::bitcoind::downloaded_exe_path()
-            .expect("We should always have downloaded path");
-        electrsd::bitcoind::BitcoinD::with_conf(bitcoind_exe, &bitcoind_conf)
-            .map_err(|e| Error::Generic(e.to_string()))?
+        let bitcoind_exe =
+            electrsd::downloaded_exe_path().expect("We should always have downloaded path");
+        let node = electrsd::corepc_node::Node::with_conf(bitcoind_exe, &bitcoind_conf)?;
+        Arc::new(node)
     };
 
     #[cfg(feature = "regtest-bitcoin")]
     let backend = {
         Nodes::Bitcoin {
-            bitcoind: Box::new(bitcoind),
+            bitcoind: Arc::clone(&bitcoind),
         }
     };
 
@@ -303,10 +302,9 @@ pub(crate) fn new_backend(_datadir: &Path) -> Result<Nodes, Error> {
         elect_conf.staticdir = Some(datadir);
         let elect_exe =
             electrsd::downloaded_exe_path().expect("We should always have downloaded path");
-        let electrsd = electrsd::ElectrsD::with_conf(elect_exe, &bitcoind, &elect_conf)
-            .map_err(|e| Error::Generic(e.to_string()))?;
+        let electrsd = electrsd::ElectrsD::with_conf(elect_exe, &bitcoind, &elect_conf)?;
         Nodes::Electrum {
-            bitcoind: Box::new(bitcoind),
+            bitcoind: Arc::clone(&bitcoind),
             electrsd: Box::new(electrsd),
         }
     };
@@ -323,7 +321,7 @@ pub(crate) fn new_backend(_datadir: &Path) -> Result<Nodes, Error> {
             electrsd::downloaded_exe_path().expect("Electrsd downloaded binaries not found");
         let electrsd = electrsd::ElectrsD::with_conf(elect_exe, &bitcoind, &elect_conf).unwrap();
         Nodes::Esplora {
-            bitcoind: Box::new(bitcoind),
+            bitcoind: Arc::clone(&bitcoind),
             esplorad: Box::new(electrsd),
         }
     };
@@ -370,7 +368,9 @@ pub(crate) fn new_blockchain(
     let config = {
         let url = match _backend {
             #[cfg(any(feature = "regtest-esplora-ureq", feature = "regtest-esplora-reqwest"))]
-            Nodes::Esplora { esplorad } => esplorad.esplora_url.expect("Esplora url expected"),
+            Nodes::Esplora { esplorad, bitcoind } => {
+                esplorad.esplora_url.expect("Esplora url expected")
+            }
             _ => wallet_opts.esplora_opts.server.clone(),
         };
 
@@ -414,20 +414,16 @@ pub(crate) fn new_blockchain(
             #[cfg(feature = "regtest-node")]
             Nodes::Bitcoin { bitcoind } => (
                 bitcoind.params.rpc_socket.to_string(),
-                Auth::Cookie {
-                    file: bitcoind.params.cookie_file.clone(),
-                },
+                Auth::CookieFile(bitcoind.params.cookie_file.clone()),
             ),
             _ => {
                 let auth = if let Some(cookie) = &wallet_opts.rpc_opts.cookie {
-                    Auth::Cookie {
-                        file: cookie.into(),
-                    }
+                    Auth::CookieFile(cookie.into())
                 } else {
-                    Auth::UserPass {
-                        username: wallet_opts.rpc_opts.basic_auth.0.clone(),
-                        password: wallet_opts.rpc_opts.basic_auth.1.clone(),
-                    }
+                    Auth::UserPass(
+                        wallet_opts.rpc_opts.basic_auth.0.clone(),
+                        wallet_opts.rpc_opts.basic_auth.1.clone(),
+                    )
                 };
                 (wallet_opts.rpc_opts.address.clone(), auth)
             }
