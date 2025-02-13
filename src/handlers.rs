@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021 Bitcoin Dev Kit Developers
+// Copyright (c) 2020-2025 Bitcoin Dev Kit Developers
 //
 // This file is licensed under the Apache License, Version 2.0 <LICENSE-APACHE
 // or http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -10,72 +10,53 @@
 //!
 //! This module describes all the command handling logic used by bdk-cli.
 
-use clap::Parser;
-use serde_json::json;
-use std::collections::BTreeMap;
-use std::convert::TryFrom;
-use std::str::FromStr;
-
 use crate::commands::OfflineWalletSubCommand::*;
-use crate::commands::*;
-use crate::error::BDKCliError as Error;
-use crate::utils::*;
-
-use bdk_macros::maybe_async;
-use bdk_wallet::bip39::{Language, Mnemonic};
-use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
-use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
-use bdk_wallet::bitcoin::{
-    script::PushBytesBuf, secp256k1::Secp256k1, Amount, FeeRate, Network, Psbt, Sequence, Txid,
-};
-use bdk_wallet::descriptor::Segwitv0;
-use bdk_wallet::keys::{
-    bip39::WordCount, DerivableKey, DescriptorKey, DescriptorKey::Secret, ExtendedKey,
-    GeneratableKey, GeneratedKey,
-};
-use bdk_wallet::miniscript::miniscript;
-use bdk_wallet::rusqlite::Connection;
-use bdk_wallet::{KeychainKind, SignOptions, Wallet};
-
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
-    feature = "compact_filters",
+    feature = "cbf",
     feature = "rpc"
 ))]
-use {
-    crate::commands::OnlineWalletSubCommand::*,
-    bdk_reserves::bdk::{
-        blockchain::{log_progress, Blockchain},
-        SyncOptions,
-    },
-    bdk_wallet::Wallet,
-};
-
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use {
-    bdk_electrum::electrum_client::{Client, ElectrumApi},
-    bdk_reserves::bdk::{bitcoin::psbt::PartiallySignedTransaction, blockchain::Capability},
-    bdk_wallet::bitcoin::Address,
-};
-
-#[cfg(feature = "reserves")]
-use bdk_reserves::reserves::{verify_proof, ProofOfReserves};
-#[cfg(feature = "hardware-signer")]
-use hwi::{
-    types::{HWIChain, HWIDescriptor},
-    HWIClient,
-};
+use crate::commands::OnlineWalletSubCommand::*;
+use crate::commands::*;
+use crate::error::BDKCliError as Error;
+use crate::utils::*;
+use bdk_wallet::bip39::{Language, Mnemonic};
+use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
+use bdk_wallet::bitcoin::consensus::encode::{serialize, serialize_hex};
+use bdk_wallet::bitcoin::script::PushBytesBuf;
+use bdk_wallet::bitcoin::Network;
+use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Transaction, Txid};
+use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
+use bdk_wallet::descriptor::Segwitv0;
 #[cfg(feature = "compiler")]
-use {
-    bdk_wallet::descriptor::{Descriptor, Legacy, Miniscript},
-    bdk_wallet::miniscript::policy::Concrete,
-};
-#[cfg(feature = "repl")]
-use {
-    regex::Regex,
-    rustyline::{error::ReadlineError, Editor},
-};
+use bdk_wallet::descriptor::{Descriptor, Legacy, Miniscript};
+use bdk_wallet::keys::bip39::WordCount;
+#[cfg(feature = "sqlite")]
+use bdk_wallet::rusqlite::Connection;
+use bdk_wallet::{KeychainKind, SignOptions, Wallet};
+
+use bdk_wallet::keys::DescriptorKey::Secret;
+use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
+use bdk_wallet::miniscript::miniscript;
+use std::collections::{BTreeMap, HashSet};
+use std::convert::TryFrom;
+use std::io::Write;
+
+#[cfg(feature = "compiler")]
+use bdk_wallet::miniscript::policy::Concrete;
+use serde_json::json;
+use std::str::FromStr;
+
+#[cfg(feature = "electrum")]
+use crate::utils::BlockchainClient::Electrum;
+#[cfg(feature = "esplora")]
+use crate::utils::BlockchainClient::Esplora;
+#[cfg(feature = "esplora")]
+use bdk_esplora::EsploraAsyncExt;
+use bdk_wallet::bitcoin::base64::prelude::*;
+use bdk_wallet::bitcoin::consensus::Decodable;
+use bdk_wallet::bitcoin::hex::FromHex;
 
 /// Execute an offline wallet sub-command
 ///
@@ -86,7 +67,7 @@ pub fn handle_offline_wallet_subcommand(
     offline_subcommand: OfflineWalletSubCommand,
 ) -> Result<serde_json::Value, Error> {
     match offline_subcommand {
-        GetNewAddress => {
+        NewAddress => {
             let addr = wallet.reveal_next_address(KeychainKind::External);
             if wallet_opts.verbose {
                 Ok(json!({
@@ -99,10 +80,23 @@ pub fn handle_offline_wallet_subcommand(
                 }))
             }
         }
-        ListUnspent => Ok(serde_json::to_value(
+        UnusedAddress => {
+            let addr = wallet.next_unused_address(KeychainKind::External);
+            if wallet_opts.verbose {
+                Ok(json!({
+                    "address": addr.address,
+                    "index": addr.index
+                }))
+            } else {
+                Ok(json!({
+                    "address": addr.address,
+                }))
+            }
+        }
+        Unspent => Ok(serde_json::to_value(
             wallet.list_unspent().collect::<Vec<_>>(),
         )?),
-        ListTransactions => {
+        Transactions => {
             let transactions: Vec<_> = wallet
                 .transactions()
                 .map(|tx| {
@@ -120,7 +114,7 @@ pub fn handle_offline_wallet_subcommand(
 
             Ok(serde_json::to_value(transactions)?)
         }
-        GetBalance => Ok(json!({"satoshi": wallet.balance()})),
+        Balance => Ok(json!({"satoshi": wallet.balance()})),
         CreateTx {
             recipients,
             send_all,
@@ -161,7 +155,7 @@ pub fn handle_offline_wallet_subcommand(
             }
 
             if let Some(utxos) = utxos {
-                tx_builder.add_utxos(&utxos[..]);
+                tx_builder.add_utxos(&utxos[..]).unwrap();
             }
 
             if let Some(unspendable) = unspendable {
@@ -169,7 +163,7 @@ pub fn handle_offline_wallet_subcommand(
             }
 
             if let Some(base64_data) = add_data {
-                let op_return_data = base64::decode(&base64_data).unwrap();
+                let op_return_data = BASE64_STANDARD.decode(&base64_data).unwrap();
                 tx_builder.add_data(&PushBytesBuf::try_from(op_return_data).unwrap());
             } else if let Some(string_data) = add_string {
                 let data = PushBytesBuf::try_from(string_data.as_bytes().to_vec()).unwrap();
@@ -188,7 +182,8 @@ pub fn handle_offline_wallet_subcommand(
 
             let psbt = tx_builder.finish()?;
 
-            let psbt_base64 = psbt.to_string();
+            let serialized_psbt = psbt.serialize();
+            let psbt_base64 = BASE64_STANDARD.encode(&serialized_psbt);
 
             if wallet_opts.verbose {
                 Ok(
@@ -223,7 +218,7 @@ pub fn handle_offline_wallet_subcommand(
             }
 
             if let Some(utxos) = utxos {
-                tx_builder.add_utxos(&utxos[..]);
+                tx_builder.add_utxos(&utxos[..]).unwrap();
             }
 
             if let Some(unspendable) = unspendable {
@@ -232,7 +227,10 @@ pub fn handle_offline_wallet_subcommand(
 
             let psbt = tx_builder.finish()?;
 
-            Ok(json!({"psbt": psbt.to_string(), "details": psbt}))
+            let serialized_psbt = psbt.serialize();
+            let psbt_base64 = BASE64_STANDARD.encode(serialized_psbt);
+
+            Ok(json!({"psbt": psbt_base64, "details": psbt}))
         }
         Policies => {
             let external_policy = wallet.policies(KeychainKind::External)?;
@@ -252,7 +250,7 @@ pub fn handle_offline_wallet_subcommand(
             assume_height,
             trust_witness_utxo,
         } => {
-            let psbt_bytes = base64::decode(psbt)?;
+            let psbt_bytes = BASE64_STANDARD.decode(psbt)?;
             let mut psbt = Psbt::deserialize(&psbt_bytes)?;
             let signopt = SignOptions {
                 assume_height,
@@ -262,14 +260,16 @@ pub fn handle_offline_wallet_subcommand(
             let finalized = wallet.sign(&mut psbt, signopt)?;
             if wallet_opts.verbose {
                 Ok(
-                    json!({"psbt": psbt.to_string(),"is_finalized": finalized, "serialized_psbt": psbt}),
+                    json!({"psbt": BASE64_STANDARD.encode(serialize(&psbt_bytes)),"is_finalized": finalized, "serialized_psbt": psbt}),
                 )
             } else {
-                Ok(json!({"psbt": psbt.to_string(),"is_finalized": finalized,}))
+                Ok(
+                    json!({"psbt": BASE64_STANDARD.encode(serialize(&psbt_bytes)),"is_finalized": finalized,}),
+                )
             }
         }
         ExtractPsbt { psbt } => {
-            let psbt_serialized = base64::decode(psbt)?;
+            let psbt_serialized = BASE64_STANDARD.decode(psbt)?;
             let psbt = Psbt::deserialize(&psbt_serialized)?;
             let raw_tx = psbt.extract_tx()?;
             Ok(json!({"raw_tx": serialize_hex(&raw_tx),}))
@@ -279,7 +279,7 @@ pub fn handle_offline_wallet_subcommand(
             assume_height,
             trust_witness_utxo,
         } => {
-            let psbt_bytes = base64::decode(psbt)?;
+            let psbt_bytes = BASE64_STANDARD.decode(psbt)?;
             let mut psbt: Psbt = Psbt::deserialize(&psbt_bytes)?;
 
             let signopt = SignOptions {
@@ -290,17 +290,19 @@ pub fn handle_offline_wallet_subcommand(
             let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
             if wallet_opts.verbose {
                 Ok(
-                    json!({ "psbt": psbt.to_string(),"is_finalized": finalized, "serialized_psbt": psbt}),
+                    json!({ "psbt": BASE64_STANDARD.encode(serialize(&psbt_bytes)),"is_finalized": finalized, "serialized_psbt": psbt}),
                 )
             } else {
-                Ok(json!({ "psbt": psbt.to_string(),"is_finalized": finalized,}))
+                Ok(
+                    json!({ "psbt": BASE64_STANDARD.encode(serialize(&psbt_bytes)),"is_finalized": finalized,}),
+                )
             }
         }
         CombinePsbt { psbt } => {
             let mut psbts = psbt
                 .iter()
                 .map(|s| {
-                    let psbt = base64::decode(s)?;
+                    let psbt = BASE64_STANDARD.decode(s)?;
                     Ok(Psbt::deserialize(&psbt)?)
                 })
                 .collect::<Result<Vec<_>, Error>>()?;
@@ -315,7 +317,7 @@ pub fn handle_offline_wallet_subcommand(
                     Ok(acc)
                 },
             )?;
-            Ok(json!({ "psbt": final_psbt.to_string() }))
+            Ok(json!({ "psbt": BASE64_STANDARD.encode(final_psbt.serialize()) }))
         }
     }
 }
@@ -323,86 +325,121 @@ pub fn handle_offline_wallet_subcommand(
 /// Execute an online wallet sub-command
 ///
 /// Online wallet sub-commands are described in [`OnlineWalletSubCommand`].
-#[maybe_async]
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
-    feature = "compact_filters",
+    feature = "cbf",
     feature = "rpc"
 ))]
-pub(crate) fn handle_online_wallet_subcommand(
-    wallet: Wallet,
-    blockchain: &B,
+pub(crate) async fn handle_online_wallet_subcommand(
+    wallet: &mut Wallet,
+    client: BlockchainClient,
     online_subcommand: OnlineWalletSubCommand,
 ) -> Result<serde_json::Value, Error> {
     match online_subcommand {
-        Sync => {
-            maybe_await!(wallet.sync(
-                blockchain,
-                SyncOptions {
-                    progress: Some(Box::new(log_progress())),
+        FullScan { stop_gap } => {
+            let request = wallet.start_full_scan().inspect({
+                let mut stdout = std::io::stdout();
+                let mut once = HashSet::<KeychainKind>::new();
+                move |k, spk_i, _| {
+                    if once.insert(k) {
+                        print!("\nScanning keychain [{:?}]", k);
+                    }
+                    print!(" {:<3}", spk_i);
+                    stdout.flush().expect("must flush");
                 }
-            ))?;
+            });
+            match client {
+                #[cfg(feature = "electrum")]
+                Electrum { client, batch_size } => {
+                    // Populate the electrum client's transaction cache so it doesn't re-download transaction we
+                    // already have.
+                    client
+                        .populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
+
+                    let update = client.full_scan(request, stop_gap, batch_size, false)?;
+                    wallet.apply_update(update)?;
+                }
+                #[cfg(feature = "esplora")]
+                Esplora {
+                    client,
+                    parallel_requests,
+                } => {
+                    let update = client
+                        .full_scan(request, stop_gap, parallel_requests)
+                        .await
+                        .map_err(|e| *e)?;
+                    wallet.apply_update(update)?;
+                }
+            }
+            Ok(json!({}))
+        }
+        Sync => {
+            let request = wallet
+                .start_sync_with_revealed_spks()
+                .inspect(|item, progress| {
+                    let pc = (100 * progress.consumed()) as f32 / progress.total() as f32;
+                    eprintln!("[ SCANNING {:03.0}% ] {}", pc, item);
+                });
+            match client {
+                #[cfg(feature = "electrum")]
+                Electrum { client, batch_size } => {
+                    // Populate the electrum client's transaction cache so it doesn't re-download transaction we
+                    // already have.
+                    client
+                        .populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
+
+                    let update = client.sync(request, batch_size, false)?;
+                    wallet.apply_update(update)?;
+                }
+                #[cfg(feature = "esplora")]
+                Esplora {
+                    client,
+                    parallel_requests,
+                } => {
+                    let update = client
+                        .sync(request, parallel_requests)
+                        .await
+                        .map_err(|e| *e)?;
+                    wallet.apply_update(update)?;
+                }
+            }
             Ok(json!({}))
         }
         Broadcast { psbt, tx } => {
             let tx = match (psbt, tx) {
                 (Some(psbt), None) => {
-                    let psbt = base64::decode(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
+                    let psbt = BASE64_STANDARD
+                        .decode(&psbt)
+                        .map_err(|e| Error::Generic(e.to_string()))?;
                     let psbt: Psbt = Psbt::deserialize(&psbt)?;
                     is_final(&psbt)?;
-                    psbt.extract_tx()
+                    psbt.extract_tx()?
                 }
-                (None, Some(tx)) => Psbt::deserialize(&Vec::<u8>::from_hex(&tx)?),
+                (None, Some(tx)) => {
+                    let tx_bytes = Vec::<u8>::from_hex(&tx)?;
+                    Transaction::consensus_decode(&mut tx_bytes.as_slice())?
+                }
                 (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
-            maybe_await!(blockchain.broadcast(&tx))?;
-            Ok(json!({ "txid": tx.txid() }))
-        }
-        #[cfg(feature = "reserves")]
-        ProduceProof { msg } => {
-            let mut psbt = maybe_await!(wallet.create_proof(&msg))?;
 
-            let _finalized = wallet.sign(
-                &mut psbt,
-                SignOptions {
-                    trust_witness_utxo: true,
-                    ..Default::default()
-                },
-            )?;
-
-            let psbt_b64 = psbt.to_string();
-
-            Ok(json!({ "psbt": psbt , "psbt_base64" : psbt_b64}))
-        }
-        #[cfg(feature = "reserves")]
-        VerifyProof {
-            psbt,
-            msg,
-            confirmations,
-        } => {
-            let psbt = base64::decode(&psbt)?;
-            let psbt: Psbt = Psbt::deserialize(&psbt)?;
-            let current_height = blockchain.get_height()?;
-            let max_confirmation_height = if confirmations == 0 {
-                None
-            } else {
-                if !blockchain
-                    .get_capabilities()
-                    .contains(&Capability::GetAnyTx)
-                {
-                    return Err(Error::Generic(
-                        "For validating a proof with a certain number of confirmations, we need a Blockchain with the GetAnyTx capability."
-                        .to_string()
-                    ));
-                }
-                Some(current_height - confirmations)
+            let txid = match client {
+                #[cfg(feature = "electrum")]
+                Electrum {
+                    client,
+                    batch_size: _,
+                } => client.transaction_broadcast(&tx)?,
+                #[cfg(feature = "esplora")]
+                Esplora {
+                    client,
+                    parallel_requests: _,
+                } => client
+                    .broadcast(&tx)
+                    .await
+                    .map(|()| tx.compute_txid().clone())?,
             };
-
-            let spendable =
-                maybe_await!(wallet.verify_proof(&psbt, &msg, max_confirmation_height))?;
-            Ok(json!({ "spendable": spendable }))
+            Ok(json!({ "txid": txid }))
         }
     }
 }
@@ -411,7 +448,7 @@ pub(crate) fn handle_online_wallet_subcommand(
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
-    feature = "compact_filters",
+    feature = "cbf",
     feature = "rpc"
 ))]
 pub(crate) fn is_final(psbt: &Psbt) -> Result<(), Error> {
@@ -502,18 +539,6 @@ pub(crate) fn handle_key_subcommand(
                 Err(Error::Generic("Invalid key variant".to_string()))
             }
         }
-        #[cfg(feature = "hardware-signer")]
-        KeySubCommand::Hardware {} => {
-            let chain = HWIChain::from(network);
-            let devices = HWIClient::enumerate().map_err(|e| Error::Generic(e.to_string()))?;
-            let descriptors = devices.iter().map(|device_| {
-                let device = device_.as_ref().map_err(|e| Error::Generic(e.to_string()))?;
-                let client = HWIClient::get_client(&device, true, chain.clone()).unwrap();
-                let descriptors: HWIDescriptor<String> = client.get_descriptors(None).map_err(|e|Error::Generic(e.to_string()))?;
-                Ok(json!({"device": device.model, "receiving": descriptors.receive[0].to_string(), "change": descriptors.internal[0]}))
-            }).collect::<Result<Vec<_>, Error>>()?;
-            Ok(json!(descriptors))
-        }
     }
 }
 
@@ -544,104 +569,96 @@ pub(crate) fn handle_compile_subcommand(
     Ok(json!({"descriptor": descriptor.to_string()}))
 }
 
-/// Handle Proof of Reserves commands
-///
-/// Proof of reserves options are described in [`CliSubCommand::ExternalReserves`].
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-pub(crate) fn handle_ext_reserves_subcommand(
-    network: bdk_reserves::bdk::bitcoin::Network,
-    message: String,
-    psbt: String,
-    confirmations: usize,
-    addresses: Vec<String>,
-    electrum_opts: ElectrumOpts,
-) -> Result<serde_json::Value, Error> {
-    let psbt = base64::decode(&psbt)?;
-
-    let psbt: PartiallySignedTransaction = PartiallySignedTransaction::deserialize(&psbt)
-        .map_err(|e| Error::Generic(e.to_string()))?;
-    let client = Client::new(&electrum_opts.server).map_err(|e| Error::Generic(e.to_string()))?;
-
-    let current_block_height = client
-        .block_headers_subscribe()
-        .map(|data| data.height)
-        .map_err(|e| {
-            Error::Generic(format!(
-                "Failed to get block height from electrum server: {:?}",
-                e
-            ))
-        })?;
-    let max_confirmation_height = Some(current_block_height - confirmations);
-
-    let outpoints_per_addr = addresses
-        .iter()
-        .map(|address| {
-            let address = Address::from_str(address)?.assume_checked();
-            get_outpoints_for_address(address, &client, max_confirmation_height)
-        })
-        .collect::<Result<Vec<Vec<_>>, Error>>()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-    let outpoints_combined = outpoints_per_addr
-        .iter()
-        .fold(Vec::new(), |mut outpoints, outs| {
-            outpoints.append(&mut outs.clone());
-            outpoints
-        });
-
-    let spendable = verify_proof(&psbt, &message, outpoints_combined, network)
-        .map_err(|e| Error::Generic(format!("{:?}", e)))?;
-
-    Ok(json!({ "spendable": spendable }))
-}
-
 /// The global top level handler.
-#[maybe_async]
-pub(crate) fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
+pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
     let network = cli_opts.network;
-    let home_dir = prepare_home_dir(cli_opts.datadir)?;
+
     let result = match cli_opts.subcommand {
-        #[cfg(feature = "regtest-node")]
-        CliSubCommand::Node { subcommand: cmd } => {
-            let backend = new_backend(&home_dir)?;
-            serde_json::to_string_pretty(&backend.exec_cmd(cmd)?)
-        }
         #[cfg(any(
             feature = "electrum",
             feature = "esplora",
-            feature = "compact_filters",
+            feature = "cbf",
             feature = "rpc"
         ))]
         CliSubCommand::Wallet {
             wallet_opts,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
-            let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, cli_opts.network)?;
-            let database = open_database(&wallet_opts, &home_dir)?;
-            let backend = new_backend(&home_dir)?;
-            let blockchain = new_blockchain(network, &wallet_opts, &backend, &home_dir)?;
-            let wallet = new_wallet(network, &wallet_opts, database)?;
-            let result = maybe_await!(handle_online_wallet_subcommand(
-                &wallet,
-                &blockchain,
-                online_subcommand
-            ))?;
+            let blockchain_client = new_blockchain_client(&wallet_opts)?;
+            let network = cli_opts.network;
+            #[cfg(any(feature = "sqlite"))]
+            let result = {
+                let home_dir = prepare_home_dir(cli_opts.datadir)?;
+                let wallet_name = &wallet_opts.wallet;
+                let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
+                let mut persister = match &wallet_opts.database_type {
+                    #[cfg(feature = "sqlite")]
+                    DatabaseType::Sqlite => {
+                        let db_file = database_path.join("wallet.sqlite");
+                        let connection = Connection::open(db_file)?;
+                        log::debug!("Sqlite database opened successfully");
+                        connection
+                    }
+                };
+
+                let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
+                let result = handle_online_wallet_subcommand(
+                    &mut wallet,
+                    blockchain_client,
+                    online_subcommand,
+                )
+                .await?;
+                wallet.persist(&mut persister)?;
+                result
+            };
+            #[cfg(not(any(feature = "sqlite")))]
+            let result = {
+                let mut wallet = new_wallet(network, &wallet_opts)?;
+                handle_online_wallet_subcommand(&mut wallet, blockchain_client, online_subcommand)
+                    .await?
+            };
             serde_json::to_string_pretty(&result)
         }
         CliSubCommand::Wallet {
             wallet_opts,
             subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
-            let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, network)?;
-            let database = open_database(&wallet_opts, &home_dir)?;
-            let mut wallet = new_wallet(network, &wallet_opts, database)?;
-            let result =
-                handle_offline_wallet_subcommand(&mut wallet, &wallet_opts, offline_subcommand)?;
+            let network = cli_opts.network;
+            #[cfg(any(feature = "sqlite"))]
+            let result = {
+                let home_dir = prepare_home_dir(cli_opts.datadir)?;
+                let wallet_name = &wallet_opts.wallet;
+                let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
+                let mut persister = match &wallet_opts.database_type {
+                    #[cfg(feature = "sqlite")]
+                    DatabaseType::Sqlite => {
+                        let db_file = database_path.join("wallet.sqlite");
+                        let connection = Connection::open(db_file)?;
+                        log::debug!("Sqlite database opened successfully");
+                        connection
+                    }
+                };
+
+                let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
+                let result = handle_offline_wallet_subcommand(
+                    &mut wallet,
+                    &wallet_opts,
+                    offline_subcommand,
+                )?;
+                wallet.persist(&mut persister)?;
+                result
+            };
+            #[cfg(not(any(feature = "sqlite")))]
+            let result = {
+                let mut wallet = new_wallet(network, &wallet_opts)?;
+                handle_offline_wallet_subcommand(&mut wallet, &wallet_opts, offline_subcommand)?
+            };
             serde_json::to_string_pretty(&result)
         }
         CliSubCommand::Key {
             subcommand: key_subcommand,
         } => {
-            let result = handle_key_subcommand(cli_opts.network, key_subcommand)?;
+            let result = handle_key_subcommand(network, key_subcommand)?;
             serde_json::to_string_pretty(&result)
         }
         #[cfg(feature = "compiler")]
@@ -649,142 +666,136 @@ pub(crate) fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             policy,
             script_type,
         } => {
-            let result = handle_compile_subcommand(cli_opts.network, policy, script_type)?;
+            let result = handle_compile_subcommand(network, policy, script_type)?;
             serde_json::to_string_pretty(&result)
         }
         #[cfg(feature = "repl")]
         CliSubCommand::Repl { wallet_opts } => {
-            let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, cli_opts.network)?;
-            let database = open_database(&wallet_opts, &home_dir)?;
+            let network = cli_opts.network;
+            #[cfg(any(feature = "sqlite"))]
+            let (mut wallet, mut persister) = {
+                let wallet_name = &wallet_opts.wallet;
 
-            let mut wallet = new_wallet(cli_opts.network, &wallet_opts, database)?;
+                let home_dir = prepare_home_dir(cli_opts.datadir)?;
 
-            let mut rl = Editor::<()>::new();
+                let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
 
-            // if rl.load_history("history.txt").is_err() {
-            //     println!("No previous history.");
-            // }
-
-            let split_regex = Regex::new(crate::REPL_LINE_SPLIT_REGEX)?;
-
-            #[cfg(any(
-                feature = "electrum",
-                feature = "esplora",
-                feature = "compact_filters",
-                feature = "rpc"
-            ))]
-            let backend = new_backend(&home_dir)?;
+                let mut persister = match &wallet_opts.database_type {
+                    #[cfg(feature = "sqlite")]
+                    DatabaseType::Sqlite => {
+                        let db_file = database_path.join("wallet.sqlite");
+                        let connection = Connection::open(db_file)?;
+                        log::debug!("Sqlite database opened successfully");
+                        connection
+                    }
+                };
+                let wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
+                (wallet, persister)
+            };
+            #[cfg(not(any(feature = "sqlite")))]
+            let mut wallet = new_wallet(network, &wallet_opts)?;
 
             loop {
-                let readline = rl.readline(">> ");
-                match readline {
-                    Ok(line) => {
-                        if line.trim() == "" {
-                            continue;
-                        }
-                        rl.add_history_entry(line.as_str());
-                        let split_line: Vec<&str> = split_regex
-                            .captures_iter(&line)
-                            .map(|c| {
-                                Ok(c.get(1)
-                                    .or_else(|| c.get(2))
-                                    .or_else(|| c.get(3))
-                                    .ok_or_else(|| Error::Generic("Invalid commands".to_string()))?
-                                    .as_str())
-                            })
-                            .collect::<Result<Vec<_>, Error>>()?;
-                        let repl_subcommand = ReplSubCommand::from_iter_safe(split_line);
-                        if let Err(err) = repl_subcommand {
-                            println!("{}", err);
-                            continue;
-                        }
-                        // if error will be printed above
-                        let repl_subcommand = repl_subcommand.unwrap();
-                        log::debug!("repl_subcommand = {:?}", repl_subcommand);
+                let line = readline()?;
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
 
-                        let result = match repl_subcommand {
-                            #[cfg(feature = "regtest-node")]
-                            ReplSubCommand::Node { subcommand } => {
-                                match backend.exec_cmd(subcommand) {
-                                    Ok(result) => Ok(result),
-                                    Err(e) => Ok(serde_json::Value::String(e.to_string())),
-                                }
-                            }
-                            #[cfg(any(
-                                feature = "electrum",
-                                feature = "esplora",
-                                feature = "compact_filters",
-                                feature = "rpc"
-                            ))]
-                            ReplSubCommand::Wallet {
-                                subcommand:
-                                    WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
-                            } => {
-                                let blockchain = new_blockchain(
-                                    cli_opts.network,
-                                    &wallet_opts,
-                                    &backend,
-                                    &home_dir,
-                                )?;
-                                maybe_await!(handle_online_wallet_subcommand(
-                                    &wallet,
-                                    &blockchain,
-                                    online_subcommand,
-                                ))
-                            }
-                            ReplSubCommand::Wallet {
-                                subcommand:
-                                    WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
-                            } => handle_offline_wallet_subcommand(
-                                &mut wallet,
-                                &wallet_opts,
-                                offline_subcommand,
-                            ),
-                            ReplSubCommand::Key { subcommand } => {
-                                handle_key_subcommand(cli_opts.network, subcommand)
-                            }
-                            ReplSubCommand::Exit => break,
-                        };
+                let result = respond(network, &mut wallet, &wallet_opts, line).await;
+                #[cfg(any(feature = "sqlite"))]
+                wallet.persist(&mut persister)?;
 
-                        println!("{}", serde_json::to_string_pretty(&result?)?);
+                match result {
+                    Ok(quit) => {
+                        if quit {
+                            break;
+                        }
                     }
-                    Err(ReadlineError::Interrupted) => continue,
-                    Err(ReadlineError::Eof) => break,
                     Err(err) => {
-                        println!("{:?}", err);
-                        break;
+                        writeln!(std::io::stdout(), "{err}")
+                            .map_err(|e| Error::Generic(e.to_string()))?;
+                        std::io::stdout()
+                            .flush()
+                            .map_err(|e| Error::Generic(e.to_string()))?;
                     }
                 }
             }
-
-            Ok("Exiting REPL".to_string())
-        }
-        #[cfg(all(feature = "reserves", feature = "electrum"))]
-        CliSubCommand::ExternalReserves {
-            message,
-            psbt,
-            confirmations,
-            addresses,
-            electrum_opts,
-        } => {
-            let result = handle_ext_reserves_subcommand(
-                cli_opts.network,
-                message,
-                psbt,
-                confirmations,
-                addresses,
-                electrum_opts,
-            )?;
-            serde_json::to_string_pretty(&result)
+            Ok("".to_string())
         }
     };
     result.map_err(|e| e.into())
 }
 
+#[cfg(feature = "repl")]
+async fn respond(
+    network: Network,
+    wallet: &mut Wallet,
+    wallet_opts: &WalletOpts,
+    line: &str,
+) -> Result<bool, String> {
+    use clap::Parser;
+
+    let args = shlex::split(line).ok_or("error: Invalid quoting".to_string())?;
+    let repl_subcommand = ReplSubCommand::try_parse_from(args).map_err(|e| e.to_string())?;
+    let response = match repl_subcommand {
+        #[cfg(any(
+            feature = "electrum",
+            feature = "esplora",
+            feature = "cbf",
+            feature = "rpc"
+        ))]
+        ReplSubCommand::Wallet {
+            subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
+        } => {
+            let blockchain = new_blockchain_client(&wallet_opts).map_err(|e| e.to_string())?;
+            let value = handle_online_wallet_subcommand(wallet, blockchain, online_subcommand)
+                .await
+                .map_err(|e| e.to_string())?;
+            Some(value)
+        }
+        ReplSubCommand::Wallet {
+            subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
+        } => {
+            let value = handle_offline_wallet_subcommand(wallet, wallet_opts, offline_subcommand)
+                .map_err(|e| e.to_string())?;
+            Some(value)
+        }
+        ReplSubCommand::Key { subcommand } => {
+            let value = handle_key_subcommand(network, subcommand).map_err(|e| e.to_string())?;
+            Some(value)
+        }
+        ReplSubCommand::Exit => None,
+    };
+    if let Some(value) = response {
+        let value = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+        writeln!(std::io::stdout(), "{}", value).map_err(|e| e.to_string())?;
+        std::io::stdout().flush().map_err(|e| e.to_string())?;
+        Ok(false)
+    } else {
+        writeln!(std::io::stdout(), "Exiting...").map_err(|e| e.to_string())?;
+        std::io::stdout().flush().map_err(|e| e.to_string())?;
+        Ok(true)
+    }
+}
+
+#[cfg(feature = "repl")]
+fn readline() -> Result<String, Error> {
+    write!(std::io::stdout(), "> ").map_err(|e| Error::Generic(e.to_string()))?;
+    std::io::stdout()
+        .flush()
+        .map_err(|e| Error::Generic(e.to_string()))?;
+    let mut buffer = String::new();
+    std::io::stdin()
+        .read_line(&mut buffer)
+        .map_err(|e| Error::Generic(e.to_string()))?;
+    Ok(buffer)
+}
+
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
-    feature = "compact_filters",
+    feature = "cbf",
     feature = "rpc"
 ))]
 #[cfg(test)]
