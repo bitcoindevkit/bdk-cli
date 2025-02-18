@@ -9,7 +9,6 @@
 //! Utility Tools
 //!
 //! This module includes all the utility tools used by the App.
-
 use crate::commands::WalletOpts;
 use crate::error::BDKCliError as Error;
 use crate::nodes::Nodes;
@@ -32,32 +31,17 @@ use {
 #[cfg(all(feature = "reserves", feature = "electrum"))]
 use {
     bdk_electrum::electrum_client::{Client, ElectrumApi},
+    bdk_reserves::bdk::blockchain::ConfigurableBlockchain,
     bdk_wallet::bitcoin::TxOut,
     electrsd::corepc_client::client_sync::v17::blockchain,
 };
 
-#[cfg(feature = "esplora")]
-// use bdk::blockchain::esplora::EsploraBlockchainConfig; //haven't gotten import
-use bdk_bitcoind_rpc::bitcoincore_rpc::Auth;
-use bdk_esplora::EsploraAsyncExt;
-#[cfg(feature = "compact_filters")]
-use bdk_reserves::bdk::blockchain::compact_filters::{
-    BitcoinPeerConfig, CompactFiltersBlockchainConfig,
-}; // can't find compact_filters
-use bdk_reserves::bdk::blockchain::ConfigurableBlockchain;
-#[cfg(feature = "rpc")]
-use bdk_wallet::blockchain::rpc::{RpcConfig, RpcSyncParams};
-#[cfg(feature = "electrum")]
-use bdk_wallet::blockchain::ElectrumBlockchainConfig;
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "compact_filters",
-    feature = "rpc"
-))]
-use bdk_wallet::blockchain::{AnyBlockchain, AnyBlockchainConfig, ConfigurableBlockchain};
-#[cfg(feature = "sqlite-db")]
 use bdk_wallet::rusqlite::{Connection, OpenFlags};
+#[cfg(feature = "esplora")]
+use {
+    bdk_bitcoind_rpc::bitcoincore_rpc::{self, Auth},
+    bdk_esplora::{esplora_client, EsploraAsyncExt},
+};
 
 /// Create a randomized wallet name from the descriptor checksum.
 /// If wallet options already includes a name, use that instead.
@@ -332,6 +316,20 @@ pub(crate) fn new_backend(_datadir: &Path) -> Result<Nodes, Error> {
     Ok(backend)
 }
 
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc",))]
+pub(crate) enum BlockchainClient {
+    #[cfg(feature = "electrum")]
+    Electrum {
+        client: bdk_electrum::BdkElectrumClient<bdk_electrum::electrum_client::Client>,
+        batch_size: usize,
+    },
+    #[cfg(feature = "esplora")]
+    Esplora {
+        client: bdk_esplora::esplora_client::AsyncClient,
+        parallel_requests: usize,
+    },
+}
+
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -341,50 +339,41 @@ pub(crate) fn new_backend(_datadir: &Path) -> Result<Nodes, Error> {
 /// Create a new blockchain for a given [Nodes] if available
 /// or else create one from the wallet configuration options.
 pub(crate) fn new_blockchain(
-    _network: Network,
     wallet_opts: &WalletOpts,
     _backend: &Nodes,
-    _home_dir: &Path,
-) -> Result<AnyBlockchain, Error> {
+) -> Result<BlockchainClient, Error> {
     #[cfg(feature = "electrum")]
-    let config = {
-        let url = match _backend {
-            #[cfg(feature = "regtest-electrum")]
-            Nodes::Electrum { electrsd, .. } => &electrsd.electrum_url,
-            _ => &wallet_opts.electrum_opts.server,
-        };
+    let client = match _backend {
+        #[cfg(feature = "regtest-electrum")]
+        Nodes::Electrum { electrsd, .. } => {
+            let sock5 = Socks5Config::new(wallet_opts.proxy_opts.proxy.unwrap());
 
-        AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
-            url: url.to_owned(),
-            socks5: wallet_opts.proxy_opts.proxy.clone(),
-            retry: wallet_opts.proxy_opts.retries,
-            timeout: wallet_opts.electrum_opts.timeout,
-            stop_gap: wallet_opts.electrum_opts.stop_gap,
-            validate_domain: true,
-        })
-    };
+            let electrum_config = ConfigBuilder::new()
+                .retry(wallet_opts.proxy_opts.retries)
+                .socks5(Some(sock5))
+                .timeout(wallet_opts.electrum_opts.timeout)
+                .validate_domain(true)
+                .build();
 
-    #[cfg(feature = "esplora")]
-    let config = {
-        let url = match _backend {
-            #[cfg(any(feature = "regtest-esplora-ureq", feature = "regtest-esplora-reqwest"))]
-            Nodes::Esplora { esplorad, bitcoind } => {
-                esplorad.esplora_url.expect("Esplora url expected")
-            }
-            _ => wallet_opts.esplora_opts.server.clone(),
-        };
+            let client =
+                electrum_client::Client::from_config(&electrsd.electrum_url, electrum_config)
+                    .unwrap();
+        }
 
-        AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
-            base_url: url,
-            timeout: Some(wallet_opts.esplora_opts.timeout),
-            concurrency: Some(wallet_opts.esplora_opts.conc),
-            stop_gap: wallet_opts.esplora_opts.stop_gap,
-            proxy: wallet_opts.proxy_opts.proxy.clone(),
-        })
+        #[cfg(feature = "esplora")]
+        Nodes::Esplora { esplorad, bitcoind } => {
+            let client = esplora_client::Builder::new(&esplorad.electrum_url.as_str())
+                .timeout(wallet_opts.esplora_opts.timeout)
+                .proxy(wallet_opts.proxy_opts.proxy.unwrap().as_str())
+                .build_blocking();
+
+            client
+        }
     };
 
     #[cfg(feature = "compact_filters")]
     let config = {
+        return unimplemented!();
         let mut peers = vec![];
         for addrs in wallet_opts.compactfilter_opts.address.clone() {
             for _ in 0..wallet_opts.compactfilter_opts.conn_count {
@@ -397,19 +386,19 @@ pub(crate) fn new_blockchain(
         }
 
         let wallet_name = wallet_opts.wallet.as_ref().expect("wallet name");
-        AnyBlockchainConfig::CompactFilters(CompactFiltersBlockchainConfig {
-            peers,
-            network: _network,
-            storage_dir: prepare_bc_dir(wallet_name, _home_dir)?
-                .into_os_string()
-                .into_string()
-                .map_err(|_| Error::Generic("Internal OS_String conversion error".to_string()))?,
-            skip_blocks: Some(wallet_opts.compactfilter_opts.skip_blocks),
-        })
+        // CompactFilters(CompactFiltersBlockchainConfig {
+        //     peers,
+        //     network: _network,
+        //     storage_dir: prepare_bc_dir(wallet_name, _home_dir)?
+        //         .into_os_string()
+        //         .into_string()
+        //         .map_err(|_| Error::Generic("Internal OS_String conversion error".to_string()))?,
+        //     skip_blocks: Some(wallet_opts.compactfilter_opts.skip_blocks),
+        // })
     };
 
     #[cfg(feature = "rpc")]
-    let config: AnyBlockchainConfig = {
+    let config = {
         let (url, auth) = match _backend {
             #[cfg(feature = "regtest-node")]
             Nodes::Bitcoin { bitcoind } => (
@@ -435,22 +424,8 @@ pub(crate) fn new_blockchain(
 
         let rpc_url = "http://".to_string() + &url;
 
-        let rpc_config = RpcConfig {
-            url: rpc_url,
-            auth,
-            network: _network,
-            wallet_name,
-            // TODO add cli options to set all rpc sync params
-            sync_params: Some(RpcSyncParams {
-                start_time: wallet_opts.rpc_opts.start_time,
-                ..Default::default()
-            }),
-        };
-
-        AnyBlockchainConfig::Rpc(rpc_config)
+        bdk_bitcoind_rpc::bitcoincore_rpc::Client::new(&rpc_url, auth).unwrap()
     };
-
-    AnyBlockchain::from_config(&config)
 }
 
 /// Create a new wallet from given wallet configuration options.

@@ -603,29 +603,21 @@ mod test {
     #[cfg(feature = "compiler")]
     use crate::handlers::handle_compile_subcommand;
     use crate::handlers::handle_key_subcommand;
+    use bdk_wallet::Wallet;
     #[cfg(all(feature = "reserves", feature = "electrum"))]
-    use crate::handlers::{handle_ext_reserves_subcommand, handle_online_wallet_subcommand};
-    #[cfg(all(feature = "reserves", feature = "electrum"))]
-    use bdk_electrum::electrum_client::Client;
-    #[cfg(all(feature = "reserves", feature = "electrum"))]
-    use bdk_reserves::bdk::SyncOptions;
+    use {
+        crate::handlers::{handle_ext_reserves_subcommand, handle_online_wallet_subcommand},
+        bdk_electrum::electrum_client::Client,
+        bdk_electrum::BdkElectrumClient,
+        bdk_wallet::bitcoin::{consensus::Encodable, Psbt},
+    };
+
     use bdk_wallet::bitcoin::bip32::{DerivationPath, Xpriv};
-    #[cfg(all(feature = "reserves", feature = "electrum"))]
-    use bdk_wallet::bitcoin::{consensus::Encodable, Psbt};
     use bdk_wallet::bitcoin::{Address, Network, OutPoint};
     use bdk_wallet::miniscript::bitcoin::network::Network::Testnet;
-    #[cfg(all(feature = "reserves", feature = "electrum"))]
-    use bdk_wallet::{blockchain::ElectrumBlockchain, database::MemoryDatabase, Wallet}; // yet to fix imports
     use std::str::{self, FromStr};
 
     use super::OfflineWalletSubCommand::{BumpFee, CreateTx, GetNewAddress};
-    #[cfg(any(
-        feature = "electrum",
-        feature = "esplora",
-        feature = "compact_filters",
-        feature = "rpc"
-    ))]
-    use super::OnlineWalletSubCommand::{Broadcast, Sync};
     use super::WalletSubCommand::OfflineWalletSubCommand;
     #[cfg(any(
         feature = "electrum",
@@ -1501,9 +1493,8 @@ mod test {
     /// Encodes a partially signed transaction as base64 and returns the  bytes of the resulting string.
     #[cfg(all(feature = "reserves", feature = "electrum"))]
     fn encode_psbt(psbt: Psbt) -> Vec<u8> {
-        let mut encoded = Vec::<u8>::new();
-        psbt.consensus_encode(&mut encoded).unwrap();
-        let base64_psbt = base64::encode(&encoded);
+        let serialized_psbt = psbt.serialize();
+        let base64_psbt = base64::encode(serialized_psbt);
 
         base64_psbt.as_bytes().to_vec()
     }
@@ -1515,21 +1506,21 @@ mod test {
         let message = "Those coins belong to Satoshi Nakamoto";
 
         let client = Client::new("ssl://electrum.blockstream.info:60002").unwrap();
-        let blockchain = ElectrumBlockchain::from(client);
-        let wallet = Wallet::new(
-            &descriptor,
-            None,
-            Network::Testnet,
-            MemoryDatabase::default(),
-        )
-        .unwrap();
-
-        wallet.sync(&blockchain, SyncOptions::default()).unwrap();
-        let balance = wallet.get_balance().unwrap();
-
-        let addr = wallet
-            .get_address(bdk_wallet::wallet::AddressIndex::New)
+        let blockchain = BdkElectrumClient::new(client);
+        let mut wallet = Wallet::create_single(descriptor)
+            .network(Network::Testnet)
+            .create_wallet_no_persist()
             .unwrap();
+
+        let scan_request = wallet.start_full_scan();
+
+        let update = blockchain.full_scan(scan_request, 50, 1, true).unwrap();
+        wallet.apply_update(update).unwrap();
+
+        let balance = wallet.balance();
+
+        let addr = wallet.reveal_next_address(bdk_wallet::KeychainKind::External);
+
         assert_eq!(
             "tb1qanjjv4cs20dgv32vncrxw702l8g4qtn2m9wn7d",
             addr.to_string()
@@ -1555,8 +1546,8 @@ mod test {
             } => online_subcommand,
             _ => panic!("unexpected subcommand"),
         };
-        let result = handle_online_wallet_subcommand(&wallet, &blockchain, wallet_subcmd).unwrap();
-        let psbt: PartiallySignedTransaction =
+        let result = handle_online_wallet_subcommand(wallet, &blockchain, wallet_subcmd).unwrap();
+        let psbt: Psbt =
             serde_json::from_str(&result.as_object().unwrap().get("psbt").unwrap().to_string())
                 .unwrap();
         let psbt = encode_psbt(psbt);
@@ -1593,7 +1584,7 @@ mod test {
             } => online_subcommand,
             _ => panic!("unexpected subcommand"),
         };
-        let result = handle_online_wallet_subcommand(&wallet, &blockchain, wallet_subcmd).unwrap();
+        let result = handle_online_wallet_subcommand(wallet, &blockchain, wallet_subcmd).unwrap();
         let spendable = result
             .as_object()
             .unwrap()
@@ -1601,7 +1592,7 @@ mod test {
             .unwrap()
             .as_u64()
             .unwrap();
-        assert_eq!(spendable, balance.get_spendable());
+        assert_eq!(spendable, balance.trusted_spendable().to_sat());
     }
 
     #[cfg(all(feature = "reserves", feature = "electrum"))]

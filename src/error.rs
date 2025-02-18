@@ -2,6 +2,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum BDKCliError {
+    #[cfg(feature = "regtest-node")]
     #[error("Anyhow error: {0}")]
     Anyhow(#[from] electrsd::corepc_node::anyhow::Error),
 
@@ -20,7 +21,7 @@ pub enum BDKCliError {
 
     #[error("Create transaction error: {0}")]
     CreateTx(#[from] bdk_wallet::error::CreateTxError),
-
+    #[cfg(feature = "regtest-node")]
     #[error("CoreRPC error: {0}")]
     CoreRPCError(#[from] electrsd::corepc_client::client_sync::Error),
 

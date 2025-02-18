@@ -10,86 +10,78 @@
 //!
 //! This module describes all the command handling logic used by bdk-cli.
 
+use clap::Parser;
+use serde_json::json;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
+use std::str::FromStr;
 
 use crate::commands::OfflineWalletSubCommand::*;
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "compact_filters",
-    feature = "rpc"
-))]
-use crate::commands::OnlineWalletSubCommand::*;
 use crate::commands::*;
 use crate::error::BDKCliError as Error;
 use crate::utils::*;
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk_electrum::electrum_client::{Client, ElectrumApi};
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk_reserves::bdk::bitcoin::psbt::PartiallySignedTransaction;
+
+use bdk_macros::maybe_async;
+use bdk_wallet::bip39::{Language, Mnemonic};
+use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
+use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
+use bdk_wallet::bitcoin::{
+    script::PushBytesBuf, secp256k1::Secp256k1, Amount, FeeRate, Network, Psbt, Sequence, Txid,
+};
+use bdk_wallet::descriptor::Segwitv0;
+use bdk_wallet::keys::{
+    bip39::WordCount, DerivableKey, DescriptorKey, DescriptorKey::Secret, ExtendedKey,
+    GeneratableKey, GeneratedKey,
+};
+use bdk_wallet::miniscript::miniscript;
+use bdk_wallet::rusqlite::Connection;
+use bdk_wallet::{KeychainKind, SignOptions, Wallet};
+
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
     feature = "compact_filters",
     feature = "rpc"
 ))]
-use bdk_reserves::bdk::{
-    blockchain::{log_progress, Blockchain},
-    SyncOptions,
+use {
+    crate::commands::OnlineWalletSubCommand::*,
+    bdk_reserves::bdk::{
+        blockchain::{log_progress, Blockchain},
+        SyncOptions,
+    },
+    bdk_wallet::Wallet,
 };
-use bdk_wallet::bip39::{Language, Mnemonic};
-use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
-use bdk_wallet::bitcoin::consensus::encode::{serialize, serialize_hex};
-use bdk_wallet::bitcoin::script::PushBytesBuf;
-use bdk_wallet::bitcoin::Network;
-use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Txid};
-use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
-use bdk_wallet::descriptor::Segwitv0;
-#[cfg(feature = "compiler")]
-use bdk_wallet::descriptor::{Descriptor, Legacy, Miniscript};
-use bdk_wallet::keys::bip39::WordCount;
-use bdk_wallet::rusqlite::Connection;
-use bdk_wallet::{KeychainKind, PersistedWallet, SignOptions};
-use clap::Parser;
 
-use bdk_wallet::keys::DescriptorKey::Secret;
-use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
-use bdk_wallet::miniscript::miniscript;
+#[cfg(all(feature = "reserves", feature = "electrum"))]
+use {
+    bdk_electrum::electrum_client::{Client, ElectrumApi},
+    bdk_reserves::bdk::{bitcoin::psbt::PartiallySignedTransaction, blockchain::Capability},
+    bdk_wallet::bitcoin::Address,
+};
+
+#[cfg(feature = "reserves")]
+use bdk_reserves::reserves::{verify_proof, ProofOfReserves};
 #[cfg(feature = "hardware-signer")]
 use hwi::{
     types::{HWIChain, HWIDescriptor},
     HWIClient,
 };
-
-use bdk_macros::maybe_async;
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "compact_filters",
-    feature = "rpc"
-))]
-use bdk_macros::maybe_await;
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk_reserves::bdk::blockchain::Capability;
-#[cfg(feature = "reserves")]
-use bdk_reserves::reserves::{verify_proof, ProofOfReserves};
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk_wallet::bitcoin::Address;
 #[cfg(feature = "compiler")]
-use bdk_wallet::miniscript::policy::Concrete;
+use {
+    bdk_wallet::descriptor::{Descriptor, Legacy, Miniscript},
+    bdk_wallet::miniscript::policy::Concrete,
+};
 #[cfg(feature = "repl")]
-use regex::Regex;
-#[cfg(feature = "repl")]
-use rustyline::{error::ReadlineError, Editor};
-use serde_json::json;
-use std::str::FromStr;
+use {
+    regex::Regex,
+    rustyline::{error::ReadlineError, Editor},
+};
 
 /// Execute an offline wallet sub-command
 ///
 /// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
 pub fn handle_offline_wallet_subcommand(
-    wallet: &mut PersistedWallet<Connection>,
+    wallet: &mut Wallet,
     wallet_opts: &WalletOpts,
     offline_subcommand: OfflineWalletSubCommand,
 ) -> Result<serde_json::Value, Error> {
@@ -196,12 +188,11 @@ pub fn handle_offline_wallet_subcommand(
 
             let psbt = tx_builder.finish()?;
 
-            let serialized_psbt = psbt.serialize();
-            let psbt_base64 = base64::encode(&serialized_psbt);
+            let psbt_base64 = psbt.to_string();
 
             if wallet_opts.verbose {
                 Ok(
-                    json!({"psbt": psbt_base64, "serialized_psbt": serialized_psbt, "details": psbt}),
+                    json!({"psbt": psbt_base64, "serialized_psbt": psbt.serialize(), "details": psbt}),
                 )
             } else {
                 Ok(json!({"psbt": psbt_base64, "details": psbt}))
@@ -241,10 +232,7 @@ pub fn handle_offline_wallet_subcommand(
 
             let psbt = tx_builder.finish()?;
 
-            let serialized_psbt = psbt.serialize();
-            let psbt_base64 = base64::encode(serialized_psbt);
-
-            Ok(json!({"psbt": psbt_base64, "details": psbt}))
+            Ok(json!({"psbt": psbt.to_string(), "details": psbt}))
         }
         Policies => {
             let external_policy = wallet.policies(KeychainKind::External)?;
@@ -274,12 +262,10 @@ pub fn handle_offline_wallet_subcommand(
             let finalized = wallet.sign(&mut psbt, signopt)?;
             if wallet_opts.verbose {
                 Ok(
-                    json!({"psbt": base64::encode(serialize(&psbt_bytes)),"is_finalized": finalized, "serialized_psbt": psbt}),
+                    json!({"psbt": psbt.to_string(),"is_finalized": finalized, "serialized_psbt": psbt}),
                 )
             } else {
-                Ok(
-                    json!({"psbt": base64::encode(serialize(&psbt_bytes)),"is_finalized": finalized,}),
-                )
+                Ok(json!({"psbt": psbt.to_string(),"is_finalized": finalized,}))
             }
         }
         ExtractPsbt { psbt } => {
@@ -304,12 +290,10 @@ pub fn handle_offline_wallet_subcommand(
             let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
             if wallet_opts.verbose {
                 Ok(
-                    json!({ "psbt": base64::encode(serialize(&psbt_bytes)),"is_finalized": finalized, "serialized_psbt": psbt}),
+                    json!({ "psbt": psbt.to_string(),"is_finalized": finalized, "serialized_psbt": psbt}),
                 )
             } else {
-                Ok(
-                    json!({ "psbt": base64::encode(serialize(&psbt_bytes)),"is_finalized": finalized,}),
-                )
+                Ok(json!({ "psbt": psbt.to_string(),"is_finalized": finalized,}))
             }
         }
         CombinePsbt { psbt } => {
@@ -331,7 +315,7 @@ pub fn handle_offline_wallet_subcommand(
                     Ok(acc)
                 },
             )?;
-            Ok(json!({ "psbt": base64::encode(final_psbt.serialize()) }))
+            Ok(json!({ "psbt": final_psbt.to_string() }))
         }
     }
 }
@@ -347,7 +331,7 @@ pub fn handle_offline_wallet_subcommand(
     feature = "rpc"
 ))]
 pub(crate) fn handle_online_wallet_subcommand(
-    wallet: &Wallet,
+    wallet: Wallet,
     blockchain: &B,
     online_subcommand: OnlineWalletSubCommand,
 ) -> Result<serde_json::Value, Error> {
@@ -369,7 +353,7 @@ pub(crate) fn handle_online_wallet_subcommand(
                     is_final(&psbt)?;
                     psbt.extract_tx()
                 }
-                (None, Some(tx)) => Psbt::deserialize(&Vec::<u8>::from_hex(&tx)?)?,
+                (None, Some(tx)) => Psbt::deserialize(&Vec::<u8>::from_hex(&tx)?),
                 (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
@@ -388,8 +372,7 @@ pub(crate) fn handle_online_wallet_subcommand(
                 },
             )?;
 
-            let psbt_ser = serialize(&psbt);
-            let psbt_b64 = base64::encode(&psbt_ser);
+            let psbt_b64 = psbt.to_string();
 
             Ok(json!({ "psbt": psbt , "psbt_base64" : psbt_b64}))
         }
