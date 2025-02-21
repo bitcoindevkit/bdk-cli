@@ -30,7 +30,7 @@ use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Transaction, Txid};
 use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
 use bdk_wallet::descriptor::Segwitv0;
 #[cfg(feature = "compiler")]
-use bdk_wallet::descriptor::{Descriptor, Legacy, Miniscript};
+use bdk_wallet::{descriptor::{Descriptor, Legacy, Miniscript}, miniscript::policy::Concrete};
 use bdk_wallet::keys::bip39::WordCount;
 #[cfg(feature = "sqlite")]
 use bdk_wallet::rusqlite::Connection;
@@ -42,18 +42,15 @@ use bdk_wallet::miniscript::miniscript;
 use std::collections::{BTreeMap, HashSet};
 use std::convert::TryFrom;
 use std::io::Write;
-
-#[cfg(feature = "compiler")]
-use bdk_wallet::miniscript::policy::Concrete;
 use serde_json::json;
 use std::str::FromStr;
 
 #[cfg(feature = "electrum")]
 use crate::utils::BlockchainClient::Electrum;
 #[cfg(feature = "esplora")]
-use crate::utils::BlockchainClient::Esplora;
-#[cfg(feature = "esplora")]
-use bdk_esplora::EsploraAsyncExt;
+use {crate::utils::BlockchainClient::Esplora,
+    bdk_esplora::EsploraAsyncExt
+};
 use bdk_wallet::bitcoin::base64::prelude::*;
 use bdk_wallet::bitcoin::consensus::Decodable;
 use bdk_wallet::bitcoin::hex::FromHex;

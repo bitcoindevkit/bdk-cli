@@ -11,7 +11,7 @@
 //! This modules performs the necessary integration test for bdk-cli
 //! The tests can be run using `cargo test`
 
-#[cfg(feature = "regtest-node")]
+#[cfg(feature = "rpc")]
 mod test {
     use electrsd::bitcoind::tempfile::TempDir;
     use serde_json::{json, Value};

@@ -96,7 +96,7 @@ pub enum CliSubCommand {
         #[arg(env = "POLICY", required = true, index = 1)]
         policy: String,
         /// Sets the script type used to embed the compiled policy.
-        #[arg(env = "TYPE", short = 't', long = "type", default_value = "wsh", possible_values = &["sh","wsh", "sh-wsh"]
+        #[arg(env = "TYPE", short = 't', long = "type", default_value = "wsh", value_parser = ["sh","wsh", "sh-wsh"]
         )]
         script_type: String,
     },

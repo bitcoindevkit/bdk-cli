@@ -117,20 +117,6 @@ pub(crate) fn prepare_wallet_db_dir(
     Ok(dir)
 }
 
-#[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc",))]
-pub(crate) enum BlockchainClient {
-    #[cfg(feature = "electrum")]
-    Electrum {
-        client: bdk_electrum::BdkElectrumClient<bdk_electrum::electrum_client::Client>,
-        batch_size: usize,
-    },
-    #[cfg(feature = "esplora")]
-    Esplora {
-        client: bdk_esplora::esplora_client::AsyncClient,
-        parallel_requests: usize,
-    },
-}
-
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -155,7 +141,7 @@ pub(crate) enum BlockchainClient {
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
-    feature = "rpc",
+    // feature = "rpc",
     feature = "cbf",
 ))]
 /// Create a new blockchain from the wallet configuration options.
