@@ -17,6 +17,10 @@ feature_combinations=(
     "sqlite esplora"
     "sqlite verify"
     "sqlite compiler"
+    "verify esplora compiler"
+    "verify esplora repl"
+    "verify compiler repl"
+    "verify esplora compiler repl"
 )
 
 for features in "${feature_combinations[@]}"; do

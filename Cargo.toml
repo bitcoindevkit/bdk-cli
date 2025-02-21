@@ -41,7 +41,7 @@ sqlite = ["bdk_wallet/rusqlite"]
 cbf = ["bdk_kyoto"]
 electrum = ["bdk_electrum"]
 esplora = ["bdk_esplora"]
-rpc = ["bdk_bitcoind_rpc"]
+# rpc = ["bdk_bitcoind_rpc"] temporarily disabled
 
 # Use this to consensus verify transactions at sync time
 verify = []

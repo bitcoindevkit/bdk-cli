@@ -32,18 +32,15 @@ jobs:
       - name: Test Electrum
         run: cargo test --features electrum
 
-      - name: Test Esplora-Ureq
-        run: cargo test --features esplora-ureq
-
-      - name: Test Esplora-reqwest
-        run: cargo test --features esplora-reqwest
+      - name: Test Esplora
+        run: cargo test --features esplora
 
       # Temporarily disable compact filters
       #- name: Test Compact Filters
       #  run: cargo test --features compact_filters
 
-      - name: Test RPC
-        run: cargo test --features rpc
+      # - name: Test RPC
+      #   run: cargo test --features rpc
 
       - id: coverage
         name: Generate coverage

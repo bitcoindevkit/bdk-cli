@@ -19,6 +19,12 @@ jobs:
           - esplora,sqlite
           - esplora
           - compiler,sqlite
+          - compiler
+          - verify   
+          - verify esplora 
+          - verify esplora compiler
+          - verify compiler electrum
+          - verify esplora compiler      
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -79,7 +85,7 @@ jobs:
       - name: Update toolchain
         run: rustup update
       - name: Build
-        run: cargo build --target wasm32-unknown-unknown --no-default-features --features esplora-reqwest,async-interface,compiler,dev-getrandom-wasm
+        run: cargo build --target wasm32-unknown-unknown --no-default-features --features esplora,compiler,dev-getrandom-wasm
 
   fmt:
     name: Rust fmt
