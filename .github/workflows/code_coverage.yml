@@ -39,8 +39,8 @@ jobs:
       #- name: Test Compact Filters
       #  run: cargo test --features compact_filters
 
-      # - name: Test RPC
-      #   run: cargo test --features rpc
+      - name: Test RPC
+        run: cargo test --features rpc
 
       - id: coverage
         name: Generate coverage

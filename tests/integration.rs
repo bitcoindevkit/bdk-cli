@@ -13,9 +13,9 @@
 
 #[cfg(feature = "rpc")]
 mod test {
-    use electrsd::bitcoind::tempfile::TempDir;
     use serde_json::{json, Value};
     use std::convert::From;
+    use std::env::temp_dir;
     use std::path::PathBuf;
     use std::process::Command;
 
@@ -200,8 +200,8 @@ mod test {
         let mut test_dir = std::env::current_dir().unwrap();
         test_dir.push("bdk-testing");
 
-        let test_temp_dir = TempDir::new().unwrap();
-        let test_dir = test_temp_dir.into_path().to_path_buf();
+        let test_dir = temp_dir();
+        // let test_dir = test_temp_dir.into_path().to_path_buf();
 
         // Create bdk-cli instance
         let bdk_cli = BdkCli::new("regtest", Some(test_dir), false, &[feature]).unwrap();

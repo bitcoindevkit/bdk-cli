@@ -12,7 +12,7 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-bdk_wallet = { version = "1.0.0", features = ["rusqlite", "keys-bip39", "compiler"] }
+bdk_wallet = { version = "1.0.0", features = ["rusqlite", "keys-bip39", "compiler", "std"] }
 clap = { version = "4.5", features = ["derive","env"] }
 dirs = {  version = "6.0.0" }
 env_logger = "0.11.6"
@@ -41,7 +41,7 @@ sqlite = ["bdk_wallet/rusqlite"]
 cbf = ["bdk_kyoto"]
 electrum = ["bdk_electrum"]
 esplora = ["bdk_esplora"]
-# rpc = ["bdk_bitcoind_rpc"] temporarily disabled
+rpc = ["bdk_bitcoind_rpc"] 
 
 # Use this to consensus verify transactions at sync time
 verify = []

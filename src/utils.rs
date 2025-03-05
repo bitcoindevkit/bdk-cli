@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use crate::commands::WalletOpts;
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 
-#[cfg(any(feature = "electrum", feature = "esplora"))]
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::commands::ClientType;
 
 #[cfg(any(feature = "sqlite",))]
@@ -134,14 +134,17 @@ pub(crate) enum BlockchainClient {
         client: bdk_esplora::esplora_client::AsyncClient,
         parallel_requests: usize,
     },
-    // TODO rbf
+    #[cfg(feature = "rpc")]
+    RpcClient {
+        client: bdk_bitcoind_rpc::bitcoincore_rpc::Client,
+    },
     // TODO cbf
 }
 
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
-    // feature = "rpc",
+    feature = "rpc",
     feature = "cbf",
 ))]
 /// Create a new blockchain from the wallet configuration options.
@@ -164,6 +167,20 @@ pub(crate) fn new_blockchain_client(wallet_opts: &WalletOpts) -> Result<Blockcha
                 client,
                 parallel_requests: wallet_opts.parallel_requests,
             }
+        }
+
+        #[cfg(feature = "rpc")]
+        ClientType::RPC => {
+            let auth = match &wallet_opts.cookie {
+                Some(cookie) => bdk_bitcoind_rpc::bitcoincore_rpc::Auth::CookieFile(cookie.into()),
+                None => bdk_bitcoind_rpc::bitcoincore_rpc::Auth::UserPass(
+                    wallet_opts.basic_auth.0.clone(),
+                    wallet_opts.basic_auth.1.clone(),
+                ),
+            };
+            let client = bdk_bitcoind_rpc::bitcoincore_rpc::Client::new(url, auth)
+                .map_err(|e| Error::Generic(e.to_string()))?;
+            BlockchainClient::RpcClient { client }
         }
     };
     Ok(client)

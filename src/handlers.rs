@@ -29,31 +29,38 @@ use bdk_wallet::bitcoin::Network;
 use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Transaction, Txid};
 use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
 use bdk_wallet::descriptor::Segwitv0;
-#[cfg(feature = "compiler")]
-use bdk_wallet::{descriptor::{Descriptor, Legacy, Miniscript}, miniscript::policy::Concrete};
 use bdk_wallet::keys::bip39::WordCount;
 #[cfg(feature = "sqlite")]
 use bdk_wallet::rusqlite::Connection;
+#[cfg(feature = "compiler")]
+use bdk_wallet::{
+    descriptor::{Descriptor, Legacy, Miniscript},
+    miniscript::policy::Concrete,
+};
 use bdk_wallet::{KeychainKind, SignOptions, Wallet};
 
 use bdk_wallet::keys::DescriptorKey::Secret;
 use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
 use bdk_wallet::miniscript::miniscript;
+use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
 use std::convert::TryFrom;
 use std::io::Write;
-use serde_json::json;
 use std::str::FromStr;
 
 #[cfg(feature = "electrum")]
 use crate::utils::BlockchainClient::Electrum;
-#[cfg(feature = "esplora")]
-use {crate::utils::BlockchainClient::Esplora,
-    bdk_esplora::EsploraAsyncExt
-};
 use bdk_wallet::bitcoin::base64::prelude::*;
 use bdk_wallet::bitcoin::consensus::Decodable;
 use bdk_wallet::bitcoin::hex::FromHex;
+#[cfg(feature = "esplora")]
+use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
+#[cfg(feature = "rpc")]
+use {
+    crate::utils::BlockchainClient::RpcClient,
+    bdk_bitcoind_rpc::{Emitter, bitcoincore_rpc::RpcApi},
+    bdk_wallet::chain::{BlockId, CheckPoint},
+};
 
 /// Execute an offline wallet sub-command
 ///
@@ -354,7 +361,9 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     client
                         .populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
 
-                    let update = client.full_scan(request, stop_gap, batch_size, false)?;
+                    let update = client
+                        .full_scan(request, stop_gap, batch_size, false)
+                        .map_err(|e| Error::Generic(e.to_string()))?;
                     wallet.apply_update(update)?;
                 }
                 #[cfg(feature = "esplora")]
@@ -365,8 +374,36 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     let update = client
                         .full_scan(request, stop_gap, parallel_requests)
                         .await
-                        .map_err(|e| *e)?;
+                        .map_err(|e| Error::Generic(e.to_string()))?;
                     wallet.apply_update(update)?;
+                }
+
+                #[cfg(feature = "rpc")]
+                RpcClient { client } => {
+                    let genesis_block =
+                        bdk_wallet::bitcoin::constants::genesis_block(wallet.network());
+                    let genesis_cp = CheckPoint::new(BlockId {
+                        height: 0,
+                        hash: genesis_block.block_hash(),
+                    });
+                    let mut emitter =
+                        Emitter::new(&client, genesis_cp.clone(), genesis_cp.height());
+
+                    while let Some(block_event) = emitter
+                        .next_block()
+                        .map_err(|e| Error::Generic(e.to_string()))?
+                    {
+                        wallet
+                            .apply_block_connected_to(
+                                &block_event.block,
+                                block_event.block_height(),
+                                block_event.connected_to(),
+                            )
+                            .map_err(|e| Error::Generic(e.to_string()))?;
+                    }
+
+                    let mempool_txs = emitter.mempool().unwrap();
+                    wallet.apply_unconfirmed_txs(mempool_txs);
                 }
             }
             Ok(json!({}))
@@ -386,7 +423,9 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     client
                         .populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
 
-                    let update = client.sync(request, batch_size, false)?;
+                    let update = client
+                        .sync(request, batch_size, false)
+                        .map_err(|e| Error::Generic(e.to_string()))?;
                     wallet.apply_update(update)?;
                 }
                 #[cfg(feature = "esplora")]
@@ -397,8 +436,29 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     let update = client
                         .sync(request, parallel_requests)
                         .await
-                        .map_err(|e| *e)?;
+                        .map_err(|e| Error::Generic(e.to_string()))?;
                     wallet.apply_update(update)?;
+                }
+                #[cfg(feature = "rpc")]
+                RpcClient { client } => {
+                    let wallet_cp = wallet.latest_checkpoint();
+                    let mut emitter = Emitter::new(&client, wallet_cp.clone(), wallet_cp.height());
+
+                    while let Some(block_event) = emitter
+                        .next_block()
+                        .map_err(|e| Error::Generic(e.to_string()))?
+                    {
+                        wallet
+                            .apply_block_connected_to(
+                                &block_event.block,
+                                block_event.block_height(),
+                                block_event.connected_to(),
+                            )
+                            .map_err(|e| Error::Generic(e.to_string()))?;
+                    }
+
+                    let mempool_txs = emitter.mempool().unwrap();
+                    wallet.apply_unconfirmed_txs(mempool_txs);
                 }
             }
             Ok(json!({}))
@@ -426,7 +486,9 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 Electrum {
                     client,
                     batch_size: _,
-                } => client.transaction_broadcast(&tx)?,
+                } => client
+                    .transaction_broadcast(&tx)
+                    .map_err(|e| Error::Generic(e.to_string()))?,
                 #[cfg(feature = "esplora")]
                 Esplora {
                     client,
@@ -434,7 +496,12 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 } => client
                     .broadcast(&tx)
                     .await
-                    .map(|()| tx.compute_txid().clone())?,
+                    .map(|()| tx.compute_txid().clone())
+                    .map_err(|e| Error::Generic(e.to_string()))?,
+                #[cfg(feature = "rpc")]
+                RpcClient { client } => client
+                    .send_raw_transaction(&tx)
+                    .map_err(|e| Error::Generic(e.to_string()))?,
             };
             Ok(json!({ "txid": txid }))
         }

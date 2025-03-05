@@ -20,6 +20,8 @@ jobs:
           - esplora
           - compiler,sqlite
           - compiler
+          - rpc
+          - verify rpc
           - verify   
           - verify esplora 
           - verify esplora compiler
