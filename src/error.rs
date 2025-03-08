@@ -4,7 +4,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum BDKCliError {
-    
     #[error("BIP39 error: {0}")]
     BIP39Error(#[from] bdk_wallet::bip39::Error),
 
@@ -38,6 +37,9 @@ pub enum BDKCliError {
 
     #[error("Key error: {0}")]
     KeyError(#[from] bdk_wallet::keys::KeyError),
+
+    #[error("LocalChain error: {0}")]
+    LocalChainError(#[from] bdk_wallet::chain::local_chain::ApplyHeaderError),
 
     #[error("Miniscript error: {0}")]
     MiniscriptError(#[from] bdk_wallet::miniscript::Error),
@@ -79,4 +81,8 @@ pub enum BDKCliError {
 
     #[error("Consensus decoding error: {0}")]
     Hex(#[from] HexToBytesError),
+
+    #[cfg(feature = "rpc")]
+    #[error("RPC error: {0}")]
+    BitcoinCoreRpcError(#[from] bdk_bitcoind_rpc::bitcoincore_rpc::Error),
 }

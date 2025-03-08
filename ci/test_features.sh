@@ -20,13 +20,10 @@ feature_combinations=(
     "sqlite esplora"
     "sqlite verify"
     "sqlite compiler"
-    "rpc esplora"
-    "rpc electrum"
     "verify esplora compiler"
     "verify esplora repl"
     "verify compiler repl"
     "verify esplora compiler repl"
-    "rpc esplora compiler"
     "rpc compiler electrum"
     "sqlite rpc compiler"
 )

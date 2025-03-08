@@ -192,7 +192,10 @@ pub(crate) fn new_persisted_wallet<P: WalletPersister>(
     network: Network,
     persister: &mut P,
     wallet_opts: &WalletOpts,
-) -> Result<PersistedWallet<P>, Error> {
+) -> Result<PersistedWallet<P>, Error>
+where
+    P::Error: std::fmt::Display,
+{
     let ext_descriptor = wallet_opts.ext_descriptor.clone();
     let int_descriptor = wallet_opts.int_descriptor.clone();
 
@@ -221,14 +224,14 @@ pub(crate) fn new_persisted_wallet<P: WalletPersister>(
                 let wallet = Wallet::create(ext_descriptor, int_descriptor)
                     .network(network)
                     .create_wallet(persister)
-                    .map_err(|_| Error::Generic("Can't create wallet.".to_string()))?;
+                    .map_err(|e| Error::Generic(e.to_string()))?;
                 Ok(wallet)
             }
             (Some(ext_descriptor), None) => {
                 let wallet = Wallet::create_single(ext_descriptor)
                     .network(network)
                     .create_wallet(persister)
-                    .map_err(|_| Error::Generic("Can't create wallet.".to_string()))?;
+                    .map_err(|e| Error::Generic(e.to_string()))?;
                 Ok(wallet)
             }
             _ => Err(Error::Generic(

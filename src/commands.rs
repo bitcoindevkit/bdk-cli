@@ -195,8 +195,8 @@ pub struct WalletOpts {
 
     #[cfg(feature = "rpc")]
     /// Sets an optional cookie authentication.
-    #[arg(name = "COOKIE", long)]
-    pub cookie: Option<String>
+    #[clap(name = "COOKIE", long = "cookie")]
+    pub cookie: Option<String>,
 }
 
 /// Options to configure a SOCKS5 proxy for a blockchain client connection.

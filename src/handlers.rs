@@ -58,7 +58,7 @@ use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
 #[cfg(feature = "rpc")]
 use {
     crate::utils::BlockchainClient::RpcClient,
-    bdk_bitcoind_rpc::{Emitter, bitcoincore_rpc::RpcApi},
+    bdk_bitcoind_rpc::{bitcoincore_rpc::RpcApi, Emitter},
     bdk_wallet::chain::{BlockId, CheckPoint},
 };
 
@@ -361,9 +361,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     client
                         .populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
 
-                    let update = client
-                        .full_scan(request, stop_gap, batch_size, false)
-                        .map_err(|e| Error::Generic(e.to_string()))?;
+                    let update = client.full_scan(request, stop_gap, batch_size, false)?;
                     wallet.apply_update(update)?;
                 }
                 #[cfg(feature = "esplora")]
@@ -374,7 +372,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     let update = client
                         .full_scan(request, stop_gap, parallel_requests)
                         .await
-                        .map_err(|e| Error::Generic(e.to_string()))?;
+                        .map_err(|e| *e)?;
                     wallet.apply_update(update)?;
                 }
 
@@ -389,20 +387,15 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     let mut emitter =
                         Emitter::new(&client, genesis_cp.clone(), genesis_cp.height());
 
-                    while let Some(block_event) = emitter
-                        .next_block()
-                        .map_err(|e| Error::Generic(e.to_string()))?
-                    {
-                        wallet
-                            .apply_block_connected_to(
-                                &block_event.block,
-                                block_event.block_height(),
-                                block_event.connected_to(),
-                            )
-                            .map_err(|e| Error::Generic(e.to_string()))?;
+                    while let Some(block_event) = emitter.next_block()? {
+                        wallet.apply_block_connected_to(
+                            &block_event.block,
+                            block_event.block_height(),
+                            block_event.connected_to(),
+                        )?;
                     }
 
-                    let mempool_txs = emitter.mempool().unwrap();
+                    let mempool_txs = emitter.mempool()?;
                     wallet.apply_unconfirmed_txs(mempool_txs);
                 }
             }
@@ -423,9 +416,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     client
                         .populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
 
-                    let update = client
-                        .sync(request, batch_size, false)
-                        .map_err(|e| Error::Generic(e.to_string()))?;
+                    let update = client.sync(request, batch_size, false)?;
                     wallet.apply_update(update)?;
                 }
                 #[cfg(feature = "esplora")]
@@ -436,7 +427,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     let update = client
                         .sync(request, parallel_requests)
                         .await
-                        .map_err(|e| Error::Generic(e.to_string()))?;
+                        .map_err(|e| *e)?;
                     wallet.apply_update(update)?;
                 }
                 #[cfg(feature = "rpc")]
@@ -444,20 +435,15 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     let wallet_cp = wallet.latest_checkpoint();
                     let mut emitter = Emitter::new(&client, wallet_cp.clone(), wallet_cp.height());
 
-                    while let Some(block_event) = emitter
-                        .next_block()
-                        .map_err(|e| Error::Generic(e.to_string()))?
-                    {
-                        wallet
-                            .apply_block_connected_to(
-                                &block_event.block,
-                                block_event.block_height(),
-                                block_event.connected_to(),
-                            )
-                            .map_err(|e| Error::Generic(e.to_string()))?;
+                    while let Some(block_event) = emitter.next_block()? {
+                        wallet.apply_block_connected_to(
+                            &block_event.block,
+                            block_event.block_height(),
+                            block_event.connected_to(),
+                        )?;
                     }
 
-                    let mempool_txs = emitter.mempool().unwrap();
+                    let mempool_txs = emitter.mempool()?;
                     wallet.apply_unconfirmed_txs(mempool_txs);
                 }
             }
