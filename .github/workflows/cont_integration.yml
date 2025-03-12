@@ -13,27 +13,16 @@ jobs:
           - stable # STABLE
           - 1.75.0 # MSRV
         features:
-          - default
-          - electrum,sqlite
-          - electrum
-          - esplora,sqlite
-          - esplora
-          - compiler,sqlite
-          - compiler
-          - rpc
-          - verify rpc
-          - verify   
-          - verify esplora 
-          - verify esplora compiler
-          - verify compiler electrum
-          - verify esplora compiler      
+          - --features default
+          - --no-default-features
+          - --all-features
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Generate cache key
         run: echo "${{ matrix.rust }} ${{ matrix.features }}" | tee .cache_key
       - name: Cache
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -47,35 +36,45 @@ jobs:
           profile: minimal
           override: true
           components: rustfmt, clippy
+      - name: If Rust 1.75 remove and update Cargo.lock
+        if: matrix.rust == '1.75.0'
+        run: |
+          rm Cargo.lock
+          cargo update
+      - name: If Rust 1.75 pin dependencies
+        if: matrix.rust == '1.75.0'
+        run: |
+          cargo update -p home --precise "0.5.9"
+          cargo update -p native-tls --precise "0.2.13"
+          cargo update -p idna_adapter --precise "1.1.0"
       - name: Build
-        run: cargo build --no-default-features --features repl,${{ matrix.features }} --locked
+        run: cargo build ${{ matrix.features }}
       - name: Clippy
         run: cargo clippy -- -D warnings
       - name: Test
-        run: cargo test --no-default-features --features repl,${{ matrix.features }}
+        run: cargo test ${{ matrix.features }}
 
   wasm-build:
     name: Build WASM
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     env:
       CC: clang-10
       CFLAGS: -I/usr/include
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Generate cache key
         run: echo "Build WASM" | tee .cache_key
       - name: Cache
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('.cache_key') }}-${{ hashFiles('**/Cargo.toml','**/Cargo.lock') }}
-        # Install a recent version of clang that supports wasm32
+          # Install a recent version of clang that supports wasm32
       - run: wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add - || exit 1
-      - run: sudo apt-add-repository "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-10 main" || exit 1
       - run: sudo apt-get update || exit 1
       - run: sudo apt-get install -y libclang-common-10-dev clang-10 libc6-dev-i386 || exit 1
       - name: Set default toolchain
@@ -94,7 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Setup Rust Toolchain
         uses: actions-rs/toolchain@v1
         with:
