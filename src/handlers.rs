@@ -194,7 +194,7 @@ pub fn handle_offline_wallet_subcommand(
             }
 
             if let Some(base64_data) = add_data {
-                let op_return_data = BASE64_STANDARD.decode(&base64_data).unwrap();
+                let op_return_data = BASE64_STANDARD.decode(base64_data).unwrap();
                 tx_builder.add_data(&PushBytesBuf::try_from(op_return_data).unwrap());
             } else if let Some(string_data) = add_string {
                 let data = PushBytesBuf::try_from(string_data.as_bytes().to_vec()).unwrap();
@@ -214,7 +214,7 @@ pub fn handle_offline_wallet_subcommand(
             let psbt = tx_builder.finish()?;
 
             let serialized_psbt = psbt.serialize();
-            let psbt_base64 = BASE64_STANDARD.encode(&serialized_psbt);
+            let psbt_base64 = BASE64_STANDARD.encode(serialized_psbt);
 
             if wallet_opts.verbose {
                 Ok(

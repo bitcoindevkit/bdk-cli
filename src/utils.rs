@@ -211,7 +211,7 @@ where
     let wallet_opt = wallet_load_params
         .check_network(network)
         .load_wallet(persister)
-        .map_err(|_| Error::Generic("Can't load wallet".to_string()))?;
+        .map_err(|e| Error::Generic(e.to_string()))?;
 
     let wallet = match wallet_opt {
         Some(wallet) => wallet,

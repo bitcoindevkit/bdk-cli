@@ -27,6 +27,9 @@
 
 ## About
 
+**EXPERIMENTAL**
+This crate is in to process of being updated to `bdk_wallet` 1.x. Only use with for testing on test networks.
+
 This project provides a command-line Bitcoin wallet application using the latest [BDK APIs](https://docs.rs/bdk/latest/bdk/wallet/struct.Wallet.html). This might look tiny and innocent, but by harnessing the power of BDK it provides a powerful generic descriptor based command line wallet tool.
 And yes, it can do Taproot!!
 
