@@ -51,12 +51,7 @@ use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey,
 use bdk_wallet::miniscript::miniscript;
 use serde_json::json;
 use std::collections::BTreeMap;
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "cbf",
-    feature = "rpc"
-))]
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "cbf",))]
 use std::collections::HashSet;
 use std::convert::TryFrom;
 #[cfg(feature = "repl")]
@@ -368,7 +363,10 @@ pub(crate) async fn handle_online_wallet_subcommand(
     online_subcommand: OnlineWalletSubCommand,
 ) -> Result<serde_json::Value, Error> {
     match online_subcommand {
-        FullScan { stop_gap } => {
+        FullScan {
+            stop_gap: _stop_gap,
+        } => {
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
             let request = wallet.start_full_scan().inspect({
                 let mut stdout = std::io::stdout();
                 let mut once = HashSet::<KeychainKind>::new();
@@ -388,7 +386,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     client
                         .populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
 
-                    let update = client.full_scan(request, stop_gap, batch_size, false)?;
+                    let update = client.full_scan(request, _stop_gap, batch_size, false)?;
                     wallet.apply_update(update)?;
                 }
                 #[cfg(feature = "esplora")]
@@ -397,7 +395,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     parallel_requests,
                 } => {
                     let update = client
-                        .full_scan(request, stop_gap, parallel_requests)
+                        .full_scan(request, _stop_gap, parallel_requests)
                         .await
                         .map_err(|e| *e)?;
                     wallet.apply_update(update)?;
@@ -405,6 +403,8 @@ pub(crate) async fn handle_online_wallet_subcommand(
 
                 #[cfg(feature = "rpc")]
                 RpcClient { client } => {
+                    let blockchain_info = client.get_blockchain_info()?;
+
                     let genesis_block =
                         bdk_wallet::bitcoin::constants::genesis_block(wallet.network());
                     let genesis_cp = CheckPoint::new(BlockId {
@@ -415,6 +415,17 @@ pub(crate) async fn handle_online_wallet_subcommand(
                         Emitter::new(&*client, genesis_cp.clone(), genesis_cp.height());
 
                     while let Some(block_event) = emitter.next_block()? {
+                        if block_event.block_height() % 10_000 == 0 {
+                            let percent_done = f64::from(block_event.block_height())
+                                / f64::from(blockchain_info.headers as u32)
+                                * 100f64;
+                            println!(
+                                "Applying block at height: {}, {:.2}% done.",
+                                block_event.block_height(),
+                                percent_done
+                            );
+                        }
+
                         wallet.apply_block_connected_to(
                             &block_event.block,
                             block_event.block_height(),
@@ -429,6 +440,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
             Ok(json!({}))
         }
         Sync => {
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
             let request = wallet
                 .start_sync_with_revealed_spks()
                 .inspect(|item, progress| {
@@ -459,10 +471,25 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 }
                 #[cfg(feature = "rpc")]
                 RpcClient { client } => {
+                    let blockchain_info = client.get_blockchain_info()?;
                     let wallet_cp = wallet.latest_checkpoint();
-                    let mut emitter = Emitter::new(&*client, wallet_cp.clone(), wallet_cp.height());
+
+                    // reload the last 200 blocks in case of a reorg
+                    let emitter_height = wallet_cp.height().saturating_sub(200);
+                    let mut emitter = Emitter::new(&*client, wallet_cp, emitter_height);
 
                     while let Some(block_event) = emitter.next_block()? {
+                        if block_event.block_height() % 10_000 == 0 {
+                            let percent_done = f64::from(block_event.block_height())
+                                / f64::from(blockchain_info.headers as u32)
+                                * 100f64;
+                            println!(
+                                "Applying block at height: {}, {:.2}% done.",
+                                block_event.block_height(),
+                                percent_done
+                            );
+                        }
+
                         wallet.apply_block_connected_to(
                             &block_event.block,
                             block_event.block_height(),
@@ -480,7 +507,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
             let tx = match (psbt, tx) {
                 (Some(psbt), None) => {
                     let psbt = BASE64_STANDARD
-                        .decode(&psbt)
+                        .decode(psbt)
                         .map_err(|e| Error::Generic(e.to_string()))?;
                     let psbt: Psbt = Psbt::deserialize(&psbt)?;
                     is_final(&psbt)?;

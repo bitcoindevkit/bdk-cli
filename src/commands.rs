@@ -192,10 +192,9 @@ pub struct WalletOpts {
         default_value = "user:password",
     )]
     pub basic_auth: (String, String),
-
     #[cfg(feature = "rpc")]
     /// Sets an optional cookie authentication.
-    #[clap(name = "COOKIE", long = "cookie")]
+    #[arg(env = "COOKIE")]
     pub cookie: Option<String>,
 }
 
