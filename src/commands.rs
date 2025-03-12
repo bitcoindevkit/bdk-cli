@@ -141,7 +141,7 @@ pub enum ClientType {
     #[cfg(feature = "esplora")]
     Esplora,
     #[cfg(feature = "rpc")]
-    RPC,
+    Rpc,
 }
 
 /// Config options wallet operations can take.
@@ -162,7 +162,7 @@ pub struct WalletOpts {
     #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
     #[arg(env = "CLIENT_TYPE", short = 'c', long, value_enum, required = true)]
     pub client_type: ClientType,
-    #[cfg(any(feature = "sqlite",))]
+    #[cfg(feature = "sqlite")]
     #[arg(env = "DATABASE_TYPE", short = 'd', long, value_enum, required = true)]
     pub database_type: DatabaseType,
     /// Sets the server url.

@@ -26,7 +26,14 @@ use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
 use bdk_wallet::bitcoin::consensus::encode::{serialize, serialize_hex};
 use bdk_wallet::bitcoin::script::PushBytesBuf;
 use bdk_wallet::bitcoin::Network;
-use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Transaction, Txid};
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+use bdk_wallet::bitcoin::Transaction;
+use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Txid};
 use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
 use bdk_wallet::descriptor::Segwitv0;
 use bdk_wallet::keys::bip39::WordCount;
@@ -43,15 +50,35 @@ use bdk_wallet::keys::DescriptorKey::Secret;
 use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
 use bdk_wallet::miniscript::miniscript;
 use serde_json::json;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+use std::collections::HashSet;
 use std::convert::TryFrom;
+#[cfg(feature = "repl")]
 use std::io::Write;
 use std::str::FromStr;
 
 #[cfg(feature = "electrum")]
 use crate::utils::BlockchainClient::Electrum;
 use bdk_wallet::bitcoin::base64::prelude::*;
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
 use bdk_wallet::bitcoin::consensus::Decodable;
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
 use bdk_wallet::bitcoin::hex::FromHex;
 #[cfg(feature = "esplora")]
 use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
@@ -385,7 +412,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                         hash: genesis_block.block_hash(),
                     });
                     let mut emitter =
-                        Emitter::new(&client, genesis_cp.clone(), genesis_cp.height());
+                        Emitter::new(&*client, genesis_cp.clone(), genesis_cp.height());
 
                     while let Some(block_event) = emitter.next_block()? {
                         wallet.apply_block_connected_to(
@@ -433,7 +460,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 #[cfg(feature = "rpc")]
                 RpcClient { client } => {
                     let wallet_cp = wallet.latest_checkpoint();
-                    let mut emitter = Emitter::new(&client, wallet_cp.clone(), wallet_cp.height());
+                    let mut emitter = Emitter::new(&*client, wallet_cp.clone(), wallet_cp.height());
 
                     while let Some(block_event) = emitter.next_block()? {
                         wallet.apply_block_connected_to(
@@ -482,7 +509,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 } => client
                     .broadcast(&tx)
                     .await
-                    .map(|()| tx.compute_txid().clone())
+                    .map(|()| tx.compute_txid())
                     .map_err(|e| Error::Generic(e.to_string()))?,
                 #[cfg(feature = "rpc")]
                 RpcClient { client } => client
@@ -636,7 +663,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
         } => {
             let blockchain_client = new_blockchain_client(&wallet_opts)?;
             let network = cli_opts.network;
-            #[cfg(any(feature = "sqlite"))]
+            #[cfg(feature = "sqlite")]
             let result = {
                 let home_dir = prepare_home_dir(cli_opts.datadir)?;
                 let wallet_name = &wallet_opts.wallet;
@@ -674,7 +701,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
             let network = cli_opts.network;
-            #[cfg(any(feature = "sqlite"))]
+            #[cfg(feature = "sqlite")]
             let result = {
                 let home_dir = prepare_home_dir(cli_opts.datadir)?;
                 let wallet_name = &wallet_opts.wallet;
@@ -722,7 +749,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
         #[cfg(feature = "repl")]
         CliSubCommand::Repl { wallet_opts } => {
             let network = cli_opts.network;
-            #[cfg(any(feature = "sqlite"))]
+            #[cfg(feature = "sqlite")]
             let (mut wallet, mut persister) = {
                 let wallet_name = &wallet_opts.wallet;
 
@@ -753,7 +780,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 }
 
                 let result = respond(network, &mut wallet, &wallet_opts, line).await;
-                #[cfg(any(feature = "sqlite"))]
+                #[cfg(feature = "sqlite")]
                 wallet.persist(&mut persister)?;
 
                 match result {
@@ -798,7 +825,7 @@ async fn respond(
         ReplSubCommand::Wallet {
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
-            let blockchain = new_blockchain_client(&wallet_opts).map_err(|e| e.to_string())?;
+            let blockchain = new_blockchain_client(wallet_opts).map_err(|e| e.to_string())?;
             let value = handle_online_wallet_subcommand(wallet, blockchain, online_subcommand)
                 .await
                 .map_err(|e| e.to_string())?;

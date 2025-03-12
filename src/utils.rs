@@ -12,7 +12,7 @@
 use crate::error::BDKCliError as Error;
 use std::str::FromStr;
 
-#[cfg(any(feature = "sqlite"))]
+#[cfg(feature = "sqlite")]
 use std::path::{Path, PathBuf};
 
 use crate::commands::WalletOpts;
@@ -21,15 +21,9 @@ use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::commands::ClientType;
 
-#[cfg(any(feature = "sqlite",))]
-use bdk_wallet::{KeychainKind, PersistedWallet, WalletPersister};
-
-#[cfg(feature = "electrum")]
-use bdk_electrum;
 use bdk_wallet::Wallet;
-
-#[cfg(feature = "esplora")]
-use bdk_esplora;
+#[cfg(feature = "sqlite")]
+use bdk_wallet::{KeychainKind, PersistedWallet, WalletPersister};
 
 /// Parse the recipient (Address,Amount) argument from cli input.
 pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
@@ -75,7 +69,7 @@ pub(crate) fn parse_address(address_str: &str) -> Result<Address, Error> {
     Ok(unchecked_address.assume_checked())
 }
 
-#[cfg(any(feature = "sqlite",))]
+#[cfg(feature = "sqlite")]
 /// Prepare bdk-cli home directory
 ///
 /// This function is called to check if [`crate::CliOpts`] datadir is set.
@@ -100,7 +94,7 @@ pub(crate) fn prepare_home_dir(home_path: Option<PathBuf>) -> Result<PathBuf, Er
 }
 
 /// Prepare wallet database directory.
-#[cfg(any(feature = "sqlite"))]
+#[cfg(feature = "sqlite")]
 pub(crate) fn prepare_wallet_db_dir(
     wallet_name: &Option<String>,
     home_path: &Path,
@@ -126,17 +120,17 @@ pub(crate) fn prepare_wallet_db_dir(
 pub(crate) enum BlockchainClient {
     #[cfg(feature = "electrum")]
     Electrum {
-        client: bdk_electrum::BdkElectrumClient<bdk_electrum::electrum_client::Client>,
+        client: Box<bdk_electrum::BdkElectrumClient<bdk_electrum::electrum_client::Client>>,
         batch_size: usize,
     },
     #[cfg(feature = "esplora")]
     Esplora {
-        client: bdk_esplora::esplora_client::AsyncClient,
+        client: Box<bdk_esplora::esplora_client::AsyncClient>,
         parallel_requests: usize,
     },
     #[cfg(feature = "rpc")]
     RpcClient {
-        client: bdk_bitcoind_rpc::bitcoincore_rpc::Client,
+        client: Box<bdk_bitcoind_rpc::bitcoincore_rpc::Client>,
     },
     // TODO cbf
 }
@@ -154,9 +148,9 @@ pub(crate) fn new_blockchain_client(wallet_opts: &WalletOpts) -> Result<Blockcha
         #[cfg(feature = "electrum")]
         ClientType::Electrum => {
             let client = bdk_electrum::electrum_client::Client::new(url)
-                .map(|client| bdk_electrum::BdkElectrumClient::new(client))?;
+                .map(bdk_electrum::BdkElectrumClient::new)?;
             BlockchainClient::Electrum {
-                client,
+                client: Box::new(client),
                 batch_size: wallet_opts.batch_size,
             }
         }
@@ -164,13 +158,13 @@ pub(crate) fn new_blockchain_client(wallet_opts: &WalletOpts) -> Result<Blockcha
         ClientType::Esplora => {
             let client = bdk_esplora::esplora_client::Builder::new(url).build_async()?;
             BlockchainClient::Esplora {
-                client,
+                client: Box::new(client),
                 parallel_requests: wallet_opts.parallel_requests,
             }
         }
 
         #[cfg(feature = "rpc")]
-        ClientType::RPC => {
+        ClientType::Rpc => {
             let auth = match &wallet_opts.cookie {
                 Some(cookie) => bdk_bitcoind_rpc::bitcoincore_rpc::Auth::CookieFile(cookie.into()),
                 None => bdk_bitcoind_rpc::bitcoincore_rpc::Auth::UserPass(
@@ -180,13 +174,15 @@ pub(crate) fn new_blockchain_client(wallet_opts: &WalletOpts) -> Result<Blockcha
             };
             let client = bdk_bitcoind_rpc::bitcoincore_rpc::Client::new(url, auth)
                 .map_err(|e| Error::Generic(e.to_string()))?;
-            BlockchainClient::RpcClient { client }
+            BlockchainClient::RpcClient {
+                client: Box::new(client),
+            }
         }
     };
     Ok(client)
 }
 
-#[cfg(any(feature = "sqlite",))]
+#[cfg(feature = "sqlite")]
 /// Create a new persisted wallet from given wallet configuration options.
 pub(crate) fn new_persisted_wallet<P: WalletPersister>(
     network: Network,
