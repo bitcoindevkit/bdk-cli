@@ -23,7 +23,7 @@ use crate::error::BDKCliError as Error;
 use crate::utils::*;
 use bdk_wallet::bip39::{Language, Mnemonic};
 use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
-use bdk_wallet::bitcoin::consensus::encode::{serialize, serialize_hex};
+use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
 use bdk_wallet::bitcoin::Network;
 #[cfg(any(
@@ -208,15 +208,14 @@ pub fn handle_offline_wallet_subcommand(
 
             let psbt = tx_builder.finish()?;
 
-            let serialized_psbt = psbt.serialize();
-            let psbt_base64 = BASE64_STANDARD.encode(serialized_psbt);
+            let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
 
             if wallet_opts.verbose {
                 Ok(
-                    json!({"psbt": psbt_base64, "serialized_psbt": psbt.serialize(), "details": psbt}),
+                    json!({"psbt": psbt_base64, "details": psbt}),
                 )
             } else {
-                Ok(json!({"psbt": psbt_base64, "details": psbt}))
+                Ok(json!({"psbt": psbt_base64 }))
             }
         }
         BumpFee {
@@ -253,10 +252,9 @@ pub fn handle_offline_wallet_subcommand(
 
             let psbt = tx_builder.finish()?;
 
-            let serialized_psbt = psbt.serialize();
-            let psbt_base64 = BASE64_STANDARD.encode(serialized_psbt);
+            let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
 
-            Ok(json!({"psbt": psbt_base64, "details": psbt}))
+            Ok(json!({"psbt": psbt_base64 }))
         }
         Policies => {
             let external_policy = wallet.policies(KeychainKind::External)?;
@@ -284,13 +282,14 @@ pub fn handle_offline_wallet_subcommand(
                 ..Default::default()
             };
             let finalized = wallet.sign(&mut psbt, signopt)?;
+            let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
             if wallet_opts.verbose {
                 Ok(
-                    json!({"psbt": BASE64_STANDARD.encode(serialize(&psbt_bytes)),"is_finalized": finalized, "serialized_psbt": psbt}),
+                    json!({"psbt": &psbt_base64, "is_finalized": finalized, "serialized_psbt": &psbt}),
                 )
             } else {
                 Ok(
-                    json!({"psbt": BASE64_STANDARD.encode(serialize(&psbt_bytes)),"is_finalized": finalized,}),
+                    json!({"psbt": &psbt_base64, "is_finalized": finalized,}),
                 )
             }
         }
@@ -316,11 +315,11 @@ pub fn handle_offline_wallet_subcommand(
             let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
             if wallet_opts.verbose {
                 Ok(
-                    json!({ "psbt": BASE64_STANDARD.encode(serialize(&psbt_bytes)),"is_finalized": finalized, "serialized_psbt": psbt}),
+                    json!({ "psbt": BASE64_STANDARD.encode(psbt.serialize()), "is_finalized": finalized, "details": psbt}),
                 )
             } else {
                 Ok(
-                    json!({ "psbt": BASE64_STANDARD.encode(serialize(&psbt_bytes)),"is_finalized": finalized,}),
+                    json!({ "psbt": BASE64_STANDARD.encode(psbt.serialize()), "is_finalized": finalized,}),
                 )
             }
         }
