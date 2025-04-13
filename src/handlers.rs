@@ -211,9 +211,7 @@ pub fn handle_offline_wallet_subcommand(
             let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
 
             if wallet_opts.verbose {
-                Ok(
-                    json!({"psbt": psbt_base64, "details": psbt}),
-                )
+                Ok(json!({"psbt": psbt_base64, "details": psbt}))
             } else {
                 Ok(json!({"psbt": psbt_base64 }))
             }
@@ -288,9 +286,7 @@ pub fn handle_offline_wallet_subcommand(
                     json!({"psbt": &psbt_base64, "is_finalized": finalized, "serialized_psbt": &psbt}),
                 )
             } else {
-                Ok(
-                    json!({"psbt": &psbt_base64, "is_finalized": finalized,}),
-                )
+                Ok(json!({"psbt": &psbt_base64, "is_finalized": finalized,}))
             }
         }
         ExtractPsbt { psbt } => {
