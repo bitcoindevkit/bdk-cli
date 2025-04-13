@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021 Bitcoin Dev Kit Developers
+// Copyright (c) 2020-2025 Bitcoin Dev Kit Developers
 //
 // This file is licensed under the Apache License, Version 2.0 <LICENSE-APACHE
 // or http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -9,82 +9,31 @@
 //! Utility Tools
 //!
 //! This module includes all the utility tools used by the App.
-
-use std::path::{Path, PathBuf};
+use crate::error::BDKCliError as Error;
 use std::str::FromStr;
 
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk::electrum_client::{Client, ElectrumApi};
-
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk::bitcoin::TxOut;
+#[cfg(feature = "sqlite")]
+use std::path::{Path, PathBuf};
 
 use crate::commands::WalletOpts;
-use crate::nodes::Nodes;
-use bdk::bitcoin::secp256k1::Secp256k1;
-use bdk::bitcoin::{Address, Network, OutPoint, Script};
-#[cfg(feature = "compact_filters")]
-use bdk::blockchain::compact_filters::{BitcoinPeerConfig, CompactFiltersBlockchainConfig};
-#[cfg(feature = "esplora")]
-use bdk::blockchain::esplora::EsploraBlockchainConfig;
-#[cfg(feature = "rpc")]
-use bdk::blockchain::rpc::{Auth, RpcConfig, RpcSyncParams};
-#[cfg(feature = "electrum")]
-use bdk::blockchain::ElectrumBlockchainConfig;
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "compact_filters",
-    feature = "rpc"
-))]
-use bdk::blockchain::{AnyBlockchain, AnyBlockchainConfig, ConfigurableBlockchain};
-#[cfg(feature = "key-value-db")]
-use bdk::database::any::SledDbConfiguration;
-#[cfg(feature = "sqlite-db")]
-use bdk::database::any::SqliteDbConfiguration;
-use bdk::database::{AnyDatabase, AnyDatabaseConfig, BatchDatabase, ConfigurableDatabase};
-#[cfg(feature = "hardware-signer")]
-use bdk::hwi::{interface::HWIClient, types::HWIChain};
-#[cfg(feature = "hardware-signer")]
-use bdk::wallet::hardwaresigner::HWISigner;
-#[cfg(feature = "hardware-signer")]
-use bdk::wallet::signer::{SignerError, SignerOrdering};
-use bdk::wallet::wallet_name_from_descriptor;
-#[cfg(feature = "hardware-signer")]
-use bdk::KeychainKind;
-use bdk::{Error, Wallet};
-#[cfg(feature = "hardware-signer")]
-use std::sync::Arc;
+use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 
-/// Create a randomized wallet name from the descriptor checksum.
-/// If wallet options already includes a name, use that instead.
-pub(crate) fn maybe_descriptor_wallet_name(
-    wallet_opts: WalletOpts,
-    network: Network,
-) -> Result<WalletOpts, Error> {
-    if wallet_opts.wallet.is_some() {
-        return Ok(wallet_opts);
-    }
-    // Use deterministic wallet name derived from descriptor
-    let wallet_name = wallet_name_from_descriptor(
-        &wallet_opts.descriptor[..],
-        wallet_opts.change_descriptor.as_deref(),
-        network,
-        &Secp256k1::new(),
-    )?;
-    let mut wallet_opts = wallet_opts;
-    wallet_opts.wallet = Some(wallet_name);
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+use crate::commands::ClientType;
 
-    Ok(wallet_opts)
-}
+use bdk_wallet::Wallet;
+#[cfg(feature = "sqlite")]
+use bdk_wallet::{KeychainKind, PersistedWallet, WalletPersister};
 
 /// Parse the recipient (Address,Amount) argument from cli input.
-pub(crate) fn parse_recipient(s: &str) -> Result<(Script, u64), String> {
+pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
     let parts: Vec<_> = s.split(':').collect();
     if parts.len() != 2 {
         return Err("Invalid format".to_string());
     }
-    let addr = Address::from_str(parts[0]).map_err(|e| e.to_string())?;
+    let addr = Address::from_str(parts[0])
+        .map_err(|e| e.to_string())?
+        .assume_checked();
     let val = u64::from_str(parts[1]).map_err(|e| e.to_string())?;
 
     Ok((addr.script_pubkey(), val))
@@ -92,15 +41,15 @@ pub(crate) fn parse_recipient(s: &str) -> Result<(Script, u64), String> {
 
 #[cfg(any(
     feature = "electrum",
-    feature = "compact_filters",
+    feature = "cbf",
     feature = "esplora",
     feature = "rpc"
 ))]
 /// Parse the proxy (Socket:Port) argument from the cli input.
-pub(crate) fn parse_proxy_auth(s: &str) -> Result<(String, String), String> {
+pub(crate) fn parse_proxy_auth(s: &str) -> Result<(String, String), Error> {
     let parts: Vec<_> = s.split(':').collect();
     if parts.len() != 2 {
-        return Err("Invalid format".to_string());
+        return Err(Error::Generic("Invalid format".to_string()));
     }
 
     let user = parts[0].to_string();
@@ -109,46 +58,18 @@ pub(crate) fn parse_proxy_auth(s: &str) -> Result<(String, String), String> {
     Ok((user, passwd))
 }
 
-/// Fetch all the utxos, for a given address.
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-pub fn get_outpoints_for_address(
-    address: Address,
-    client: &Client,
-    max_confirmation_height: Option<usize>,
-) -> Result<Vec<(OutPoint, TxOut)>, Error> {
-    let unspents = client
-        .script_list_unspent(&address.script_pubkey())
-        .map_err(Error::Electrum)?;
-
-    unspents
-        .iter()
-        .filter(|utxo| {
-            utxo.height > 0 && utxo.height <= max_confirmation_height.unwrap_or(usize::MAX)
-        })
-        .map(|utxo| {
-            let tx = match client.transaction_get(&utxo.tx_hash) {
-                Ok(tx) => tx,
-                Err(e) => {
-                    return Err(e).map_err(Error::Electrum);
-                }
-            };
-
-            Ok((
-                OutPoint {
-                    txid: utxo.tx_hash,
-                    vout: utxo.tx_pos as u32,
-                },
-                tx.output[utxo.tx_pos].clone(),
-            ))
-        })
-        .collect()
-}
-
 /// Parse a outpoint (Txid:Vout) argument from cli input.
-pub(crate) fn parse_outpoint(s: &str) -> Result<OutPoint, String> {
-    OutPoint::from_str(s).map_err(|e| e.to_string())
+pub(crate) fn parse_outpoint(s: &str) -> Result<OutPoint, Error> {
+    Ok(OutPoint::from_str(s)?)
 }
 
+/// Parse an address string into `Address<NetworkChecked>`.
+pub(crate) fn parse_address(address_str: &str) -> Result<Address, Error> {
+    let unchecked_address = Address::from_str(address_str)?;
+    Ok(unchecked_address.assume_checked())
+}
+
+#[cfg(feature = "sqlite")]
 /// Prepare bdk-cli home directory
 ///
 /// This function is called to check if [`crate::CliOpts`] datadir is set.
@@ -157,7 +78,7 @@ pub(crate) fn prepare_home_dir(home_path: Option<PathBuf>) -> Result<PathBuf, Er
     let dir = home_path.unwrap_or_else(|| {
         let mut dir = PathBuf::new();
         dir.push(
-            &dirs_next::home_dir()
+            dirs::home_dir()
                 .ok_or_else(|| Error::Generic("home dir not found".to_string()))
                 .unwrap(),
         );
@@ -166,26 +87,6 @@ pub(crate) fn prepare_home_dir(home_path: Option<PathBuf>) -> Result<PathBuf, Er
     });
 
     if !dir.exists() {
-        log::info!("Creating home directory {}", dir.as_path().display());
-        std::fs::create_dir(&dir).map_err(|e| Error::Generic(e.to_string()))?;
-    }
-
-    Ok(dir)
-}
-
-/// Prepare bdk_cli wallet directory.
-#[cfg(any(
-    feature = "key-value-db",
-    feature = "sqlite-db",
-    feature = "compact_filters"
-))]
-fn prepare_wallet_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf, Error> {
-    let mut dir = home_path.to_owned();
-
-    dir.push(wallet_name);
-
-    if !dir.exists() {
-        log::info!("Creating wallet directory {}", dir.as_path().display());
         std::fs::create_dir(&dir).map_err(|e| Error::Generic(e.to_string()))?;
     }
 
@@ -193,355 +94,172 @@ fn prepare_wallet_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf, Er
 }
 
 /// Prepare wallet database directory.
-#[cfg(any(feature = "key-value-db", feature = "sqlite-db",))]
-fn prepare_wallet_db_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf, Error> {
-    let mut db_dir = prepare_wallet_dir(wallet_name, home_path)?;
-
-    #[cfg(feature = "key-value-db")]
-    db_dir.push("wallet.sled");
-
-    #[cfg(feature = "sqlite-db")]
-    db_dir.push("wallet.sqlite");
-
-    #[cfg(not(feature = "sqlite-db"))]
-    if !db_dir.exists() {
-        log::info!("Creating database directory {}", db_dir.as_path().display());
-        std::fs::create_dir(&db_dir).map_err(|e| Error::Generic(e.to_string()))?;
-    }
-
-    Ok(db_dir)
-}
-
-/// Prepare blockchain data directory (for compact filters).
-#[cfg(feature = "compact_filters")]
-fn prepare_bc_dir(wallet_name: &str, home_path: &Path) -> Result<PathBuf, Error> {
-    let mut bc_dir = prepare_wallet_dir(wallet_name, home_path)?;
-
-    bc_dir.push("compact_filters");
-
-    if !bc_dir.exists() {
-        log::info!(
-            "Creating blockchain directory {}",
-            bc_dir.as_path().display()
-        );
-        std::fs::create_dir(&bc_dir).map_err(|e| Error::Generic(e.to_string()))?;
-    }
-
-    Ok(bc_dir)
-}
-
-/// Create the global bitcoind directory.
-/// multiple wallets can access the same node datadir, and they will have separate
-/// wallet names in `<home_path>/bitcoind/regtest/wallets`.
-#[cfg(feature = "regtest-node")]
-pub(crate) fn prepare_bitcoind_datadir(home_path: &Path) -> Result<PathBuf, Error> {
-    let mut dir = home_path.to_owned();
-
-    dir.push("bitcoind");
-
-    if !dir.exists() {
-        log::info!("Creating node directory {}", dir.as_path().display());
-        std::fs::create_dir(&dir).map_err(|e| Error::Generic(e.to_string()))?;
-    }
-
-    Ok(dir)
-}
-
-/// Create the global electrsd directory.
-/// multiple wallets can access the same node datadir, and they will have separate
-/// wallet names in `<home_path>/bitcoind/regtest/wallets`.
-#[cfg(feature = "regtest-electrum")]
-pub(crate) fn prepare_electrum_datadir(home_path: &Path) -> Result<PathBuf, Error> {
-    let mut dir = home_path.to_owned();
-
-    dir.push("electrsd");
-
-    if !dir.exists() {
-        log::info!("Creating node directory {}", dir.as_path().display());
-        std::fs::create_dir(&dir).map_err(|e| Error::Generic(e.to_string()))?;
-    }
-
-    Ok(dir)
-}
-
-#[allow(unused_variables)]
-/// Open the wallet database.
-pub(crate) fn open_database(
-    wallet_opts: &WalletOpts,
+#[cfg(feature = "sqlite")]
+pub(crate) fn prepare_wallet_db_dir(
+    wallet_name: &Option<String>,
     home_path: &Path,
-) -> Result<AnyDatabase, Error> {
-    let wallet_name = wallet_opts.wallet.as_ref().expect("wallet name");
-    #[cfg(any(feature = "key-value-db", feature = "sqlite-db",))]
-    let database_path = prepare_wallet_db_dir(wallet_name, home_path)?;
+) -> Result<PathBuf, Error> {
+    let mut dir = home_path.to_owned();
+    if let Some(wallet_name) = wallet_name {
+        dir.push(wallet_name);
+    }
 
-    #[cfg(feature = "key-value-db")]
-    let config = AnyDatabaseConfig::Sled(SledDbConfiguration {
-        path: database_path
-            .into_os_string()
-            .into_string()
-            .expect("path string"),
-        tree_name: wallet_name.to_string(),
-    });
-    #[cfg(feature = "sqlite-db")]
-    let config = AnyDatabaseConfig::Sqlite(SqliteDbConfiguration {
-        path: database_path
-            .into_os_string()
-            .into_string()
-            .expect("path string"),
-    });
-    #[cfg(not(any(feature = "key-value-db", feature = "sqlite-db")))]
-    let config = AnyDatabaseConfig::Memory(());
+    if !dir.exists() {
+        std::fs::create_dir(&dir).map_err(|e| Error::Generic(e.to_string()))?;
+    }
 
-    let database = AnyDatabase::from_config(&config)?;
-    log::debug!("database opened successfully");
-    Ok(database)
-}
-
-/// Create a new backend node at given datadir.
-#[allow(dead_code)]
-pub(crate) fn new_backend(_datadir: &Path) -> Result<Nodes, Error> {
-    #[cfg(feature = "regtest-node")]
-    let bitcoind = {
-        // Configure node directory according to cli options
-        // nodes always have a persistent directory
-        let datadir = prepare_bitcoind_datadir(_datadir)?;
-        let mut bitcoind_conf = electrsd::bitcoind::Conf::default();
-        bitcoind_conf.staticdir = Some(datadir);
-        let bitcoind_exe = electrsd::bitcoind::downloaded_exe_path()
-            .expect("We should always have downloaded path");
-        electrsd::bitcoind::BitcoinD::with_conf(bitcoind_exe, &bitcoind_conf)
-            .map_err(|e| Error::Generic(e.to_string()))?
-    };
-
-    #[cfg(feature = "regtest-bitcoin")]
-    let backend = {
-        Nodes::Bitcoin {
-            bitcoind: Box::new(bitcoind),
-        }
-    };
-
-    #[cfg(feature = "regtest-electrum")]
-    let backend = {
-        // Configure node directory according to cli options
-        // nodes always have a persistent directory
-        let datadir = prepare_electrum_datadir(_datadir)?;
-        let mut elect_conf = electrsd::Conf::default();
-        elect_conf.staticdir = Some(datadir);
-        let elect_exe =
-            electrsd::downloaded_exe_path().expect("We should always have downloaded path");
-        let electrsd = electrsd::ElectrsD::with_conf(elect_exe, &bitcoind, &elect_conf)
-            .map_err(|e| Error::Generic(e.to_string()))?;
-        Nodes::Electrum {
-            bitcoind: Box::new(bitcoind),
-            electrsd: Box::new(electrsd),
-        }
-    };
-
-    #[cfg(any(feature = "regtest-esplora-ureq", feature = "regtest-esplora-reqwest"))]
-    let backend = {
-        // Configure node directory according to cli options
-        // nodes always have a persistent directory
-        let mut elect_conf = {
-            match _datadir {
-                None => {
-                    let datadir = utils::prepare_electrum_datadir().unwrap();
-                    let mut conf = electrsd::Conf::default();
-                    conf.staticdir = Some(_datadir);
-                    conf
-                }
-                Some(path) => {
-                    let mut conf = electrsd::Conf::default();
-                    conf.staticdir = Some(path.into());
-                    conf
-                }
-            }
-        };
-        elect_conf.http_enabled = true;
-        let elect_exe =
-            electrsd::downloaded_exe_path().expect("Electrsd downloaded binaries not found");
-        let electrsd = electrsd::ElectrsD::with_conf(elect_exe, &bitcoind, &elect_conf).unwrap();
-        Nodes::Esplora {
-            bitcoind: Box::new(bitcoind),
-            esplorad: Box::new(electrsd),
-        }
-    };
-
-    #[cfg(not(feature = "regtest-node"))]
-    let backend = Nodes::None;
-
-    Ok(backend)
+    Ok(dir)
 }
 
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
-    feature = "compact_filters",
-    feature = "rpc"
+    feature = "rpc",
+    feature = "cbf",
 ))]
-/// Create a new blockchain for a given [Nodes] if available
-/// or else create one from the wallet configuration options.
-pub(crate) fn new_blockchain(
-    _network: Network,
-    wallet_opts: &WalletOpts,
-    _backend: &Nodes,
-    _home_dir: &Path,
-) -> Result<AnyBlockchain, Error> {
+pub(crate) enum BlockchainClient {
     #[cfg(feature = "electrum")]
-    let config = {
-        let url = match _backend {
-            #[cfg(feature = "regtest-electrum")]
-            Nodes::Electrum { electrsd, .. } => &electrsd.electrum_url,
-            _ => &wallet_opts.electrum_opts.server,
-        };
-
-        AnyBlockchainConfig::Electrum(ElectrumBlockchainConfig {
-            url: url.to_owned(),
-            socks5: wallet_opts.proxy_opts.proxy.clone(),
-            retry: wallet_opts.proxy_opts.retries,
-            timeout: wallet_opts.electrum_opts.timeout,
-            stop_gap: wallet_opts.electrum_opts.stop_gap,
-            validate_domain: true,
-        })
-    };
-
+    Electrum {
+        client: Box<bdk_electrum::BdkElectrumClient<bdk_electrum::electrum_client::Client>>,
+        batch_size: usize,
+    },
     #[cfg(feature = "esplora")]
-    let config = {
-        let url = match _backend {
-            #[cfg(any(feature = "regtest-esplora-ureq", feature = "regtest-esplora-reqwest"))]
-            Nodes::Esplora { esplorad } => esplorad.esplora_url.expect("Esplora url expected"),
-            _ => wallet_opts.esplora_opts.server.clone(),
-        };
+    Esplora {
+        client: Box<bdk_esplora::esplora_client::AsyncClient>,
+        parallel_requests: usize,
+    },
+    #[cfg(feature = "rpc")]
+    RpcClient {
+        client: Box<bdk_bitcoind_rpc::bitcoincore_rpc::Client>,
+    },
+    // TODO cbf
+}
 
-        AnyBlockchainConfig::Esplora(EsploraBlockchainConfig {
-            base_url: url,
-            timeout: Some(wallet_opts.esplora_opts.timeout),
-            concurrency: Some(wallet_opts.esplora_opts.conc),
-            stop_gap: wallet_opts.esplora_opts.stop_gap,
-            proxy: wallet_opts.proxy_opts.proxy.clone(),
-        })
-    };
-
-    #[cfg(feature = "compact_filters")]
-    let config = {
-        let mut peers = vec![];
-        for addrs in wallet_opts.compactfilter_opts.address.clone() {
-            for _ in 0..wallet_opts.compactfilter_opts.conn_count {
-                peers.push(BitcoinPeerConfig {
-                    address: addrs.clone(),
-                    socks5: wallet_opts.proxy_opts.proxy.clone(),
-                    socks5_credentials: wallet_opts.proxy_opts.proxy_auth.clone(),
-                })
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf",
+))]
+/// Create a new blockchain from the wallet configuration options.
+pub(crate) fn new_blockchain_client(wallet_opts: &WalletOpts) -> Result<BlockchainClient, Error> {
+    let url = wallet_opts.url.as_str();
+    let client = match wallet_opts.client_type {
+        #[cfg(feature = "electrum")]
+        ClientType::Electrum => {
+            let client = bdk_electrum::electrum_client::Client::new(url)
+                .map(bdk_electrum::BdkElectrumClient::new)?;
+            BlockchainClient::Electrum {
+                client: Box::new(client),
+                batch_size: wallet_opts.batch_size,
+            }
+        }
+        #[cfg(feature = "esplora")]
+        ClientType::Esplora => {
+            let client = bdk_esplora::esplora_client::Builder::new(url).build_async()?;
+            BlockchainClient::Esplora {
+                client: Box::new(client),
+                parallel_requests: wallet_opts.parallel_requests,
             }
         }
 
-        let wallet_name = wallet_opts.wallet.as_ref().expect("wallet name");
-        AnyBlockchainConfig::CompactFilters(CompactFiltersBlockchainConfig {
-            peers,
-            network: _network,
-            storage_dir: prepare_bc_dir(wallet_name, _home_dir)?
-                .into_os_string()
-                .into_string()
-                .map_err(|_| Error::Generic("Internal OS_String conversion error".to_string()))?,
-            skip_blocks: Some(wallet_opts.compactfilter_opts.skip_blocks),
-        })
-    };
-
-    #[cfg(feature = "rpc")]
-    let config: AnyBlockchainConfig = {
-        let (url, auth) = match _backend {
-            #[cfg(feature = "regtest-node")]
-            Nodes::Bitcoin { bitcoind } => (
-                bitcoind.params.rpc_socket.to_string(),
-                Auth::Cookie {
-                    file: bitcoind.params.cookie_file.clone(),
-                },
-            ),
-            _ => {
-                let auth = if let Some(cookie) = &wallet_opts.rpc_opts.cookie {
-                    Auth::Cookie {
-                        file: cookie.into(),
-                    }
-                } else {
-                    Auth::UserPass {
-                        username: wallet_opts.rpc_opts.basic_auth.0.clone(),
-                        password: wallet_opts.rpc_opts.basic_auth.1.clone(),
-                    }
-                };
-                (wallet_opts.rpc_opts.address.clone(), auth)
+        #[cfg(feature = "rpc")]
+        ClientType::Rpc => {
+            let auth = match &wallet_opts.cookie {
+                Some(cookie) => bdk_bitcoind_rpc::bitcoincore_rpc::Auth::CookieFile(cookie.into()),
+                None => bdk_bitcoind_rpc::bitcoincore_rpc::Auth::UserPass(
+                    wallet_opts.basic_auth.0.clone(),
+                    wallet_opts.basic_auth.1.clone(),
+                ),
+            };
+            let client = bdk_bitcoind_rpc::bitcoincore_rpc::Client::new(url, auth)
+                .map_err(|e| Error::Generic(e.to_string()))?;
+            BlockchainClient::RpcClient {
+                client: Box::new(client),
             }
-        };
-        let wallet_name = wallet_opts
-            .wallet
-            .to_owned()
-            .expect("Wallet name should be available this level");
-
-        let rpc_url = "http://".to_string() + &url;
-
-        let rpc_config = RpcConfig {
-            url: rpc_url,
-            auth,
-            network: _network,
-            wallet_name,
-            // TODO add cli options to set all rpc sync params
-            sync_params: Some(RpcSyncParams {
-                start_time: wallet_opts.rpc_opts.start_time,
-                ..Default::default()
-            }),
-        };
-
-        AnyBlockchainConfig::Rpc(rpc_config)
+        }
     };
-
-    AnyBlockchain::from_config(&config)
+    Ok(client)
 }
 
-/// Create a new wallet from given wallet configuration options.
-pub(crate) fn new_wallet<D>(
+#[cfg(feature = "sqlite")]
+/// Create a new persisted wallet from given wallet configuration options.
+pub(crate) fn new_persisted_wallet<P: WalletPersister>(
     network: Network,
+    persister: &mut P,
     wallet_opts: &WalletOpts,
-    database: D,
-) -> Result<Wallet<D>, Error>
+) -> Result<PersistedWallet<P>, Error>
 where
-    D: BatchDatabase,
+    P::Error: std::fmt::Display,
 {
-    let descriptor = wallet_opts.descriptor.as_str();
-    let change_descriptor = wallet_opts.change_descriptor.as_deref();
-    let wallet = Wallet::new(descriptor, change_descriptor, network, database)?;
+    let ext_descriptor = wallet_opts.ext_descriptor.clone();
+    let int_descriptor = wallet_opts.int_descriptor.clone();
 
-    #[cfg(feature = "hardware-signer")]
-    let wallet = add_hardware_signers(wallet, network)?;
-
-    Ok(wallet)
-}
-
-/// Add hardware wallets as signers to the wallet
-#[cfg(feature = "hardware-signer")]
-fn add_hardware_signers<D>(wallet: Wallet<D>, network: Network) -> Result<Wallet<D>, Error>
-where
-    D: BatchDatabase,
-{
-    let mut wallet = wallet;
-    let chain = match network {
-        Network::Bitcoin => HWIChain::Main,
-        Network::Testnet => HWIChain::Test,
-        Network::Regtest => HWIChain::Regtest,
-        Network::Signet => HWIChain::Signet,
-    };
-    let devices = HWIClient::enumerate().map_err(|e| SignerError::from(e))?;
-    for device in devices {
-        let device = device.map_err(|e| SignerError::from(e))?;
-        // Creating a custom signer from the device
-        let custom_signer =
-            HWISigner::from_device(&device, chain.clone()).map_err(|e| SignerError::from(e))?;
-
-        // Adding the hardware signer to the BDK wallet
-        wallet.add_signer(
-            KeychainKind::External,
-            SignerOrdering(200),
-            Arc::new(custom_signer),
-        );
-        println!("Added {} as a signer to the wallet.", device.model);
+    let mut wallet_load_params = Wallet::load();
+    if ext_descriptor.is_some() {
+        wallet_load_params =
+            wallet_load_params.descriptor(KeychainKind::External, ext_descriptor.clone());
+    }
+    if int_descriptor.is_some() {
+        wallet_load_params =
+            wallet_load_params.descriptor(KeychainKind::Internal, int_descriptor.clone());
+    }
+    if ext_descriptor.is_some() || int_descriptor.is_some() {
+        wallet_load_params = wallet_load_params.extract_keys();
     }
 
+    let wallet_opt = wallet_load_params
+        .check_network(network)
+        .load_wallet(persister)
+        .map_err(|e| Error::Generic(e.to_string()))?;
+
+    let wallet = match wallet_opt {
+        Some(wallet) => wallet,
+        None => match (ext_descriptor, int_descriptor) {
+            (Some(ext_descriptor), Some(int_descriptor)) => {
+                let wallet = Wallet::create(ext_descriptor, int_descriptor)
+                    .network(network)
+                    .create_wallet(persister)
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(wallet)
+            }
+            (Some(ext_descriptor), None) => {
+                let wallet = Wallet::create_single(ext_descriptor)
+                    .network(network)
+                    .create_wallet(persister)
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(wallet)
+            }
+            _ => Err(Error::Generic(
+                "An external descriptor is required.".to_string(),
+            )),
+        }?,
+    };
+
     Ok(wallet)
+}
+
+#[cfg(not(any(feature = "sqlite",)))]
+/// Create a new non-persisted wallet from given wallet configuration options.
+pub(crate) fn new_wallet(network: Network, wallet_opts: &WalletOpts) -> Result<Wallet, Error> {
+    let ext_descriptor = wallet_opts.ext_descriptor.clone();
+    let int_descriptor = wallet_opts.int_descriptor.clone();
+
+    match (ext_descriptor, int_descriptor) {
+        (Some(ext_descriptor), Some(int_descriptor)) => {
+            let wallet = Wallet::create(ext_descriptor, int_descriptor)
+                .network(network)
+                .create_wallet_no_persist()?;
+            Ok(wallet)
+        }
+        (Some(ext_descriptor), None) => {
+            let wallet = Wallet::create_single(ext_descriptor)
+                .network(network)
+                .create_wallet_no_persist()?;
+            Ok(wallet)
+        }
+        _ => Err(Error::Generic(
+            "An external descriptor is required.".to_string(),
+        )),
+    }
 }

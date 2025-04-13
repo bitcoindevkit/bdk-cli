@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021 Bitcoin Dev Kit Developers
+// Copyright (c) 2020-2025 Bitcoin Dev Kit Developers
 //
 // This file is licensed under the Apache License, Version 2.0 <LICENSE-APACHE
 // or http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -11,50 +11,32 @@
 #![warn(missing_docs)]
 
 mod commands;
+mod error;
 mod handlers;
-mod nodes;
 mod utils;
-#[cfg(target_arch = "wasm32")]
-mod wasm;
 
-use bitcoin::Network;
-
+use bdk_wallet::bitcoin::Network;
 use log::{debug, error, warn};
 
 use crate::commands::CliOpts;
 use crate::handlers::*;
-use bdk::{bitcoin, Error};
-use bdk_macros::{maybe_async, maybe_await};
 use clap::Parser;
 
-#[cfg(any(feature = "repl", target_arch = "wasm32"))]
-const REPL_LINE_SPLIT_REGEX: &str = r#""([^"]*)"|'([^']*)'|([\w\-]+)"#;
-
-#[maybe_async]
-#[cfg(not(target_arch = "wasm32"))]
-#[cfg_attr(feature = "async-interface", tokio::main)]
-fn main() {
+#[tokio::main]
+async fn main() {
     env_logger::init();
-
     let cli_opts: CliOpts = CliOpts::parse();
 
-    let network = cli_opts.network;
+    let network = &cli_opts.network;
     debug!("network: {:?}", network);
-    if network == Network::Bitcoin {
+    if network == &Network::Bitcoin {
         warn!("This is experimental software and not currently recommended for use on Bitcoin mainnet, proceed with caution.")
     }
 
-    match maybe_await!(handle_command(cli_opts)) {
+    match handle_command(cli_opts).await {
         Ok(result) => println!("{}", result),
         Err(e) => {
-            match e {
-                Error::ChecksumMismatch => error!("Descriptor checksum mismatch. Are you using a different descriptor for an already defined wallet name? (if you are not specifying the wallet name it is automatically named based on the descriptor)"),
-                e => error!("{}", e.to_string()),
-            }
-        },
+            error!("{}", e.to_string())
+        }
     }
 }
-
-// wasm32 requires a non-async main
-#[cfg(target_arch = "wasm32")]
-fn main() {}

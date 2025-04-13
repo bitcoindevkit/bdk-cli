@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021 Bitcoin Dev Kit Developers
+// Copyright (c) 2020-2025 Bitcoin Dev Kit Developers
 //
 // This file is licensed under the Apache License, Version 2.0 <LICENSE-APACHE
 // or http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -10,98 +10,91 @@
 //!
 //! This module describes all the command handling logic used by bdk-cli.
 
-use std::collections::BTreeMap;
-
 use crate::commands::OfflineWalletSubCommand::*;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
-    feature = "compact_filters",
+    feature = "cbf",
     feature = "rpc"
 ))]
 use crate::commands::OnlineWalletSubCommand::*;
 use crate::commands::*;
+use crate::error::BDKCliError as Error;
 use crate::utils::*;
-use bdk::{database::BatchDatabase, wallet::AddressIndex, Error, FeeRate, KeychainKind, Wallet};
-
-use clap::Parser;
-
-use bdk::bitcoin::consensus::encode::{deserialize, serialize, serialize_hex};
+use bdk_wallet::bip39::{Language, Mnemonic};
+use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
+use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
+use bdk_wallet::bitcoin::script::PushBytesBuf;
+use bdk_wallet::bitcoin::Network;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
-    feature = "compact_filters",
+    feature = "cbf",
     feature = "rpc"
 ))]
-use bdk::bitcoin::hashes::hex::FromHex;
-use bdk::bitcoin::secp256k1::Secp256k1;
-use bdk::bitcoin::util::bip32::{DerivationPath, KeySource};
-use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-use bdk::bitcoin::{Network, Txid};
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "compact_filters",
-    feature = "rpc"
-))]
-use bdk::blockchain::{log_progress, Blockchain};
-use bdk::descriptor::Segwitv0;
+use bdk_wallet::bitcoin::Transaction;
+use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Txid};
+use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
+use bdk_wallet::descriptor::Segwitv0;
+use bdk_wallet::keys::bip39::WordCount;
+#[cfg(feature = "sqlite")]
+use bdk_wallet::rusqlite::Connection;
 #[cfg(feature = "compiler")]
-use bdk::descriptor::{Descriptor, Legacy, Miniscript};
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk::electrum_client::{Client, ElectrumApi};
-#[cfg(feature = "hardware-signer")]
-use bdk::hwi::{
-    interface::HWIClient,
-    types::{HWIChain, HWIDescriptor},
+use bdk_wallet::{
+    descriptor::{Descriptor, Legacy, Miniscript},
+    miniscript::policy::Concrete,
 };
-use bdk::keys::bip39::{Language, Mnemonic, WordCount};
-use bdk::keys::DescriptorKey::Secret;
-use bdk::keys::KeyError::{InvalidNetwork, Message};
-use bdk::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
-use bdk::miniscript::miniscript;
-#[cfg(feature = "compiler")]
-use bdk::miniscript::policy::Concrete;
-#[cfg(feature = "hardware-signer")]
-use bdk::wallet::signer::SignerError;
-use bdk::SignOptions;
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-use bdk::{bitcoin::Address, blockchain::Capability};
-use bdk_macros::maybe_async;
+use bdk_wallet::{KeychainKind, SignOptions, Wallet};
+
+use bdk_wallet::keys::DescriptorKey::Secret;
+use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
+use bdk_wallet::miniscript::miniscript;
+use serde_json::json;
+use std::collections::BTreeMap;
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "cbf",))]
+use std::collections::HashSet;
+use std::convert::TryFrom;
+#[cfg(feature = "repl")]
+use std::io::Write;
+use std::str::FromStr;
+
+#[cfg(feature = "electrum")]
+use crate::utils::BlockchainClient::Electrum;
+use bdk_wallet::bitcoin::base64::prelude::*;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
-    feature = "compact_filters",
+    feature = "cbf",
     feature = "rpc"
 ))]
-use bdk_macros::maybe_await;
-#[cfg(feature = "reserves")]
-use bdk_reserves::reserves::verify_proof;
-#[cfg(feature = "reserves")]
-use bdk_reserves::reserves::ProofOfReserves;
-#[cfg(feature = "repl")]
-use regex::Regex;
-#[cfg(feature = "repl")]
-use rustyline::error::ReadlineError;
-#[cfg(feature = "repl")]
-use rustyline::Editor;
-use serde_json::json;
-use std::str::FromStr;
+use bdk_wallet::bitcoin::consensus::Decodable;
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+use bdk_wallet::bitcoin::hex::FromHex;
+#[cfg(feature = "esplora")]
+use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
+#[cfg(feature = "rpc")]
+use {
+    crate::utils::BlockchainClient::RpcClient,
+    bdk_bitcoind_rpc::{bitcoincore_rpc::RpcApi, Emitter},
+    bdk_wallet::chain::{BlockId, CheckPoint},
+};
 
 /// Execute an offline wallet sub-command
 ///
 /// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
-pub fn handle_offline_wallet_subcommand<D>(
-    wallet: &Wallet<D>,
+pub fn handle_offline_wallet_subcommand(
+    wallet: &mut Wallet,
     wallet_opts: &WalletOpts,
     offline_subcommand: OfflineWalletSubCommand,
-) -> Result<serde_json::Value, Error>
-where
-    D: BatchDatabase,
-{
+) -> Result<serde_json::Value, Error> {
     match offline_subcommand {
-        GetNewAddress => {
-            let addr = wallet.get_address(AddressIndex::New)?;
+        NewAddress => {
+            let addr = wallet.reveal_next_address(KeychainKind::External);
             if wallet_opts.verbose {
                 Ok(json!({
                     "address": addr.address,
@@ -113,11 +106,41 @@ where
                 }))
             }
         }
-        ListUnspent => Ok(serde_json::to_value(&wallet.list_unspent()?)?),
-        ListTransactions => Ok(serde_json::to_value(
-            &wallet.list_transactions(wallet_opts.verbose)?,
+        UnusedAddress => {
+            let addr = wallet.next_unused_address(KeychainKind::External);
+            if wallet_opts.verbose {
+                Ok(json!({
+                    "address": addr.address,
+                    "index": addr.index
+                }))
+            } else {
+                Ok(json!({
+                    "address": addr.address,
+                }))
+            }
+        }
+        Unspent => Ok(serde_json::to_value(
+            wallet.list_unspent().collect::<Vec<_>>(),
         )?),
-        GetBalance => Ok(json!({"satoshi": wallet.get_balance()?})),
+        Transactions => {
+            let transactions: Vec<_> = wallet
+                .transactions()
+                .map(|tx| {
+                    json!({
+                        "txid": tx.tx_node.txid,
+                        "is_coinbase": tx.tx_node.is_coinbase(),
+                        "wtxid": tx.tx_node.compute_wtxid(),
+                        "version": tx.tx_node.version,
+                        "is_rbf": tx.tx_node.is_explicitly_rbf(),
+                        "inputs": tx.tx_node.input,
+                        "outputs": tx.tx_node.output,
+                    })
+                })
+                .collect();
+
+            Ok(serde_json::to_value(transactions)?)
+        }
+        Balance => Ok(json!({"satoshi": wallet.balance()})),
         CreateTx {
             recipients,
             send_all,
@@ -136,11 +159,15 @@ where
             if send_all {
                 tx_builder.drain_wallet().drain_to(recipients[0].0.clone());
             } else {
+                let recipients = recipients
+                    .into_iter()
+                    .map(|(script, amount)| (script, Amount::from_sat(amount)))
+                    .collect();
                 tx_builder.set_recipients(recipients);
             }
 
-            if enable_rbf {
-                tx_builder.enable_rbf();
+            if !enable_rbf {
+                tx_builder.set_exact_sequence(Sequence::MAX);
             }
 
             if offline_signer {
@@ -148,11 +175,13 @@ where
             }
 
             if let Some(fee_rate) = fee_rate {
-                tx_builder.fee_rate(FeeRate::from_sat_per_vb(fee_rate));
+                if let Some(fee_rate) = FeeRate::from_sat_per_vb(fee_rate as u64) {
+                    tx_builder.fee_rate(fee_rate);
+                }
             }
 
             if let Some(utxos) = utxos {
-                tx_builder.add_utxos(&utxos[..])?.manually_selected_only();
+                tx_builder.add_utxos(&utxos[..]).unwrap();
             }
 
             if let Some(unspendable) = unspendable {
@@ -160,10 +189,11 @@ where
             }
 
             if let Some(base64_data) = add_data {
-                let op_return_data = base64::decode(&base64_data).unwrap();
-                tx_builder.add_data(op_return_data.as_slice());
+                let op_return_data = BASE64_STANDARD.decode(base64_data).unwrap();
+                tx_builder.add_data(&PushBytesBuf::try_from(op_return_data).unwrap());
             } else if let Some(string_data) = add_string {
-                tx_builder.add_data(string_data.as_bytes());
+                let data = PushBytesBuf::try_from(string_data.as_bytes().to_vec()).unwrap();
+                tx_builder.add_data(&data);
             }
 
             let policies = vec![
@@ -172,18 +202,18 @@ where
             ];
 
             for (policy, keychain) in policies.into_iter().flatten() {
-                let policy = serde_json::from_str::<BTreeMap<String, Vec<usize>>>(&policy)
-                    .map_err(|s| Error::Generic(s.to_string()))?;
+                let policy = serde_json::from_str::<BTreeMap<String, Vec<usize>>>(&policy)?;
                 tx_builder.policy_path(policy, keychain);
             }
 
-            let (psbt, details) = tx_builder.finish()?;
+            let psbt = tx_builder.finish()?;
+
+            let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
+
             if wallet_opts.verbose {
-                Ok(
-                    json!({"psbt": base64::encode(serialize(&psbt)),"details": details, "serialized_psbt": psbt}),
-                )
+                Ok(json!({"psbt": psbt_base64, "details": psbt}))
             } else {
-                Ok(json!({"psbt": base64::encode(serialize(&psbt)),"details": details}))
+                Ok(json!({"psbt": psbt_base64 }))
             }
         }
         BumpFee {
@@ -194,14 +224,16 @@ where
             unspendable,
             fee_rate,
         } => {
-            let txid = Txid::from_str(txid.as_str()).map_err(|s| Error::Generic(s.to_string()))?;
+            let txid = Txid::from_str(txid.as_str())?;
 
             let mut tx_builder = wallet.build_fee_bump(txid)?;
-            tx_builder.fee_rate(FeeRate::from_sat_per_vb(fee_rate));
+            let fee_rate =
+                FeeRate::from_sat_per_vb(fee_rate as u64).unwrap_or(FeeRate::BROADCAST_MIN);
+            tx_builder.fee_rate(fee_rate);
 
             if let Some(address) = shrink_address {
                 let script_pubkey = address.script_pubkey();
-                tx_builder.allow_shrinking(script_pubkey)?;
+                tx_builder.drain_to(script_pubkey);
             }
 
             if offline_signer {
@@ -209,57 +241,67 @@ where
             }
 
             if let Some(utxos) = utxos {
-                tx_builder.add_utxos(&utxos[..])?;
+                tx_builder.add_utxos(&utxos[..]).unwrap();
             }
 
             if let Some(unspendable) = unspendable {
                 tx_builder.unspendable(unspendable);
             }
 
-            let (psbt, details) = tx_builder.finish()?;
-            Ok(json!({"psbt": base64::encode(serialize(&psbt)),"details": details,}))
+            let psbt = tx_builder.finish()?;
+
+            let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
+
+            Ok(json!({"psbt": psbt_base64 }))
         }
-        Policies => Ok(json!({
-            "external": wallet.policies(KeychainKind::External)?,
-            "internal": wallet.policies(KeychainKind::Internal)?,
-        })),
+        Policies => {
+            let external_policy = wallet.policies(KeychainKind::External)?;
+            let internal_policy = wallet.policies(KeychainKind::Internal)?;
+
+            Ok(json!({
+                "external": external_policy,
+                "internal": internal_policy,
+            }))
+        }
         PublicDescriptor => Ok(json!({
-            "external": wallet.public_descriptor(KeychainKind::External)?.map(|d| d.to_string()),
-            "internal": wallet.public_descriptor(KeychainKind::Internal)?.map(|d| d.to_string()),
+            "external": wallet.public_descriptor(KeychainKind::External).to_string(),
+            "internal": wallet.public_descriptor(KeychainKind::Internal).to_string(),
         })),
         Sign {
             psbt,
             assume_height,
             trust_witness_utxo,
         } => {
-            let psbt = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
-            let mut psbt: PartiallySignedTransaction = deserialize(&psbt)?;
+            let psbt_bytes = BASE64_STANDARD.decode(psbt)?;
+            let mut psbt = Psbt::deserialize(&psbt_bytes)?;
             let signopt = SignOptions {
                 assume_height,
                 trust_witness_utxo: trust_witness_utxo.unwrap_or(false),
                 ..Default::default()
             };
             let finalized = wallet.sign(&mut psbt, signopt)?;
+            let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
             if wallet_opts.verbose {
                 Ok(
-                    json!({"psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized, "serialized_psbt": psbt}),
+                    json!({"psbt": &psbt_base64, "is_finalized": finalized, "serialized_psbt": &psbt}),
                 )
             } else {
-                Ok(json!({"psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized,}))
+                Ok(json!({"psbt": &psbt_base64, "is_finalized": finalized,}))
             }
         }
         ExtractPsbt { psbt } => {
-            let psbt = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
-            let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
-            Ok(json!({"raw_tx": serialize_hex(&psbt.extract_tx()),}))
+            let psbt_serialized = BASE64_STANDARD.decode(psbt)?;
+            let psbt = Psbt::deserialize(&psbt_serialized)?;
+            let raw_tx = psbt.extract_tx()?;
+            Ok(json!({"raw_tx": serialize_hex(&raw_tx),}))
         }
         FinalizePsbt {
             psbt,
             assume_height,
             trust_witness_utxo,
         } => {
-            let psbt = base64::decode(psbt).map_err(|e| Error::Generic(e.to_string()))?;
-            let mut psbt: PartiallySignedTransaction = deserialize(&psbt)?;
+            let psbt_bytes = BASE64_STANDARD.decode(psbt)?;
+            let mut psbt: Psbt = Psbt::deserialize(&psbt_bytes)?;
 
             let signopt = SignOptions {
                 assume_height,
@@ -269,35 +311,34 @@ where
             let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
             if wallet_opts.verbose {
                 Ok(
-                    json!({ "psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized, "serialized_psbt": psbt}),
+                    json!({ "psbt": BASE64_STANDARD.encode(psbt.serialize()), "is_finalized": finalized, "details": psbt}),
                 )
             } else {
-                Ok(json!({ "psbt": base64::encode(serialize(&psbt)),"is_finalized": finalized,}))
+                Ok(
+                    json!({ "psbt": BASE64_STANDARD.encode(psbt.serialize()), "is_finalized": finalized,}),
+                )
             }
         }
         CombinePsbt { psbt } => {
             let mut psbts = psbt
                 .iter()
                 .map(|s| {
-                    let psbt = base64::decode(s).map_err(|e| Error::Generic(e.to_string()))?;
-                    let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
-                    Ok(psbt)
+                    let psbt = BASE64_STANDARD.decode(s)?;
+                    Ok(Psbt::deserialize(&psbt)?)
                 })
                 .collect::<Result<Vec<_>, Error>>()?;
 
             let init_psbt = psbts
                 .pop()
                 .ok_or_else(|| Error::Generic("Invalid PSBT input".to_string()))?;
-            let final_psbt = psbts
-                .into_iter()
-                .try_fold::<_, _, Result<PartiallySignedTransaction, Error>>(
-                    init_psbt,
-                    |mut acc, x| {
-                        acc.combine(x)?;
-                        Ok(acc)
-                    },
-                )?;
-            Ok(json!({ "psbt": base64::encode(serialize(&final_psbt)) }))
+            let final_psbt = psbts.into_iter().try_fold::<_, _, Result<Psbt, Error>>(
+                init_psbt,
+                |mut acc, x| {
+                    let _ = acc.combine(x);
+                    Ok(acc)
+                },
+            )?;
+            Ok(json!({ "psbt": BASE64_STANDARD.encode(final_psbt.serialize()) }))
         }
     }
 }
@@ -305,93 +346,199 @@ where
 /// Execute an online wallet sub-command
 ///
 /// Online wallet sub-commands are described in [`OnlineWalletSubCommand`].
-#[maybe_async]
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
-    feature = "compact_filters",
+    feature = "cbf",
     feature = "rpc"
 ))]
-pub(crate) fn handle_online_wallet_subcommand<B, D>(
-    wallet: &Wallet<D>,
-    blockchain: &B,
+pub(crate) async fn handle_online_wallet_subcommand(
+    wallet: &mut Wallet,
+    client: BlockchainClient,
     online_subcommand: OnlineWalletSubCommand,
-) -> Result<serde_json::Value, Error>
-where
-    B: Blockchain,
-    D: BatchDatabase,
-{
-    use bdk::SyncOptions;
-
+) -> Result<serde_json::Value, Error> {
     match online_subcommand {
-        Sync => {
-            maybe_await!(wallet.sync(
-                blockchain,
-                SyncOptions {
-                    progress: Some(Box::new(log_progress())),
+        FullScan {
+            stop_gap: _stop_gap,
+        } => {
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            let request = wallet.start_full_scan().inspect({
+                let mut stdout = std::io::stdout();
+                let mut once = HashSet::<KeychainKind>::new();
+                move |k, spk_i, _| {
+                    if once.insert(k) {
+                        print!("\nScanning keychain [{:?}]", k);
+                    }
+                    print!(" {:<3}", spk_i);
+                    stdout.flush().expect("must flush");
                 }
-            ))?;
+            });
+            match client {
+                #[cfg(feature = "electrum")]
+                Electrum { client, batch_size } => {
+                    // Populate the electrum client's transaction cache so it doesn't re-download transaction we
+                    // already have.
+                    client
+                        .populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
+
+                    let update = client.full_scan(request, _stop_gap, batch_size, false)?;
+                    wallet.apply_update(update)?;
+                }
+                #[cfg(feature = "esplora")]
+                Esplora {
+                    client,
+                    parallel_requests,
+                } => {
+                    let update = client
+                        .full_scan(request, _stop_gap, parallel_requests)
+                        .await
+                        .map_err(|e| *e)?;
+                    wallet.apply_update(update)?;
+                }
+
+                #[cfg(feature = "rpc")]
+                RpcClient { client } => {
+                    let blockchain_info = client.get_blockchain_info()?;
+
+                    let genesis_block =
+                        bdk_wallet::bitcoin::constants::genesis_block(wallet.network());
+                    let genesis_cp = CheckPoint::new(BlockId {
+                        height: 0,
+                        hash: genesis_block.block_hash(),
+                    });
+                    let mut emitter =
+                        Emitter::new(&*client, genesis_cp.clone(), genesis_cp.height());
+
+                    while let Some(block_event) = emitter.next_block()? {
+                        if block_event.block_height() % 10_000 == 0 {
+                            let percent_done = f64::from(block_event.block_height())
+                                / f64::from(blockchain_info.headers as u32)
+                                * 100f64;
+                            println!(
+                                "Applying block at height: {}, {:.2}% done.",
+                                block_event.block_height(),
+                                percent_done
+                            );
+                        }
+
+                        wallet.apply_block_connected_to(
+                            &block_event.block,
+                            block_event.block_height(),
+                            block_event.connected_to(),
+                        )?;
+                    }
+
+                    let mempool_txs = emitter.mempool()?;
+                    wallet.apply_unconfirmed_txs(mempool_txs);
+                }
+            }
+            Ok(json!({}))
+        }
+        Sync => {
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            let request = wallet
+                .start_sync_with_revealed_spks()
+                .inspect(|item, progress| {
+                    let pc = (100 * progress.consumed()) as f32 / progress.total() as f32;
+                    eprintln!("[ SCANNING {:03.0}% ] {}", pc, item);
+                });
+            match client {
+                #[cfg(feature = "electrum")]
+                Electrum { client, batch_size } => {
+                    // Populate the electrum client's transaction cache so it doesn't re-download transaction we
+                    // already have.
+                    client
+                        .populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
+
+                    let update = client.sync(request, batch_size, false)?;
+                    wallet.apply_update(update)?;
+                }
+                #[cfg(feature = "esplora")]
+                Esplora {
+                    client,
+                    parallel_requests,
+                } => {
+                    let update = client
+                        .sync(request, parallel_requests)
+                        .await
+                        .map_err(|e| *e)?;
+                    wallet.apply_update(update)?;
+                }
+                #[cfg(feature = "rpc")]
+                RpcClient { client } => {
+                    let blockchain_info = client.get_blockchain_info()?;
+                    let wallet_cp = wallet.latest_checkpoint();
+
+                    // reload the last 200 blocks in case of a reorg
+                    let emitter_height = wallet_cp.height().saturating_sub(200);
+                    let mut emitter = Emitter::new(&*client, wallet_cp, emitter_height);
+
+                    while let Some(block_event) = emitter.next_block()? {
+                        if block_event.block_height() % 10_000 == 0 {
+                            let percent_done = f64::from(block_event.block_height())
+                                / f64::from(blockchain_info.headers as u32)
+                                * 100f64;
+                            println!(
+                                "Applying block at height: {}, {:.2}% done.",
+                                block_event.block_height(),
+                                percent_done
+                            );
+                        }
+
+                        wallet.apply_block_connected_to(
+                            &block_event.block,
+                            block_event.block_height(),
+                            block_event.connected_to(),
+                        )?;
+                    }
+
+                    let mempool_txs = emitter.mempool()?;
+                    wallet.apply_unconfirmed_txs(mempool_txs);
+                }
+            }
             Ok(json!({}))
         }
         Broadcast { psbt, tx } => {
             let tx = match (psbt, tx) {
                 (Some(psbt), None) => {
-                    let psbt = base64::decode(&psbt).map_err(|e| Error::Generic(e.to_string()))?;
-                    let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
+                    let psbt = BASE64_STANDARD
+                        .decode(psbt)
+                        .map_err(|e| Error::Generic(e.to_string()))?;
+                    let psbt: Psbt = Psbt::deserialize(&psbt)?;
                     is_final(&psbt)?;
-                    psbt.extract_tx()
+                    psbt.extract_tx()?
                 }
-                (None, Some(tx)) => deserialize(&Vec::<u8>::from_hex(&tx)?)?,
+                (None, Some(tx)) => {
+                    let tx_bytes = Vec::<u8>::from_hex(&tx)?;
+                    Transaction::consensus_decode(&mut tx_bytes.as_slice())?
+                }
                 (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
-            maybe_await!(blockchain.broadcast(&tx))?;
-            Ok(json!({ "txid": tx.txid() }))
-        }
-        #[cfg(feature = "reserves")]
-        ProduceProof { msg } => {
-            let mut psbt = maybe_await!(wallet.create_proof(&msg))?;
 
-            let _finalized = wallet.sign(
-                &mut psbt,
-                SignOptions {
-                    trust_witness_utxo: true,
-                    ..Default::default()
-                },
-            )?;
-
-            let psbt_ser = serialize(&psbt);
-            let psbt_b64 = base64::encode(&psbt_ser);
-
-            Ok(json!({ "psbt": psbt , "psbt_base64" : psbt_b64}))
-        }
-        #[cfg(feature = "reserves")]
-        VerifyProof {
-            psbt,
-            msg,
-            confirmations,
-        } => {
-            let psbt = base64::decode(&psbt).unwrap();
-            let psbt: PartiallySignedTransaction = deserialize(&psbt).unwrap();
-            let current_height = blockchain.get_height()?;
-            let max_confirmation_height = if confirmations == 0 {
-                None
-            } else {
-                if !blockchain
-                    .get_capabilities()
-                    .contains(&Capability::GetAnyTx)
-                {
-                    return Err(Error::Generic(
-                        "For validating a proof with a certain number of confirmations, we need a Blockchain with the GetAnyTx capability."
-                        .to_string()
-                    ));
-                }
-                Some(current_height - confirmations)
+            let txid = match client {
+                #[cfg(feature = "electrum")]
+                Electrum {
+                    client,
+                    batch_size: _,
+                } => client
+                    .transaction_broadcast(&tx)
+                    .map_err(|e| Error::Generic(e.to_string()))?,
+                #[cfg(feature = "esplora")]
+                Esplora {
+                    client,
+                    parallel_requests: _,
+                } => client
+                    .broadcast(&tx)
+                    .await
+                    .map(|()| tx.compute_txid())
+                    .map_err(|e| Error::Generic(e.to_string()))?,
+                #[cfg(feature = "rpc")]
+                RpcClient { client } => client
+                    .send_raw_transaction(&tx)
+                    .map_err(|e| Error::Generic(e.to_string()))?,
             };
-
-            let spendable =
-                maybe_await!(wallet.verify_proof(&psbt, &msg, max_confirmation_height))?;
-            Ok(json!({ "spendable": spendable }))
+            Ok(json!({ "txid": txid }))
         }
     }
 }
@@ -400,10 +547,10 @@ where
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
-    feature = "compact_filters",
+    feature = "cbf",
     feature = "rpc"
 ))]
-pub(crate) fn is_final(psbt: &PartiallySignedTransaction) -> Result<(), Error> {
+pub(crate) fn is_final(psbt: &Psbt) -> Result<(), Error> {
     let unsigned_tx_inputs = psbt.unsigned_tx.input.len();
     let psbt_inputs = psbt.inputs.len();
     if unsigned_tx_inputs != psbt_inputs {
@@ -455,7 +602,7 @@ pub(crate) fn handle_key_subcommand(
             })?;
             let fingerprint = xprv.fingerprint(&secp);
             let phrase = mnemonic
-                .word_iter()
+                .words()
                 .fold("".to_string(), |phrase, w| phrase + w + " ")
                 .trim()
                 .to_string();
@@ -464,8 +611,7 @@ pub(crate) fn handle_key_subcommand(
             )
         }
         KeySubCommand::Restore { mnemonic, password } => {
-            let mnemonic = Mnemonic::parse_in(Language::English, mnemonic)
-                .map_err(|e| Error::Generic(e.to_string()))?;
+            let mnemonic = Mnemonic::parse_in(Language::English, mnemonic)?;
             let xkey: ExtendedKey = (mnemonic, password).into_extended_key()?;
             let xprv = xkey.into_xprv(network).ok_or_else(|| {
                 Error::Generic("Privatekey info not found (should not happen)".to_string())
@@ -475,8 +621,8 @@ pub(crate) fn handle_key_subcommand(
             Ok(json!({ "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }))
         }
         KeySubCommand::Derive { xprv, path } => {
-            if xprv.network != network {
-                return Err(Error::Key(InvalidNetwork));
+            if xprv.network != network.into() {
+                return Err(Error::Generic("Invalid network".to_string()));
             }
             let derived_xprv = &xprv.derive_priv(&secp, &path)?;
 
@@ -486,33 +632,11 @@ pub(crate) fn handle_key_subcommand(
                 derived_xprv.into_descriptor_key(Some(origin), DerivationPath::default())?;
 
             if let Secret(desc_seckey, _, _) = derived_xprv_desc_key {
-                let desc_pubkey = desc_seckey
-                    .to_public(&secp)
-                    .map_err(|e| Error::Generic(e.to_string()))?;
+                let desc_pubkey = desc_seckey.to_public(&secp)?;
                 Ok(json!({"xpub": desc_pubkey.to_string(), "xprv": desc_seckey.to_string()}))
             } else {
-                Err(Error::Key(Message("Invalid key variant".to_string())))
+                Err(Error::Generic("Invalid key variant".to_string()))
             }
-        }
-        #[cfg(feature = "hardware-signer")]
-        KeySubCommand::Hardware {} => {
-            let chain = match network {
-                Network::Bitcoin => HWIChain::Main,
-                Network::Testnet => HWIChain::Test,
-                Network::Regtest => HWIChain::Regtest,
-                Network::Signet => HWIChain::Signet,
-            };
-            let devices = HWIClient::enumerate().map_err(|e| SignerError::from(e))?;
-            let descriptors = devices.iter().map(|device_| {
-                let device = device_.clone()
-                    .map_err(|e| SignerError::from(e))?;
-                let client = HWIClient::get_client(&device, true, chain.clone())
-                    .map_err(|e| SignerError::from(e))?;
-                let descriptors: HWIDescriptor<String> = client.get_descriptors(None)
-                    .map_err(|e| SignerError::from(e))?;
-                Ok(json!({"device": device.model, "receiving": descriptors.receive[0].to_string(), "change": descriptors.internal[0]}))
-            }).collect::<Result<Vec<_>, Error>>()?;
-            Ok(json!(descriptors))
         }
     }
 }
@@ -539,101 +663,101 @@ pub(crate) fn handle_compile_subcommand(
         "wsh" => Descriptor::new_wsh(segwit_policy),
         "sh-wsh" => Descriptor::new_sh_wsh(segwit_policy),
         _ => panic!("Invalid type"),
-    }
-    .map_err(Error::Miniscript)?;
+    }?;
 
     Ok(json!({"descriptor": descriptor.to_string()}))
 }
 
-/// Handle Proof of Reserves commands
-///
-/// Proof of reserves options are described in [`CliSubCommand::ExternalReserves`].
-#[cfg(all(feature = "reserves", feature = "electrum"))]
-pub(crate) fn handle_ext_reserves_subcommand(
-    network: Network,
-    message: String,
-    psbt: String,
-    confirmations: usize,
-    addresses: Vec<String>,
-    electrum_opts: ElectrumOpts,
-) -> Result<serde_json::Value, Error> {
-    let psbt = base64::decode(&psbt)
-        .map_err(|e| Error::Generic(format!("Base64 decode error: {:?}", e)))?;
-    let psbt: PartiallySignedTransaction = deserialize(&psbt)?;
-    let client = Client::new(&electrum_opts.server)?;
-
-    let current_block_height = client.block_headers_subscribe().map(|data| data.height)?;
-    let max_confirmation_height = Some(current_block_height - confirmations);
-
-    let outpoints_per_addr = addresses
-        .iter()
-        .map(|address| {
-            let address = Address::from_str(address)
-                .map_err(|e| Error::Generic(format!("Invalid address: {:?}", e)))?;
-            get_outpoints_for_address(address, &client, max_confirmation_height)
-        })
-        .collect::<Result<Vec<Vec<_>>, Error>>()?;
-    let outpoints_combined = outpoints_per_addr
-        .iter()
-        .fold(Vec::new(), |mut outpoints, outs| {
-            outpoints.append(&mut outs.clone());
-            outpoints
-        });
-
-    let spendable = verify_proof(&psbt, &message, outpoints_combined, network)
-        .map_err(|e| Error::Generic(format!("{:?}", e)))?;
-
-    Ok(json!({ "spendable": spendable }))
-}
-
 /// The global top level handler.
-#[maybe_async]
-pub(crate) fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
+pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
     let network = cli_opts.network;
-    let home_dir = prepare_home_dir(cli_opts.datadir)?;
+
     let result = match cli_opts.subcommand {
-        #[cfg(feature = "regtest-node")]
-        CliSubCommand::Node { subcommand: cmd } => {
-            let backend = new_backend(&home_dir)?;
-            serde_json::to_string_pretty(&backend.exec_cmd(cmd)?)
-        }
         #[cfg(any(
             feature = "electrum",
             feature = "esplora",
-            feature = "compact_filters",
+            feature = "cbf",
             feature = "rpc"
         ))]
         CliSubCommand::Wallet {
             wallet_opts,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
-            let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, cli_opts.network)?;
-            let database = open_database(&wallet_opts, &home_dir)?;
-            let backend = new_backend(&home_dir)?;
-            let blockchain = new_blockchain(network, &wallet_opts, &backend, &home_dir)?;
-            let wallet = new_wallet(network, &wallet_opts, database)?;
-            let result = maybe_await!(handle_online_wallet_subcommand(
-                &wallet,
-                &blockchain,
-                online_subcommand
-            ))?;
+            let blockchain_client = new_blockchain_client(&wallet_opts)?;
+            let network = cli_opts.network;
+            #[cfg(feature = "sqlite")]
+            let result = {
+                let home_dir = prepare_home_dir(cli_opts.datadir)?;
+                let wallet_name = &wallet_opts.wallet;
+                let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
+                let mut persister = match &wallet_opts.database_type {
+                    #[cfg(feature = "sqlite")]
+                    DatabaseType::Sqlite => {
+                        let db_file = database_path.join("wallet.sqlite");
+                        let connection = Connection::open(db_file)?;
+                        log::debug!("Sqlite database opened successfully");
+                        connection
+                    }
+                };
+
+                let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
+                let result = handle_online_wallet_subcommand(
+                    &mut wallet,
+                    blockchain_client,
+                    online_subcommand,
+                )
+                .await?;
+                wallet.persist(&mut persister)?;
+                result
+            };
+            #[cfg(not(any(feature = "sqlite")))]
+            let result = {
+                let mut wallet = new_wallet(network, &wallet_opts)?;
+                handle_online_wallet_subcommand(&mut wallet, blockchain_client, online_subcommand)
+                    .await?
+            };
             serde_json::to_string_pretty(&result)
         }
         CliSubCommand::Wallet {
             wallet_opts,
             subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
-            let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, network)?;
-            let database = open_database(&wallet_opts, &home_dir)?;
-            let wallet = new_wallet(network, &wallet_opts, database)?;
-            let result =
-                handle_offline_wallet_subcommand(&wallet, &wallet_opts, offline_subcommand)?;
+            let network = cli_opts.network;
+            #[cfg(feature = "sqlite")]
+            let result = {
+                let home_dir = prepare_home_dir(cli_opts.datadir)?;
+                let wallet_name = &wallet_opts.wallet;
+                let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
+                let mut persister = match &wallet_opts.database_type {
+                    #[cfg(feature = "sqlite")]
+                    DatabaseType::Sqlite => {
+                        let db_file = database_path.join("wallet.sqlite");
+                        let connection = Connection::open(db_file)?;
+                        log::debug!("Sqlite database opened successfully");
+                        connection
+                    }
+                };
+
+                let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
+                let result = handle_offline_wallet_subcommand(
+                    &mut wallet,
+                    &wallet_opts,
+                    offline_subcommand,
+                )?;
+                wallet.persist(&mut persister)?;
+                result
+            };
+            #[cfg(not(any(feature = "sqlite")))]
+            let result = {
+                let mut wallet = new_wallet(network, &wallet_opts)?;
+                handle_offline_wallet_subcommand(&mut wallet, &wallet_opts, offline_subcommand)?
+            };
             serde_json::to_string_pretty(&result)
         }
         CliSubCommand::Key {
             subcommand: key_subcommand,
         } => {
-            let result = handle_key_subcommand(cli_opts.network, key_subcommand)?;
+            let result = handle_key_subcommand(network, key_subcommand)?;
             serde_json::to_string_pretty(&result)
         }
         #[cfg(feature = "compiler")]
@@ -641,160 +765,154 @@ pub(crate) fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             policy,
             script_type,
         } => {
-            let result = handle_compile_subcommand(cli_opts.network, policy, script_type)?;
+            let result = handle_compile_subcommand(network, policy, script_type)?;
             serde_json::to_string_pretty(&result)
         }
         #[cfg(feature = "repl")]
         CliSubCommand::Repl { wallet_opts } => {
-            let wallet_opts = maybe_descriptor_wallet_name(wallet_opts, cli_opts.network)?;
-            let database = open_database(&wallet_opts, &home_dir)?;
+            let network = cli_opts.network;
+            #[cfg(feature = "sqlite")]
+            let (mut wallet, mut persister) = {
+                let wallet_name = &wallet_opts.wallet;
 
-            let wallet = new_wallet(cli_opts.network, &wallet_opts, database)?;
+                let home_dir = prepare_home_dir(cli_opts.datadir)?;
 
-            let mut rl = Editor::<()>::new();
+                let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
 
-            // if rl.load_history("history.txt").is_err() {
-            //     println!("No previous history.");
-            // }
-
-            let split_regex = Regex::new(crate::REPL_LINE_SPLIT_REGEX)
-                .map_err(|e| Error::Generic(e.to_string()))?;
-
-            #[cfg(any(
-                feature = "electrum",
-                feature = "esplora",
-                feature = "compact_filters",
-                feature = "rpc"
-            ))]
-            let backend = new_backend(&home_dir)?;
+                let mut persister = match &wallet_opts.database_type {
+                    #[cfg(feature = "sqlite")]
+                    DatabaseType::Sqlite => {
+                        let db_file = database_path.join("wallet.sqlite");
+                        let connection = Connection::open(db_file)?;
+                        log::debug!("Sqlite database opened successfully");
+                        connection
+                    }
+                };
+                let wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
+                (wallet, persister)
+            };
+            #[cfg(not(any(feature = "sqlite")))]
+            let mut wallet = new_wallet(network, &wallet_opts)?;
 
             loop {
-                let readline = rl.readline(">> ");
-                match readline {
-                    Ok(line) => {
-                        if line.trim() == "" {
-                            continue;
-                        }
-                        rl.add_history_entry(line.as_str());
-                        let split_line: Vec<&str> = split_regex
-                            .captures_iter(&line)
-                            .map(|c| {
-                                Ok(c.get(1)
-                                    .or_else(|| c.get(2))
-                                    .or_else(|| c.get(3))
-                                    .ok_or_else(|| Error::Generic("Invalid commands".to_string()))?
-                                    .as_str())
-                            })
-                            .collect::<Result<Vec<_>, Error>>()?;
-                        let repl_subcommand = ReplSubCommand::from_iter_safe(split_line);
-                        if let Err(err) = repl_subcommand {
-                            println!("{}", err);
-                            continue;
-                        }
-                        // if error will be printed above
-                        let repl_subcommand = repl_subcommand.unwrap();
-                        log::debug!("repl_subcommand = {:?}", repl_subcommand);
+                let line = readline()?;
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
 
-                        let result = match repl_subcommand {
-                            #[cfg(feature = "regtest-node")]
-                            ReplSubCommand::Node { subcommand } => {
-                                match backend.exec_cmd(subcommand) {
-                                    Ok(result) => Ok(result),
-                                    Err(e) => Ok(serde_json::Value::String(e.to_string())),
-                                }
-                            }
-                            #[cfg(any(
-                                feature = "electrum",
-                                feature = "esplora",
-                                feature = "compact_filters",
-                                feature = "rpc"
-                            ))]
-                            ReplSubCommand::Wallet {
-                                subcommand:
-                                    WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
-                            } => {
-                                let blockchain = new_blockchain(
-                                    cli_opts.network,
-                                    &wallet_opts,
-                                    &backend,
-                                    &home_dir,
-                                )?;
-                                maybe_await!(handle_online_wallet_subcommand(
-                                    &wallet,
-                                    &blockchain,
-                                    online_subcommand,
-                                ))
-                            }
-                            ReplSubCommand::Wallet {
-                                subcommand:
-                                    WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
-                            } => handle_offline_wallet_subcommand(
-                                &wallet,
-                                &wallet_opts,
-                                offline_subcommand,
-                            ),
-                            ReplSubCommand::Key { subcommand } => {
-                                handle_key_subcommand(cli_opts.network, subcommand)
-                            }
-                            ReplSubCommand::Exit => break,
-                        };
+                let result = respond(network, &mut wallet, &wallet_opts, line).await;
+                #[cfg(feature = "sqlite")]
+                wallet.persist(&mut persister)?;
 
-                        println!("{}", serde_json::to_string_pretty(&result?)?);
+                match result {
+                    Ok(quit) => {
+                        if quit {
+                            break;
+                        }
                     }
-                    Err(ReadlineError::Interrupted) => continue,
-                    Err(ReadlineError::Eof) => break,
                     Err(err) => {
-                        println!("{:?}", err);
-                        break;
+                        writeln!(std::io::stdout(), "{err}")
+                            .map_err(|e| Error::Generic(e.to_string()))?;
+                        std::io::stdout()
+                            .flush()
+                            .map_err(|e| Error::Generic(e.to_string()))?;
                     }
                 }
             }
-
-            Ok("Exiting REPL".to_string())
-        }
-        #[cfg(all(feature = "reserves", feature = "electrum"))]
-        CliSubCommand::ExternalReserves {
-            message,
-            psbt,
-            confirmations,
-            addresses,
-            electrum_opts,
-        } => {
-            let result = handle_ext_reserves_subcommand(
-                cli_opts.network,
-                message,
-                psbt,
-                confirmations,
-                addresses,
-                electrum_opts,
-            )?;
-            serde_json::to_string_pretty(&result)
+            Ok("".to_string())
         }
     };
     result.map_err(|e| e.into())
 }
 
+#[cfg(feature = "repl")]
+async fn respond(
+    network: Network,
+    wallet: &mut Wallet,
+    wallet_opts: &WalletOpts,
+    line: &str,
+) -> Result<bool, String> {
+    use clap::Parser;
+
+    let args = shlex::split(line).ok_or("error: Invalid quoting".to_string())?;
+    let repl_subcommand = ReplSubCommand::try_parse_from(args).map_err(|e| e.to_string())?;
+    let response = match repl_subcommand {
+        #[cfg(any(
+            feature = "electrum",
+            feature = "esplora",
+            feature = "cbf",
+            feature = "rpc"
+        ))]
+        ReplSubCommand::Wallet {
+            subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
+        } => {
+            let blockchain = new_blockchain_client(wallet_opts).map_err(|e| e.to_string())?;
+            let value = handle_online_wallet_subcommand(wallet, blockchain, online_subcommand)
+                .await
+                .map_err(|e| e.to_string())?;
+            Some(value)
+        }
+        ReplSubCommand::Wallet {
+            subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
+        } => {
+            let value = handle_offline_wallet_subcommand(wallet, wallet_opts, offline_subcommand)
+                .map_err(|e| e.to_string())?;
+            Some(value)
+        }
+        ReplSubCommand::Key { subcommand } => {
+            let value = handle_key_subcommand(network, subcommand).map_err(|e| e.to_string())?;
+            Some(value)
+        }
+        ReplSubCommand::Exit => None,
+    };
+    if let Some(value) = response {
+        let value = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+        writeln!(std::io::stdout(), "{}", value).map_err(|e| e.to_string())?;
+        std::io::stdout().flush().map_err(|e| e.to_string())?;
+        Ok(false)
+    } else {
+        writeln!(std::io::stdout(), "Exiting...").map_err(|e| e.to_string())?;
+        std::io::stdout().flush().map_err(|e| e.to_string())?;
+        Ok(true)
+    }
+}
+
+#[cfg(feature = "repl")]
+fn readline() -> Result<String, Error> {
+    write!(std::io::stdout(), "> ").map_err(|e| Error::Generic(e.to_string()))?;
+    std::io::stdout()
+        .flush()
+        .map_err(|e| Error::Generic(e.to_string()))?;
+    let mut buffer = String::new();
+    std::io::stdin()
+        .read_line(&mut buffer)
+        .map_err(|e| Error::Generic(e.to_string()))?;
+    Ok(buffer)
+}
+
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
-    feature = "compact_filters",
+    feature = "cbf",
     feature = "rpc"
 ))]
 #[cfg(test)]
 mod test {
+    use bdk_wallet::bitcoin::Psbt;
+
     use super::is_final;
-    use bdk::bitcoin::psbt::PartiallySignedTransaction;
     use std::str::FromStr;
 
     #[test]
     fn test_psbt_is_final() {
-        let unsigned_psbt = PartiallySignedTransaction::from_str("cHNidP8BAIkBAAAAASWJHzxzyVORV/C3lAynKHVVL7+Rw7/Jj8U9fuvD24olAAAAAAD+////AiBOAAAAAAAAIgAgLzY9yE4jzTFJnHtTjkc+rFAtJ9NB7ENFQ1xLYoKsI1cfqgKVAAAAACIAIFsbWgDeLGU8EA+RGwBDIbcv4gaGG0tbEIhDvwXXa/E7LwEAAAABALUCAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////BALLAAD/////AgD5ApUAAAAAIgAgWxtaAN4sZTwQD5EbAEMhty/iBoYbS1sQiEO/Bddr8TsAAAAAAAAAACZqJKohqe3i9hw/cdHe/T+pmd+jaVN1XGkGiXmZYrSL69g2l06M+QEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQErAPkClQAAAAAiACBbG1oA3ixlPBAPkRsAQyG3L+IGhhtLWxCIQ78F12vxOwEFR1IhA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDIQLKhV/gEZYmlsQXnsL5/Uqv5Y8O31tmWW1LQqIBkiqzCVKuIgYCyoVf4BGWJpbEF57C+f1Kr+WPDt9bZlltS0KiAZIqswkEboH3lCIGA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDBDS6ZSEAACICAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJBG6B95QiAgPyVdlP9KV1voj+PUHLGIpRL5GRHeKYZgzPJ1fMAvjHgwQ0umUhAA==").unwrap();
+        let unsigned_psbt = Psbt::from_str("cHNidP8BAIkBAAAAASWJHzxzyVORV/C3lAynKHVVL7+Rw7/Jj8U9fuvD24olAAAAAAD+////AiBOAAAAAAAAIgAgLzY9yE4jzTFJnHtTjkc+rFAtJ9NB7ENFQ1xLYoKsI1cfqgKVAAAAACIAIFsbWgDeLGU8EA+RGwBDIbcv4gaGG0tbEIhDvwXXa/E7LwEAAAABALUCAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////BALLAAD/////AgD5ApUAAAAAIgAgWxtaAN4sZTwQD5EbAEMhty/iBoYbS1sQiEO/Bddr8TsAAAAAAAAAACZqJKohqe3i9hw/cdHe/T+pmd+jaVN1XGkGiXmZYrSL69g2l06M+QEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQErAPkClQAAAAAiACBbG1oA3ixlPBAPkRsAQyG3L+IGhhtLWxCIQ78F12vxOwEFR1IhA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDIQLKhV/gEZYmlsQXnsL5/Uqv5Y8O31tmWW1LQqIBkiqzCVKuIgYCyoVf4BGWJpbEF57C+f1Kr+WPDt9bZlltS0KiAZIqswkEboH3lCIGA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDBDS6ZSEAACICAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJBG6B95QiAgPyVdlP9KV1voj+PUHLGIpRL5GRHeKYZgzPJ1fMAvjHgwQ0umUhAA==").unwrap();
         assert!(is_final(&unsigned_psbt).is_err());
 
-        let part_signed_psbt = PartiallySignedTransaction::from_str("cHNidP8BAIkBAAAAASWJHzxzyVORV/C3lAynKHVVL7+Rw7/Jj8U9fuvD24olAAAAAAD+////AiBOAAAAAAAAIgAgLzY9yE4jzTFJnHtTjkc+rFAtJ9NB7ENFQ1xLYoKsI1cfqgKVAAAAACIAIFsbWgDeLGU8EA+RGwBDIbcv4gaGG0tbEIhDvwXXa/E7LwEAAAABALUCAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////BALLAAD/////AgD5ApUAAAAAIgAgWxtaAN4sZTwQD5EbAEMhty/iBoYbS1sQiEO/Bddr8TsAAAAAAAAAACZqJKohqe3i9hw/cdHe/T+pmd+jaVN1XGkGiXmZYrSL69g2l06M+QEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQErAPkClQAAAAAiACBbG1oA3ixlPBAPkRsAQyG3L+IGhhtLWxCIQ78F12vxOyICA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDSDBFAiEAnNPpu6wNX2HXYz8s2q5nXug4cWfvCGD3SSH2CNKm+yECIEQO7/URhUPsGoknMTE+GrYJf9Wxqn9QsuN9FGj32cQpAQEFR1IhA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDIQLKhV/gEZYmlsQXnsL5/Uqv5Y8O31tmWW1LQqIBkiqzCVKuIgYCyoVf4BGWJpbEF57C+f1Kr+WPDt9bZlltS0KiAZIqswkEboH3lCIGA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDBDS6ZSEAACICAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJBG6B95QiAgPyVdlP9KV1voj+PUHLGIpRL5GRHeKYZgzPJ1fMAvjHgwQ0umUhAA==").unwrap();
+        let part_signed_psbt = Psbt::from_str("cHNidP8BAIkBAAAAASWJHzxzyVORV/C3lAynKHVVL7+Rw7/Jj8U9fuvD24olAAAAAAD+////AiBOAAAAAAAAIgAgLzY9yE4jzTFJnHtTjkc+rFAtJ9NB7ENFQ1xLYoKsI1cfqgKVAAAAACIAIFsbWgDeLGU8EA+RGwBDIbcv4gaGG0tbEIhDvwXXa/E7LwEAAAABALUCAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////BALLAAD/////AgD5ApUAAAAAIgAgWxtaAN4sZTwQD5EbAEMhty/iBoYbS1sQiEO/Bddr8TsAAAAAAAAAACZqJKohqe3i9hw/cdHe/T+pmd+jaVN1XGkGiXmZYrSL69g2l06M+QEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQErAPkClQAAAAAiACBbG1oA3ixlPBAPkRsAQyG3L+IGhhtLWxCIQ78F12vxOyICA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDSDBFAiEAnNPpu6wNX2HXYz8s2q5nXug4cWfvCGD3SSH2CNKm+yECIEQO7/URhUPsGoknMTE+GrYJf9Wxqn9QsuN9FGj32cQpAQEFR1IhA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDIQLKhV/gEZYmlsQXnsL5/Uqv5Y8O31tmWW1LQqIBkiqzCVKuIgYCyoVf4BGWJpbEF57C+f1Kr+WPDt9bZlltS0KiAZIqswkEboH3lCIGA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDBDS6ZSEAACICAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJBG6B95QiAgPyVdlP9KV1voj+PUHLGIpRL5GRHeKYZgzPJ1fMAvjHgwQ0umUhAA==").unwrap();
         assert!(is_final(&part_signed_psbt).is_err());
 
-        let full_signed_psbt = PartiallySignedTransaction::from_str("cHNidP8BAIkBAAAAASWJHzxzyVORV/C3lAynKHVVL7+Rw7/Jj8U9fuvD24olAAAAAAD+////AiBOAAAAAAAAIgAgLzY9yE4jzTFJnHtTjkc+rFAtJ9NB7ENFQ1xLYoKsI1cfqgKVAAAAACIAIFsbWgDeLGU8EA+RGwBDIbcv4gaGG0tbEIhDvwXXa/E7LwEAAAABALUCAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////BALLAAD/////AgD5ApUAAAAAIgAgWxtaAN4sZTwQD5EbAEMhty/iBoYbS1sQiEO/Bddr8TsAAAAAAAAAACZqJKohqe3i9hw/cdHe/T+pmd+jaVN1XGkGiXmZYrSL69g2l06M+QEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQErAPkClQAAAAAiACBbG1oA3ixlPBAPkRsAQyG3L+IGhhtLWxCIQ78F12vxOwEFR1IhA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDIQLKhV/gEZYmlsQXnsL5/Uqv5Y8O31tmWW1LQqIBkiqzCVKuIgYCyoVf4BGWJpbEF57C+f1Kr+WPDt9bZlltS0KiAZIqswkEboH3lCIGA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDBDS6ZSEBBwABCNsEAEgwRQIhAJzT6busDV9h12M/LNquZ17oOHFn7whg90kh9gjSpvshAiBEDu/1EYVD7BqJJzExPhq2CX/Vsap/ULLjfRRo99nEKQFHMEQCIGoFCvJ2zPB7PCpznh4+1jsY03kMie49KPoPDdr7/T9TAiB3jV7wzR9BH11FSbi+8U8gSX95PrBlnp1lOBgTUIUw3QFHUiED8lXZT/Sldb6I/j1ByxiKUS+RkR3imGYMzydXzAL4x4MhAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJUq4AACICAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJBG6B95QiAgPyVdlP9KV1voj+PUHLGIpRL5GRHeKYZgzPJ1fMAvjHgwQ0umUhAA==").unwrap();
+        let full_signed_psbt = Psbt::from_str("cHNidP8BAIkBAAAAASWJHzxzyVORV/C3lAynKHVVL7+Rw7/Jj8U9fuvD24olAAAAAAD+////AiBOAAAAAAAAIgAgLzY9yE4jzTFJnHtTjkc+rFAtJ9NB7ENFQ1xLYoKsI1cfqgKVAAAAACIAIFsbWgDeLGU8EA+RGwBDIbcv4gaGG0tbEIhDvwXXa/E7LwEAAAABALUCAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////BALLAAD/////AgD5ApUAAAAAIgAgWxtaAN4sZTwQD5EbAEMhty/iBoYbS1sQiEO/Bddr8TsAAAAAAAAAACZqJKohqe3i9hw/cdHe/T+pmd+jaVN1XGkGiXmZYrSL69g2l06M+QEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQErAPkClQAAAAAiACBbG1oA3ixlPBAPkRsAQyG3L+IGhhtLWxCIQ78F12vxOwEFR1IhA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDIQLKhV/gEZYmlsQXnsL5/Uqv5Y8O31tmWW1LQqIBkiqzCVKuIgYCyoVf4BGWJpbEF57C+f1Kr+WPDt9bZlltS0KiAZIqswkEboH3lCIGA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDBDS6ZSEBBwABCNsEAEgwRQIhAJzT6busDV9h12M/LNquZ17oOHFn7whg90kh9gjSpvshAiBEDu/1EYVD7BqJJzExPhq2CX/Vsap/ULLjfRRo99nEKQFHMEQCIGoFCvJ2zPB7PCpznh4+1jsY03kMie49KPoPDdr7/T9TAiB3jV7wzR9BH11FSbi+8U8gSX95PrBlnp1lOBgTUIUw3QFHUiED8lXZT/Sldb6I/j1ByxiKUS+RkR3imGYMzydXzAL4x4MhAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJUq4AACICAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJBG6B95QiAgPyVdlP9KV1voj+PUHLGIpRL5GRHeKYZgzPJ1fMAvjHgwQ0umUhAA==").unwrap();
         assert!(is_final(&full_signed_psbt).is_ok());
     }
 }

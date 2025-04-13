@@ -27,6 +27,9 @@
 
 ## About
 
+**EXPERIMENTAL**
+This crate is in to process of being updated to `bdk_wallet` 1.x. Only use with for testing on test networks.
+
 This project provides a command-line Bitcoin wallet application using the latest [BDK APIs](https://docs.rs/bdk/latest/bdk/wallet/struct.Wallet.html). This might look tiny and innocent, but by harnessing the power of BDK it provides a powerful generic descriptor based command line wallet tool.
 And yes, it can do Taproot!!
 
@@ -39,26 +42,21 @@ If you are considering using BDK in your own wallet project bdk-cli is a nice pl
 
 bdk-cli can be compiled with different features to suit your experimental needs.
   - Database Options
-     - `key-value-db` : Sets the wallet database to a `sled` db.
-     - `sqlite-db` : Sets the wallet database to a `sqlite3` db.
-  - Blockchain Options
-     - `rpc` : Connects the wallet to bitcoin core via RPC.
+     - `sqlite` : Sets the wallet database to a `sqlite3` db.
+  - Blockchain Client Options
+     - `esplora` : Connects the wallet to an esplora server.
      - `electrum` : Connects the wallet to an electrum server.
-     - `esplora-ureq` or `esplora-reqwest` : Connects the wallet to an esplora server synchronously or asynchronously.
   - Extra Utility Tools
      - `repl` : use bdk-cli as a [REPL](https://codewith.mu/en/tutorials/1.0/repl) shell (useful for quick manual testing of wallet operations).
      - `compiler` : opens up bdk-cli policy compiler commands.
-     - `verify` : uses `bitcoinconsensus` to verify transactions at every `sync` call of the wallet.
-     - `reserves` : opens up bdk-cli **Proof of Reserves** operation commands using the [bdk-reserves plugin](https://github.com/bitcoindevkit/bdk-reserves). (requires the `electrum` feature)
-   - Automated Node Backend
-     - `regtest-bitcoin` : Auto deploys a regtest `bitcoind` node, connects the wallet, and exposes core rpc commands via `bdk-cli node` subcommands.
-     - `regtest-electrum` : Auto deploys `electrsd` and connected `bitcoind` nodes, exposes core rpc commands via `bdk-cli node` and provides a wallet connected to the local `electrsd`.
     
-The `default` feature set is `repl` and `sqlite-db`. With the `default` features, `bdk-cli` can be used as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
+The `default` feature set is `repl` and `sqlite`. With the `default` features, `bdk-cli` can be used as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
 
 
 ## Install bdk-cli
+
 ### From source
+
 To install a dev version of `bdk-cli` from a local git repo with the `electrum` blockchain client enabled:
 
 ```shell
@@ -70,14 +68,14 @@ bdk-cli help # to verify it worked
 If no blockchain client feature is enabled online wallet commands `sync` and `broadcast` will be 
 disabled. To enable these commands a blockchain client feature such as `electrum` or another 
 blockchain client feature must be enabled. Below is an example of how to run the `bdk-cli` binary with
-the `esplora-ureq` blockchain client feature.
+the `esplora` blockchain client feature.
 
 ```shell
-RUST_LOG=debug cargo run --features esplora-ureq -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
+RUST_LOG=debug cargo run --features esplora -- wallet --client-type esplora --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
 ```
 
-At most one blockchain feature can be enabled, available blockchain client features are:
-`electrum`, `esplora-ureq` (blocking), `esplora-reqwest` (async) and `rpc`.
+Available blockchain client features are:
+`electrum`, `esplora`.
 
 ### From crates.io
 You can install the binary for the latest tag of `bdk-cli` with online wallet features 
@@ -98,19 +96,13 @@ cargo run
 To sync a wallet to the default electrum server:
 
 ```shell
-cargo run --features electrum -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
-```
-
-To sync a wallet to a Bitcoin Core node (assuming a regtest node at 127.0.0.1:18443) using the core rpc:
-
-```shell
-cargo run --features rpc -- --network regtest wallet --node 127.0.0.1:18443 --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
+cargo run --features electrum -- wallet -c electrum --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
 ```
 
 To get a wallet balance with customized logging:
 
 ```shell
-RUST_LOG=debug,sled=info,rustls=info cargo run -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" get_balance
+RUST_LOG=debug,rusqlite=info,rustls=info cargo run -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" get_balance
 ```
 
 To generate a new extended master key, suitable for use in a descriptor:
@@ -121,25 +113,7 @@ cargo run -- key generate
 
 ## Minimum Supported Rust Version (MSRV)
 
-This library should always compile with any valid combination of features on Rust **1.57.0**.
-
-To build with the MSRV you will need to pin the below dependency versions:
-
-```shell
-# log 0.4.19 has MSRV 1.60.0
-cargo update -p log --precise 0.4.18
-# required for sqlite, hashlink 0.8.2 has MSRV 1.61.0
-cargo update -p hashlink --precise 0.8.0
-# tempfile 3.7.x has MSRV 1.63.0
-cargo update -p tempfile --precise 3.6.0
-cargo update -p base64ct --precise 1.5.3
-# cc 1.0.82 is throwing error with rust 1.57.0, "error[E0599]: no method named `retain_mut`..."
-cargo update -p cc --precise 1.0.81
-# tokio 0.30.0 has MSRV 1.63.0
-cargo update -p tokio --precise 1.29.1
-# flate2 1.0.27 has MSRV 1.63.0+
-cargo update -p flate2 --precise 1.0.26
-```
+This library should always compile with any valid combination of features on Rust **1.75.0**.
 
 ## Resources
 Docs: [bitcoindevkit.org CLI Section](https://bitcoindevkit.org/bdk-cli/installation/)  

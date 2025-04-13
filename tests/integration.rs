@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021 Bitcoin Dev Kit Developers
+// Copyright (c) 2020-2025 Bitcoin Dev Kit Developers
 //
 // This file is licensed under the Apache License, Version 2.0 <LICENSE-APACHE
 // or http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -11,11 +11,11 @@
 //! This modules performs the necessary integration test for bdk-cli
 //! The tests can be run using `cargo test`
 
-#[cfg(feature = "regtest-node")]
+#[cfg(feature = "rpc")]
 mod test {
-    use electrsd::bitcoind::tempfile::TempDir;
     use serde_json::{json, Value};
     use std::convert::From;
+    use std::env::temp_dir;
     use std::path::PathBuf;
     use std::process::Command;
 
@@ -200,8 +200,8 @@ mod test {
         let mut test_dir = std::env::current_dir().unwrap();
         test_dir.push("bdk-testing");
 
-        let test_temp_dir = TempDir::new().unwrap();
-        let test_dir = test_temp_dir.into_path().to_path_buf();
+        let test_dir = temp_dir();
+        // let test_dir = test_temp_dir.into_path().to_path_buf();
 
         // Create bdk-cli instance
         let bdk_cli = BdkCli::new("regtest", Some(test_dir), false, &[feature]).unwrap();
