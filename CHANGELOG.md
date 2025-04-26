@@ -4,6 +4,7 @@ Changelog info is also documented on the [GitHub releases](https://github.com/bi
 page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [Unreleased]
+- Add support for generic BIP-322 signed message formats.
 
 ## [0.27.1]
 - Added hardware signers through the use of HWI.

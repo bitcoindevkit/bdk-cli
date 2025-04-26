@@ -9,8 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CARGO_INCREMENTAL: '0'
-      RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
-      RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
+      RUSTFLAGS: '-Cinstrument-coverage -Ccodegen-units=1 -Cllvm-args=--inline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
+      RUSTDOCFLAGS: '-Cinstrument-coverage -Ccodegen-units=1 -Cllvm-args=--inline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
 
     steps:
       - name: Checkout
@@ -41,6 +41,9 @@ jobs:
 
       - name: Test RPC
         run: cargo test --features rpc
+
+      - name: Test Bip322
+        run: cargo test --features bip322
 
       - id: coverage
         name: Generate coverage

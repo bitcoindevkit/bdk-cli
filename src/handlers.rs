@@ -21,6 +21,8 @@ use crate::commands::OnlineWalletSubCommand::*;
 use crate::commands::*;
 use crate::error::BDKCliError as Error;
 use crate::utils::*;
+#[cfg(any(feature = "bip322"))]
+use bdk_bip322::{SignatureFormat, Signer, Verifier};
 use bdk_wallet::bip39::{Language, Mnemonic};
 use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
 use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
@@ -54,6 +56,7 @@ use std::collections::BTreeMap;
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "cbf",))]
 use std::collections::HashSet;
 use std::convert::TryFrom;
+use std::fs;
 #[cfg(feature = "repl")]
 use std::io::Write;
 use std::str::FromStr;
@@ -668,6 +671,96 @@ pub(crate) fn handle_compile_subcommand(
     Ok(json!({"descriptor": descriptor.to_string()}))
 }
 
+/// Execute bip322 sub-command
+#[cfg(any(feature = "bip322"))]
+pub fn handle_bip322_subcommand(subcommand: Bip322SubCommand) -> Result<serde_json::Value, Error> {
+    match subcommand {
+        Bip322SubCommand::Sign {
+            key_file,
+            address,
+            message,
+            signature_type,
+        } => {
+            let wif = if let Some(key_file) = key_file {
+                let content = fs::read_to_string(&key_file)
+                    .map_err(|e| Error::Generic(format!("Failed to read key file: {}", e)))?
+                    .trim()
+                    .to_string();
+                if content.is_empty() {
+                    return Err(Error::Generic("Key file is empty".to_string()));
+                }
+                content
+            } else {
+                let input = rpassword::prompt_password("Enter WIF private key: ")
+                    .map_err(|e| Error::Generic(format!("Failed to read input: {}", e)))?
+                    .trim()
+                    .to_string();
+                if input.is_empty() {
+                    return Err(Error::Generic("Private key cannot be empty".to_string()));
+                }
+                input
+            };
+
+            let signature_format = parse_signature_format(&signature_type)?;
+            let signer = Signer::new(wif, message, address, signature_format);
+            let signature = signer.sign()?;
+
+            Ok(json!({"signature": signature}))
+        }
+        Bip322SubCommand::Verify {
+            address,
+            signature,
+            message,
+            signature_type,
+            key_file,
+        } => {
+            let signature_format = parse_signature_format(&signature_type)?;
+
+            let wif_opt: Option<String> = if signature_format == SignatureFormat::Legacy {
+                if let Some(path) = key_file {
+                    let content = fs::read_to_string(&path)
+                        .map_err(|e| Error::Generic(format!("Failed to read key file: {}", e)))?
+                        .trim()
+                        .to_string();
+                    if content.is_empty() {
+                        return Err(Error::Generic("Key file is empty".to_string()));
+                    }
+                    Some(content)
+                } else {
+                    let input = rpassword::prompt_password("Enter WIF private key: ")
+                        .map_err(|e| Error::Generic(format!("Failed to read input: {}", e)))?
+                        .trim()
+                        .to_string();
+                    if input.is_empty() {
+                        return Err(Error::Generic("Private key cannot be empty".to_string()));
+                    }
+                    Some(input)
+                }
+            } else {
+                None
+            };
+
+            let verifier = Verifier::new(address, signature, message, signature_format, wif_opt);
+            let valid = verifier.verify()?;
+
+            Ok(json!({"valid": valid}))
+        }
+    }
+}
+
+/// Function to parse the signature format from a string
+#[cfg(any(feature = "bip322"))]
+fn parse_signature_format(format_str: &str) -> Result<SignatureFormat, Error> {
+    match format_str.to_lowercase().as_str() {
+        "legacy" => Ok(SignatureFormat::Legacy),
+        "simple" => Ok(SignatureFormat::Simple),
+        "full" => Ok(SignatureFormat::Full),
+        _ => Err(Error::Generic(
+            "Invalid signature format. Use 'legacy', 'simple', or 'full'".to_string(),
+        )),
+    }
+}
+
 /// The global top level handler.
 pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
     let network = cli_opts.network;
@@ -821,6 +914,11 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 }
             }
             Ok("".to_string())
+        }
+        #[cfg(any(feature = "bip322"))]
+        CliSubCommand::Bip322 { subcommand } => {
+            let result = handle_bip322_subcommand(subcommand)?;
+            serde_json::to_string_pretty(&result)
         }
     };
     result.map_err(|e| e.into())

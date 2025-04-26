@@ -109,6 +109,61 @@ pub enum CliSubCommand {
         #[command(flatten)]
         wallet_opts: WalletOpts,
     },
+    /// BIP322 message signing and verification operations.
+    ///
+    /// This subcommand allows for standalone signing and verification of messages using the BIP322
+    /// standard, without requiring a full wallet setup. It is useful for simple use cases or testing.
+    ///
+    /// Available operations:
+    /// - `sign`: Sign a message using a private key in WIF format.
+    /// - `verify`: Verify a BIP322 signature for a given message and address.
+    ///
+    /// **Security Note**: This subcommand requires direct handling of private keys. Ensure you are in a
+    /// secure environment to prevent key exposure. For generating keys securely, consider using the `wallet`
+    /// subcommand instead.
+    #[cfg(any(feature = "bip322"))]
+    Bip322 {
+        #[command(subcommand)]
+        subcommand: Bip322SubCommand,
+    },
+}
+
+#[derive(Debug, Subcommand, Clone, PartialEq)]
+#[command(rename_all = "snake")]
+pub enum Bip322SubCommand {
+    /// Sign a message using BIP322
+    Sign {
+        /// Path to a file containing the private key in WIF format. If not provided, you will be prompted to enter the key securely.
+        #[arg(long)]
+        key_file: Option<String>,
+        /// Address to sign
+        #[arg(long)]
+        address: String,
+        /// The message to sign
+        #[arg(long)]
+        message: String,
+        /// The signature format (e.g., Legacy, Simple, Full)
+        #[arg(long, default_value = "simple")]
+        signature_type: String,
+    },
+    /// Verify a BIP322 signature
+    Verify {
+        /// The address associated with the signature
+        #[arg(long)]
+        address: String,
+        /// Base64-encoded signature
+        #[arg(long)]
+        signature: String,
+        /// The message that was signed
+        #[arg(long)]
+        message: String,
+        /// The signature format (e.g., Legacy, Simple, Full)
+        #[arg(long, default_value = "simple")]
+        signature_type: String,
+        /// Path to a file containing the private key in WIF format. If not provided, you will be prompted to enter the key securely.
+        #[arg(long)]
+        key_file: Option<String>,
+    },
 }
 
 /// Wallet operation subcommands.

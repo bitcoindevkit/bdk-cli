@@ -85,4 +85,8 @@ pub enum BDKCliError {
     #[cfg(feature = "rpc")]
     #[error("RPC error: {0}")]
     BitcoinCoreRpcError(#[from] bdk_bitcoind_rpc::bitcoincore_rpc::Error),
+
+    #[error("BIP322 error: {0}")]
+    #[cfg(any(feature = "bip322"))]
+    BIP322Error(#[from] bdk_bip322::Error),
 }
