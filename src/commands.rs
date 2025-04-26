@@ -405,6 +405,37 @@ pub enum OfflineWalletSubCommand {
         #[arg(env = "BASE64_PSBT", required = true)]
         psbt: Vec<String>,
     },
+    /// Sign a message using BIP322
+    #[cfg(feature = "bip322")]
+    SignBip322 {
+        /// The message to sign
+        #[arg(long)]
+        message: String,
+        /// The signature format (e.g., Legacy, Simple, Full)
+        #[arg(long, default_value = "simple")]
+        signature_type: String,
+        /// Address to sign
+        #[arg(long)]
+        address: String,
+        // Optional list of specific UTXOs for proof-of-funds (only for `FullWithProofOfFunds`)        #[arg(long)]
+        utxos: Option<Vec<OutPoint>>,
+    },
+    /// Verify a BIP322 signature
+    #[cfg(feature = "bip322")]
+    VerifyBip322 {
+        /// The signature proof to verify
+        #[arg(long)]
+        proof: String,
+        /// The message that was signed
+        #[arg(long)]
+        message: String,
+        /// The signature format (e.g., Legacy, Simple, Full)
+        #[arg(long, default_value = "simple")]
+        signature_type: String,
+        /// The address associated with the signature
+        #[arg(long)]
+        address: String,
+    },
 }
 
 /// Wallet subcommands that needs a blockchain backend.

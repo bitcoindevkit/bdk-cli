@@ -193,9 +193,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "bdk-bip322"
+version = "0.1.0"
+source = "git+https://github.com/aagbotemi/bdk-bip322.git?branch=master#aabe67ee68c14992b0d529192641d25ce376b6b1"
+dependencies = [
+ "bdk_wallet",
+ "bitcoin",
+]
+
+[[package]]
 name = "bdk-cli"
 version = "2.0.0"
 dependencies = [
+ "bdk-bip322",
  "bdk_bitcoind_rpc",
  "bdk_electrum",
  "bdk_esplora",
