@@ -13,12 +13,11 @@
 //! All subcommands are defined in the below enums.
 
 #![allow(clippy::large_enum_variant)]
-
 use bdk_wallet::bitcoin::{
     Address, Network, OutPoint, ScriptBuf,
     bip32::{DerivationPath, Xpriv},
 };
-use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
+use clap::{Args, Parser, Subcommand, ValueEnum, builder::TypedValueParser, value_parser};
 
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
@@ -107,8 +106,15 @@ pub enum CliSubCommand {
         #[command(flatten)]
         wallet_opts: WalletOpts,
     },
+    /// Output Descriptors operations.
+    ///
+    /// Generate output descriptors from either extended key (Xprv/Xpub) or mnemonic phrase.
+    /// This feature is intended for development and testing purposes only.
+    Descriptor {
+        #[clap(subcommand)]
+        subcommand: DescriptorSubCommand,
+    },
 }
-
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
 pub enum WalletSubCommand {
@@ -472,4 +478,28 @@ pub enum ReplSubCommand {
     },
     /// Exit REPL loop.
     Exit,
+}
+/// Subcommands for Key operations.
+#[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
+pub enum DescriptorSubCommand {
+    /// Generate a descriptor
+    Generate {
+        /// Descriptor type (script type).
+        #[arg(
+            long = "type",
+            short = 't',
+            value_parser = clap::builder::PossibleValuesParser::new(["44", "49", "84", "86"])
+                .map(|s| s.parse::<u8>().unwrap()),
+            default_value = "84"
+        )]
+        r#type: u8,
+        /// Enable multipath descriptors
+        #[arg(long = "multipath", short = 'm', default_value_t = false)]
+        multipath: bool,
+        /// Optional key input
+        key: Option<String>,
+    },
+
+    /// Show info about a given descriptor
+    Info { descriptor: String },
 }
