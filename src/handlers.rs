@@ -19,6 +19,7 @@ use crate::commands::OfflineWalletSubCommand::*;
 ))]
 use crate::commands::OnlineWalletSubCommand::*;
 use crate::commands::*;
+use crate::descriptor_handler::*;
 use crate::error::BDKCliError as Error;
 use crate::utils::*;
 use bdk_wallet::bip39::{Language, Mnemonic};
@@ -26,6 +27,9 @@ use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
 use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
 use bdk_wallet::bitcoin::Network;
+use serde::ser::Error as SerdeErrorTrait;
+use serde_json::Error as SerdeError;
+
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -822,8 +826,15 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             }
             Ok("".to_string())
         }
+        CliSubCommand::Descriptor(args) => handle_generate_descriptor(args),
     };
     result.map_err(|e| e.into())
+}
+
+pub fn handle_generate_descriptor(args: GenerateDescriptorArgs) -> Result<String, SerdeError> {
+    let descriptor =
+        generate_descriptor_from_args(args).map_err(|e| SerdeErrorTrait::custom(e.to_string()))?;
+    serde_json::to_string_pretty(&descriptor)
 }
 
 #[cfg(feature = "repl")]

@@ -13,7 +13,6 @@
 //! All subcommands are defined in the below enums.
 
 #![allow(clippy::large_enum_variant)]
-
 use bdk_wallet::bitcoin::{
     bip32::{DerivationPath, Xpriv},
     Address, Network, OutPoint, ScriptBuf,
@@ -109,8 +108,48 @@ pub enum CliSubCommand {
         #[command(flatten)]
         wallet_opts: WalletOpts,
     },
+    /// Generate a random Bitcoin descriptor and mnemonic.
+    ///
+    /// This function generates a new 12-word BIP39 mnemonic phrase and uses it to derive a BIP32
+    /// extended private key (XPRV). It constructs two BIP86-compatible single-sig descriptors:
+    /// - An **external descriptor** used for receiving funds (`/0/*`)
+    /// - An **internal descriptor** used for change outputs (`/1/*`)
+    ///
+    /// These descriptors follow the standard derivation path `m/86h/0h/0h` for mainnet (or `86h/1h/0h`
+    /// for testnet), and use `wpkh` (native SegWit) script format.
+    ///
+    /// The output includes both the public and private forms of the descriptors, along with the mnemonic.
+    ///
+    /// > ⚠️ This feature is **EXPERIMENTAL** and is intended for testing or development. Do **not** use
+    /// > this output to secure real Bitcoin funds on mainnet.
+    ///
+    /// Returns a JSON object containing:
+    /// - `mnemonic`: the 12-word phrase
+    /// - `external_descriptor`: public and private forms for receive addresses
+    /// - `internal_descriptor`: public and private forms for change addresses.
+    Descriptor(GenerateDescriptorArgs),
+}
+#[derive(Debug, Clone, PartialEq, Args)]
+pub struct GenerateDescriptorArgs {
+    #[clap(long)]
+    pub network: Network,
+
+    #[clap(long, value_parser = clap::value_parser!(u8).range(44..=86))]
+    pub r#type: u8, // 44, 49, 84, 86
+
+    #[clap(long)]
+    pub multipath: bool,
+
+    pub key: Option<String>, // Positional argument (tprv/tpub/xprv/xpub)
 }
 
+#[derive(Debug, Clone, PartialEq, ValueEnum)]
+pub enum ScriptType {
+    Bip44,
+    Bip49,
+    Bip84,
+    Bip86,
+}
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
 pub enum WalletSubCommand {

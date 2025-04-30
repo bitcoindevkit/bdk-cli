@@ -11,6 +11,7 @@
 #![warn(missing_docs)]
 
 mod commands;
+mod descriptor_handler;
 mod error;
 mod handlers;
 mod utils;
