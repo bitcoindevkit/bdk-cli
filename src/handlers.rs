@@ -22,9 +22,22 @@ use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
 use bdk_wallet::bitcoin::Network;
 use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Txid};
-use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
 use bdk_wallet::descriptor::Segwitv0;
 use bdk_wallet::keys::bip39::WordCount;
+use bdk_wallet::keys::{GeneratableKey, GeneratedKey};
+use bdk_wallet::serde::ser::Error as SerdeErrorTrait;
+use serde_json::json;
+use serde_json::Error as SerdeError;
+use serde_json::Value;
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+use bdk_wallet::bitcoin::Transaction;
+use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
 #[cfg(feature = "sqlite")]
 use bdk_wallet::rusqlite::Connection;
 #[cfg(feature = "compiler")]
@@ -33,18 +46,18 @@ use bdk_wallet::{
     miniscript::policy::Concrete,
 };
 use bdk_wallet::{KeychainKind, SignOptions, Wallet};
+use std::fmt;
+use std::str::FromStr;
 
 use bdk_wallet::keys::DescriptorKey::Secret;
-use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
+use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey};
 use bdk_wallet::miniscript::miniscript;
-use serde_json::json;
 use std::collections::BTreeMap;
 #[cfg(any(feature = "electrum", feature = "esplora"))]
 use std::collections::HashSet;
 use std::convert::TryFrom;
 #[cfg(any(feature = "repl", feature = "electrum", feature = "esplora"))]
 use std::io::Write;
-use std::str::FromStr;
 
 #[cfg(feature = "electrum")]
 use crate::utils::BlockchainClient::Electrum;
@@ -61,7 +74,7 @@ use tokio::select;
 ))]
 use {
     crate::commands::OnlineWalletSubCommand::*,
-    bdk_wallet::bitcoin::{consensus::Decodable, hex::FromHex, Transaction},
+    bdk_wallet::bitcoin::{consensus::Decodable, hex::FromHex},
 };
 #[cfg(feature = "esplora")]
 use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
@@ -909,6 +922,13 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             }
             Ok("".to_string())
         }
+        CliSubCommand::Descriptor(args) => {
+            let network = cli_opts.network;
+            let descriptor = generate_descriptor_from_args(args.clone(), network)
+                .map_err(|e| SerdeError::custom(e.to_string()))?;
+            let json = serde_json::to_string_pretty(&descriptor)?;
+            Ok(json)
+        }
     };
     result.map_err(|e| e.into())
 }
@@ -978,6 +998,57 @@ fn readline() -> Result<String, Error> {
         .read_line(&mut buffer)
         .map_err(|e| Error::Generic(e.to_string()))?;
     Ok(buffer)
+}
+
+pub fn generate_descriptor_from_args(
+    args: GenerateDescriptorArgs,
+    network: Network,
+) -> Result<serde_json::Value, Error> {
+    match (args.multipath, args.key.as_ref()) {
+        (true, Some(key)) => generate_multipath_descriptor(&network, args.r#type, key),
+        (false, Some(key)) => generate_standard_descriptor(&network, args.r#type, key),
+        (false, None) => {
+            // New default: generate descriptor from fresh mnemonic (for script_type 84 only)
+            if args.r#type == 84 {
+                generate_new_bip84_descriptor_with_mnemonic(network)
+            } else {
+                Err(Error::Generic(
+                    "Only script type 84 is supported for mnemonic-based generation".to_string(),
+                ))
+            }
+        }
+        _ => Err(Error::InvalidArguments(
+            "Invalid arguments: please provide a key or a weak string".to_string(),
+        )),
+    }
+}
+
+pub fn generate_standard_descriptor(
+    network: &Network,
+    script_type: u8,
+    key: &str,
+) -> Result<Value, Error> {
+    let descriptor_type = match script_type {
+        44 => DescriptorType::Bip44,
+        49 => DescriptorType::Bip49,
+        84 => DescriptorType::Bip84,
+        86 => DescriptorType::Bip86,
+        _ => return Err(Error::UnsupportedScriptType(script_type)),
+    };
+
+    generate_descriptor_from_key_by_type(network, key, descriptor_type)
+}
+
+impl fmt::Display for DescriptorType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            DescriptorType::Bip44 => "bip44",
+            DescriptorType::Bip49 => "bip49",
+            DescriptorType::Bip84 => "bip84",
+            DescriptorType::Bip86 => "bip86",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 #[cfg(any(
