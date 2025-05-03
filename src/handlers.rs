@@ -11,28 +11,16 @@
 //! This module describes all the command handling logic used by bdk-cli.
 
 use crate::commands::OfflineWalletSubCommand::*;
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "cbf",
-    feature = "rpc"
-))]
-use crate::commands::OnlineWalletSubCommand::*;
 use crate::commands::*;
 use crate::error::BDKCliError as Error;
+#[cfg(feature = "cbf")]
+use crate::utils::BlockchainClient::KyotoClient;
 use crate::utils::*;
 use bdk_wallet::bip39::{Language, Mnemonic};
 use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
 use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
 use bdk_wallet::bitcoin::Network;
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "cbf",
-    feature = "rpc"
-))]
-use bdk_wallet::bitcoin::Transaction;
 use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Txid};
 use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
 use bdk_wallet::descriptor::Segwitv0;
@@ -51,7 +39,7 @@ use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey,
 use bdk_wallet::miniscript::miniscript;
 use serde_json::json;
 use std::collections::BTreeMap;
-#[cfg(any(feature = "electrum", feature = "esplora", feature = "cbf",))]
+#[cfg(any(feature = "electrum", feature = "esplora"))]
 use std::collections::HashSet;
 use std::convert::TryFrom;
 #[cfg(feature = "repl")]
@@ -67,14 +55,10 @@ use bdk_wallet::bitcoin::base64::prelude::*;
     feature = "cbf",
     feature = "rpc"
 ))]
-use bdk_wallet::bitcoin::consensus::Decodable;
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "cbf",
-    feature = "rpc"
-))]
-use bdk_wallet::bitcoin::hex::FromHex;
+use {
+    crate::commands::OnlineWalletSubCommand::*,
+    bdk_wallet::bitcoin::{consensus::Decodable, hex::FromHex, Transaction},
+};
 #[cfg(feature = "esplora")]
 use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
 #[cfg(feature = "rpc")]
@@ -431,6 +415,10 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     let mempool_txs = emitter.mempool()?;
                     wallet.apply_unconfirmed_txs(mempool_txs);
                 }
+                #[cfg(feature = "cbf")]
+                KyotoClient { client } => {
+                    sync_kyoto_client(wallet, client).await?;
+                }
             }
             Ok(json!({}))
         }
@@ -495,6 +483,10 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     let mempool_txs = emitter.mempool()?;
                     wallet.apply_unconfirmed_txs(mempool_txs);
                 }
+                #[cfg(feature = "cbf")]
+                KyotoClient { client } => {
+                    sync_kyoto_client(wallet, client).await?;
+                }
             }
             Ok(json!({}))
         }
@@ -537,6 +529,11 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 RpcClient { client } => client
                     .send_raw_transaction(&tx)
                     .map_err(|e| Error::Generic(e.to_string()))?,
+
+                #[cfg(feature = "cbf")]
+                KyotoClient { client: _ } => {
+                    unimplemented!()
+                }
             };
             Ok(json!({ "txid": txid }))
         }
@@ -683,7 +680,6 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             wallet_opts,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
-            let blockchain_client = new_blockchain_client(&wallet_opts)?;
             let network = cli_opts.network;
             #[cfg(feature = "sqlite")]
             let result = {
@@ -701,6 +697,8 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 };
 
                 let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
+                let blockchain_client = new_blockchain_client(&wallet_opts, &wallet)?;
+
                 let result = handle_online_wallet_subcommand(
                     &mut wallet,
                     blockchain_client,
@@ -847,7 +845,8 @@ async fn respond(
         ReplSubCommand::Wallet {
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
-            let blockchain = new_blockchain_client(wallet_opts).map_err(|e| e.to_string())?;
+            let blockchain =
+                new_blockchain_client(wallet_opts, &wallet).map_err(|e| e.to_string())?;
             let value = handle_online_wallet_subcommand(wallet, blockchain, online_subcommand)
                 .await
                 .map_err(|e| e.to_string())?;

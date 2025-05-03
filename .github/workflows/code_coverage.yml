@@ -35,10 +35,9 @@ jobs:
       - name: Test Esplora
         run: cargo test --features esplora
 
-      # Temporarily disable compact filters
-      #- name: Test Compact Filters
-      #  run: cargo test --features compact_filters
-
+      - name: Test Cbf
+        run: cargo test --features cbf
+        
       - name: Test RPC
         run: cargo test --features rpc
 
