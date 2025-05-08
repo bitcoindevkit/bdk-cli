@@ -20,12 +20,7 @@ use bdk_wallet::bitcoin::{
 };
 use clap::{value_parser, Args, Parser, Subcommand, ValueEnum};
 
-#[cfg(any(
-    feature = "cbf",
-    feature = "electrum",
-    feature = "esplora",
-    feature = "rpc"
-))]
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
 use crate::utils::{parse_address, parse_outpoint, parse_recipient};
 
@@ -133,7 +128,12 @@ pub enum DatabaseType {
     Sqlite,
 }
 
-#[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf"
+))]
 #[derive(Clone, ValueEnum, Debug, Eq, PartialEq)]
 pub enum ClientType {
     #[cfg(feature = "electrum")]
@@ -142,6 +142,8 @@ pub enum ClientType {
     Esplora,
     #[cfg(feature = "rpc")]
     Rpc,
+    #[cfg(feature = "cbf")]
+    Cbf,
 }
 
 /// Config options wallet operations can take.
@@ -159,7 +161,12 @@ pub struct WalletOpts {
     /// Sets the descriptor to use for internal/change addresses.
     #[arg(env = "INT_DESCRIPTOR", short = 'i', long)]
     pub int_descriptor: Option<String>,
-    #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+    #[cfg(any(
+        feature = "electrum",
+        feature = "esplora",
+        feature = "rpc",
+        feature = "cbf"
+    ))]
     #[arg(env = "CLIENT_TYPE", short = 'c', long, value_enum, required = true)]
     pub client_type: ClientType,
     #[cfg(feature = "sqlite")]
@@ -196,10 +203,13 @@ pub struct WalletOpts {
     /// Sets an optional cookie authentication.
     #[arg(env = "COOKIE")]
     pub cookie: Option<String>,
+    #[cfg(feature = "cbf")]
+    #[clap(flatten)]
+    pub compactfilter_opts: CompactFilterOpts,
 }
 
 /// Options to configure a SOCKS5 proxy for a blockchain client connection.
-#[cfg(any(feature = "cbf", feature = "electrum", feature = "esplora"))]
+#[cfg(any(feature = "electrum", feature = "esplora"))]
 #[derive(Debug, Args, Clone, PartialEq, Eq)]
 pub struct ProxyOpts {
     /// Sets the SOCKS5 proxy for a blockchain client.
@@ -228,26 +238,13 @@ pub struct ProxyOpts {
 #[cfg(feature = "cbf")]
 #[derive(Debug, Args, Clone, PartialEq, Eq)]
 pub struct CompactFilterOpts {
-    /// Sets the full node network address.
-    #[clap(
-        env = "ADDRESS:PORT",
-        long = "cbf-node",
-        default_value = "127.0.0.1:18444"
-    )]
-    pub address: Vec<String>,
-
     /// Sets the number of parallel node connections.
-    #[clap(name = "CONNECTIONS", long = "cbf-conn-count", default_value = "4")]
-    pub conn_count: usize,
+    #[clap(name = "CONNECTIONS", long = "cbf-conn-count", default_value = "4", value_parser = value_parser!(u8).range(1..=15))]
+    pub conn_count: u8,
 
     /// Optionally skip initial `skip_blocks` blocks.
-    #[clap(
-        env = "SKIP_BLOCKS",
-        short = 'k',
-        long = "cbf-skip-blocks",
-        default_value = "0"
-    )]
-    pub skip_blocks: usize,
+    #[clap(env = "SKIP_BLOCKS", short = 'k', long = "cbf-skip-blocks")]
+    pub skip_blocks: Option<u32>,
 }
 
 /// Wallet subcommands that can be issued without a blockchain backend.
