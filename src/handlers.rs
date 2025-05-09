@@ -48,7 +48,11 @@ use std::str::FromStr;
 
 #[cfg(feature = "electrum")]
 use crate::utils::BlockchainClient::Electrum;
+#[cfg(feature = "cbf")]
+use bdk_kyoto::{Info, LightClient};
 use bdk_wallet::bitcoin::base64::prelude::*;
+#[cfg(feature = "cbf")]
+use tokio::select;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -423,7 +427,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
             Ok(json!({}))
         }
         Sync => {
-            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            #[cfg(any(feature = "electrum", feature = "esplora", feature = "cbf"))]
             let request = wallet
                 .start_sync_with_revealed_spks()
                 .inspect(|item, progress| {
@@ -507,7 +511,6 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
-
             let txid = match client {
                 #[cfg(feature = "electrum")]
                 Electrum {
@@ -531,8 +534,49 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     .map_err(|e| Error::Generic(e.to_string()))?,
 
                 #[cfg(feature = "cbf")]
-                KyotoClient { client: _ } => {
-                    unimplemented!()
+                KyotoClient { client } => {
+                    let LightClient {
+                        requester,
+                        mut log_subscriber,
+                        mut info_subscriber,
+                        mut warning_subscriber,
+                        update_subscriber: _,
+                        node,
+                    } = client;
+
+                    let subscriber = tracing_subscriber::FmtSubscriber::new();
+                    tracing::subscriber::set_global_default(subscriber)
+                        .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {}", e)))?;
+
+                    tokio::task::spawn(async move { node.run().await });
+                    tokio::task::spawn(async move {
+                        select! {
+                            log = log_subscriber.recv() => {
+                                if let Some(log) = log {
+                                    tracing::info!("{log}");
+                                }
+                            },
+                            warn = warning_subscriber.recv() => {
+                                if let Some(warn) = warn {
+                                    tracing::warn!("{warn}");
+                                }
+                            }
+                        }
+                    });
+                    let txid = tx.compute_txid();
+                    tracing::info!("Broadcastig wtxid: {}", tx.compute_wtxid());
+                    requester
+                        .broadcast_random(tx)
+                        .map_err(|e| Error::Generic(format!("{}", e)))?;
+                    tracing::info!("Waiting for peers, this may take a minute...");
+
+                    while let Some(info) = info_subscriber.recv().await {
+                        if let Info::TxGossiped(wtxid) = info {
+                            tracing::info!("Successfully gossiped wtxid: {wtxid}");
+                            break;
+                        }
+                    }
+                    txid
                 }
             };
             Ok(json!({ "txid": txid }))
@@ -846,7 +890,7 @@ async fn respond(
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
             let blockchain =
-                new_blockchain_client(wallet_opts, &wallet).map_err(|e| e.to_string())?;
+                new_blockchain_client(wallet_opts, wallet).map_err(|e| e.to_string())?;
             let value = handle_online_wallet_subcommand(wallet, blockchain, online_subcommand)
                 .await
                 .map_err(|e| e.to_string())?;
