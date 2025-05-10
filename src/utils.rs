@@ -154,6 +154,7 @@ pub(crate) enum BlockchainClient {
 pub(crate) fn new_blockchain_client(
     wallet_opts: &WalletOpts,
     wallet: &Wallet,
+    datadir: Option<std::path::PathBuf>,
 ) -> Result<BlockchainClient, Error> {
     #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
     let url = wallet_opts.url.as_str();
@@ -199,7 +200,12 @@ pub(crate) fn new_blockchain_client(
                 None => Sync,
             };
 
-            let client = NodeBuilder::new(wallet.network())
+            let mut builder = NodeBuilder::new(wallet.network());
+
+            if let Some(datadir) = datadir {
+                builder = builder.data_dir(&datadir);
+            };
+            let client = builder
                 .required_peers(wallet_opts.compactfilter_opts.conn_count)
                 .build_with_wallet(wallet, scan_type)?;
 
