@@ -697,7 +697,8 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 };
 
                 let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
-                let blockchain_client = new_blockchain_client(&wallet_opts, &wallet)?;
+                let blockchain_client =
+                    new_blockchain_client(&wallet_opts, &wallet, Some(database_path))?;
 
                 let result = handle_online_wallet_subcommand(
                     &mut wallet,
@@ -773,7 +774,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             let (mut wallet, mut persister) = {
                 let wallet_name = &wallet_opts.wallet;
 
-                let home_dir = prepare_home_dir(cli_opts.datadir)?;
+                let home_dir = prepare_home_dir(cli_opts.datadir.clone())?;
 
                 let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
 
@@ -791,6 +792,8 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             };
             #[cfg(not(any(feature = "sqlite")))]
             let mut wallet = new_wallet(network, &wallet_opts)?;
+            let home_dir = prepare_home_dir(cli_opts.datadir.clone())?;
+            let database_path = prepare_wallet_db_dir(&wallet_opts.wallet, &home_dir)?;
 
             loop {
                 let line = readline()?;
@@ -799,7 +802,14 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     continue;
                 }
 
-                let result = respond(network, &mut wallet, &wallet_opts, line).await;
+                let result = respond(
+                    network,
+                    &mut wallet,
+                    &wallet_opts,
+                    line,
+                    Some(database_path.clone()),
+                )
+                .await;
                 #[cfg(feature = "sqlite")]
                 wallet.persist(&mut persister)?;
 
@@ -830,6 +840,7 @@ async fn respond(
     wallet: &mut Wallet,
     wallet_opts: &WalletOpts,
     line: &str,
+    _datadir: Option<std::path::PathBuf>,
 ) -> Result<bool, String> {
     use clap::Parser;
 
@@ -846,7 +857,7 @@ async fn respond(
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
             let blockchain =
-                new_blockchain_client(wallet_opts, &wallet).map_err(|e| e.to_string())?;
+                new_blockchain_client(wallet_opts, &wallet, _datadir).map_err(|e| e.to_string())?;
             let value = handle_online_wallet_subcommand(wallet, blockchain, online_subcommand)
                 .await
                 .map_err(|e| e.to_string())?;
