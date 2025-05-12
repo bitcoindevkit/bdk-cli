@@ -16,9 +16,21 @@ use std::str::FromStr;
 use std::path::{Path, PathBuf};
 
 use crate::commands::WalletOpts;
+#[cfg(feature = "cbf")]
+use bdk_kyoto::{
+    builder::NodeBuilder,
+    Info, LightClient, NodeBuilderExt, Receiver,
+    ScanType::{Recovery, Sync},
+    UnboundedReceiver, Warning,
+};
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 
-#[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf"
+))]
 use crate::commands::ClientType;
 
 use bdk_wallet::Wallet;
@@ -39,12 +51,7 @@ pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
     Ok((addr.script_pubkey(), val))
 }
 
-#[cfg(any(
-    feature = "electrum",
-    feature = "cbf",
-    feature = "esplora",
-    feature = "rpc"
-))]
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 /// Parse the proxy (Socket:Port) argument from the cli input.
 pub(crate) fn parse_proxy_auth(s: &str) -> Result<(String, String), Error> {
     let parts: Vec<_> = s.split(':').collect();
@@ -132,7 +139,9 @@ pub(crate) enum BlockchainClient {
     RpcClient {
         client: Box<bdk_bitcoind_rpc::bitcoincore_rpc::Client>,
     },
-    // TODO cbf
+
+    #[cfg(feature = "cbf")]
+    KyotoClient { client: LightClient },
 }
 
 #[cfg(any(
@@ -142,7 +151,11 @@ pub(crate) enum BlockchainClient {
     feature = "cbf",
 ))]
 /// Create a new blockchain from the wallet configuration options.
-pub(crate) fn new_blockchain_client(wallet_opts: &WalletOpts) -> Result<BlockchainClient, Error> {
+pub(crate) fn new_blockchain_client(
+    wallet_opts: &WalletOpts,
+    wallet: &Wallet,
+) -> Result<BlockchainClient, Error> {
+    #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
     let url = wallet_opts.url.as_str();
     let client = match wallet_opts.client_type {
         #[cfg(feature = "electrum")]
@@ -177,6 +190,20 @@ pub(crate) fn new_blockchain_client(wallet_opts: &WalletOpts) -> Result<Blockcha
             BlockchainClient::RpcClient {
                 client: Box::new(client),
             }
+        }
+
+        #[cfg(feature = "cbf")]
+        ClientType::Cbf => {
+            let scan_type = match wallet_opts.compactfilter_opts.skip_blocks {
+                Some(from_height) => Recovery { from_height },
+                None => Sync,
+            };
+
+            let client = NodeBuilder::new(wallet.network())
+                .required_peers(wallet_opts.compactfilter_opts.conn_count)
+                .build_with_wallet(wallet, scan_type)?;
+
+            BlockchainClient::KyotoClient { client }
         }
     };
     Ok(client)
@@ -262,4 +289,80 @@ pub(crate) fn new_wallet(network: Network, wallet_opts: &WalletOpts) -> Result<W
             "An external descriptor is required.".to_string(),
         )),
     }
+}
+
+#[cfg(feature = "cbf")]
+pub async fn trace_logger(
+    mut log_subscriber: Receiver<String>,
+    mut info_subcriber: Receiver<Info>,
+    mut warning_subscriber: UnboundedReceiver<Warning>,
+) {
+    loop {
+        tokio::select! {
+            log = log_subscriber.recv() => {
+                if let Some(log) = log {
+                    tracing::info!("{log}")
+                }
+            }
+            info = info_subcriber.recv() => {
+                if let Some(info) = info {
+                    tracing::info!("{info}")
+                }
+            }
+            warn = warning_subscriber.recv() => {
+                if let Some(warn) = warn {
+                    tracing::warn!("{warn}")
+                }
+            }
+        }
+    }
+}
+
+// Handle Kyoto Client sync
+#[cfg(feature = "cbf")]
+pub async fn sync_kyoto_client(wallet: &mut Wallet, client: LightClient) -> Result<(), Error> {
+    let LightClient {
+        requester,
+        log_subscriber,
+        info_subscriber,
+        warning_subscriber,
+        mut update_subscriber,
+        node,
+    } = client;
+
+    let subscriber = tracing_subscriber::FmtSubscriber::new();
+    tracing::subscriber::set_global_default(subscriber)
+        .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {}", e)))?;
+
+    tokio::task::spawn(async move { node.run().await });
+    tokio::task::spawn(async move {
+        trace_logger(log_subscriber, info_subscriber, warning_subscriber).await
+    });
+
+    if !requester.is_running() {
+        tracing::error!("Kyoto node is not running");
+        return Err(Error::Generic("Kyoto node failed to start".to_string()));
+    }
+    tracing::info!("Kyoto node is running");
+
+    let update = update_subscriber.update().await;
+    tracing::info!("Received update: applying to wallet");
+    wallet
+        .apply_update(update)
+        .map_err(|e| Error::Generic(format!("Failed to apply update: {}", e)))?;
+
+    tracing::info!(
+        "Chain tip: {}, Transactions: {}, Balance: {}",
+        wallet.local_chain().tip().height(),
+        wallet.transactions().count(),
+        wallet.balance().total().to_sat()
+    );
+
+    tracing::info!(
+        "Sync completed: tx_count={}, balance={}",
+        wallet.transactions().count(),
+        wallet.balance().total().to_sat()
+    );
+
+    Ok(())
 }

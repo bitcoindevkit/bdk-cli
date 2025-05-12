@@ -85,4 +85,8 @@ pub enum BDKCliError {
     #[cfg(feature = "rpc")]
     #[error("RPC error: {0}")]
     BitcoinCoreRpcError(#[from] bdk_bitcoind_rpc::bitcoincore_rpc::Error),
+
+    #[cfg(feature = "cbf")]
+    #[error("BDK-Kyoto error: {0}")]
+    BuilderError(#[from] bdk_kyoto::builder::BuilderError),
 }
