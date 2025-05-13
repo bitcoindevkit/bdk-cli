@@ -38,8 +38,6 @@ use bdk_wallet::miniscript::descriptor::{DescriptorXKey, Wildcard};
 
 use std::str::FromStr;
 
-use miniscript::Tap;
-
 
 #[cfg(any(
     feature = "electrum",
@@ -1051,19 +1049,21 @@ pub fn generate_standard_descriptor(
     }
 }
 
-pub fn generate_bip84_descriptor_from_key(
+pub fn generate_bip_descriptor_from_key(
     network: &Network,
     key: &str,
+    derivation_path_str: &str,
+    descriptor_type: DescriptorType,
 ) -> Result<serde_json::Value, Error> {
     let secp = Secp256k1::new();
-    let derivation_path: DerivationPath = "m/84h/1h/0h".parse()
-    .map_err(|e| Error::InvalidDerivationPath(format!("DerivationPath Error: {e}")))?;
+    let derivation_path: DerivationPath = derivation_path_str.parse()
+        .map_err(|e| Error::InvalidDerivationPath(format!("DerivationPath Error: {e}")))?;
     let xprv: Xpriv = key.parse().map_err(|e| Error::InvalidXprv(format!("Invalid xprv: {e}")))?;
     let fingerprint = xprv.fingerprint(&secp);
 
     let make_desc_key = |branch: u32| -> Result<(String, String), Error> {
         let branch_path: DerivationPath = DerivationPath::from_str(&format!("{branch}"))
-        .map_err(|e| Error::InvalidDerivationPath(e.to_string()))?;
+            .map_err(|e| Error::InvalidDerivationPath(format!("DerivationPath Error: {e}")))?;
 
         let desc_xprv = DescriptorXKey {
             origin: Some((fingerprint, derivation_path.clone())), // only account-level path
@@ -1077,16 +1077,23 @@ pub fn generate_bip84_descriptor_from_key(
         // Use the BDK extract() to get both descriptor and keymap
         let (desc_key, keymap, _) =
             IntoDescriptorKey::<Segwitv0>::into_descriptor_key(desc_secret.clone())
-            .map_err(|e| Error::DescriptorKeyError(e.to_string()))?
-        .extract(&secp)
-        .map_err(|e| Error::DescriptorKeyError(e.to_string()))?;
+                .map_err(|e| Error::DescriptorKeyError(e.to_string()))?
+            .extract(&secp)
+            .map_err(|e| Error::DescriptorKeyError(e.to_string()))?;
 
-        // Create the public descriptor from the public key
-        let public_descriptor = Descriptor::new_wpkh(desc_key.clone())?;
+        let public_descriptor = match descriptor_type {
+            DescriptorType::Bip84 => Descriptor::new_wpkh(desc_key.clone())?,
+            DescriptorType::Bip86 => Descriptor::new_tr(desc_key.clone(), None)?,
+            DescriptorType::Bip49 => Descriptor::new_sh_wpkh(desc_key.clone())?,
+            DescriptorType::Bip44 => Descriptor::new_pkh(desc_key.clone())?,
+        };
 
-        // Here, we need to ensure that `desc_secret` is a valid descriptor type
-        // for the private descriptor; we must use DescriptorPublicKey
-        let private_descriptor = Descriptor::new_wpkh(desc_key)?;
+        let private_descriptor = match descriptor_type {
+            DescriptorType::Bip84 => Descriptor::new_wpkh(desc_key)?,
+            DescriptorType::Bip86 => Descriptor::new_tr(desc_key, None)?,
+            DescriptorType::Bip49 => Descriptor::new_sh_wpkh(desc_key)?,
+            DescriptorType::Bip44 => Descriptor::new_pkh(desc_key)?,
+        };
 
         // Convert both to string representations
         let public_descriptor_str = public_descriptor.to_string();
@@ -1099,7 +1106,7 @@ pub fn generate_bip84_descriptor_from_key(
     let (internal_pub, internal_priv) = make_desc_key(1)?;
 
     Ok(serde_json::json!({
-        "type": "bip84",
+        "type": descriptor_type.to_string(),
         "external": {
             "public": external_pub,
             "private": external_priv,
@@ -1113,186 +1120,38 @@ pub fn generate_bip84_descriptor_from_key(
     }))
 }
 
-pub fn generate_bip86_descriptor_from_key(
-    network: &Network,
-    key: &str,
-) -> Result<Value, Error> {
-    let secp = Secp256k1::new();
-    let derivation_path: DerivationPath = "m/86h/1h/0h".parse()
-    .map_err(|e| Error::InvalidDerivationPath(format!("DerivationPath Error: {e}")))?;
-    let xprv: Xpriv = key.parse().map_err(|e| Error::InvalidXprv(format!("Invalid xprv: {e}")))?;
-    let fingerprint = xprv.fingerprint(&secp);
-
-    let make_desc_key = |branch: u32| -> Result<(String, String), Error> {
-        let branch_path: DerivationPath = DerivationPath::from_str(&format!("{branch}"))
-        .map_err(|e| Error::InvalidDerivationPath(format!("DerivationPath Error: {e}")))?;
-
-        let desc_xprv = DescriptorXKey {
-            origin: Some((fingerprint, derivation_path.clone())), // only account-level path
-            xkey: xprv,
-            derivation_path: branch_path, // just the change (0 for external, 1 for internal)
-            wildcard: Wildcard::Unhardened,
-        };
-
-        let desc_secret = DescriptorSecretKey::XPrv(desc_xprv);
-
-        // Use the BDK extract() to get both descriptor and keymap
-        let (desc_key, keymap, _) =
-            IntoDescriptorKey::<Tap>::into_descriptor_key(desc_secret.clone())
-            .map_err(|e| Error::DescriptorKeyError(e.to_string()))?
-        .extract(&secp)
-        .map_err(|e| Error::DescriptorKeyError(e.to_string()))?;
-
-        // Create the public descriptor from the public key
-        let public_descriptor = Descriptor::new_tr(desc_key.clone(), None)?;
-
-        // Here, we need to ensure that `desc_secret` is a valid descriptor type
-        // for the private descriptor; we must use DescriptorPublicKey
-        let private_descriptor = Descriptor::new_tr(desc_key, None)?;
-
-        // Convert both to string representations
-        let public_descriptor_str = public_descriptor.to_string();
-        let private_descriptor_str = private_descriptor.to_string_with_secret(&keymap);
-
-        Ok((public_descriptor_str, private_descriptor_str))
-    };
-
-    let (external_pub, external_priv) = make_desc_key(0)?;
-    let (internal_pub, internal_priv) = make_desc_key(1)?;
-
-    Ok(serde_json::json!({
-        "type": "bip86",
-        "external": {
-            "public": external_pub,
-            "private": external_priv,
-        },
-        "internal": {
-            "public": internal_pub,
-            "private": internal_priv,
-        },
-        "fingerprint": fingerprint.to_string(),
-        "network": network.to_string()
-    }))
+// Enum for descriptor types
+pub enum DescriptorType {
+    Bip44,
+    Bip49,
+    Bip84,
+    Bip86,
 }
 
-pub fn generate_bip49_descriptor_from_key(
-    network: &Network,
-    key: &str,
-) -> Result<Value, Error> {
-    let secp = Secp256k1::new();
-    let derivation_path: DerivationPath = "m/49h/1h/0h".parse()
-    .map_err(|e| Error::InvalidDerivationPath(format!("DerivationPath Error: {e}")))?;
-    let xprv: Xpriv = key.parse().map_err(|e| Error::InvalidXprv(format!("Invalid xprv: {e}")))?;
-    let fingerprint = xprv.fingerprint(&secp);
-
-    let make_desc_key = |branch: u32| -> Result<(String, String), Error> {
-        let branch_path: DerivationPath = DerivationPath::from_str(&format!("{branch}"))
-        .map_err(|e| Error::InvalidDerivationPath(format!("DerivationPath Error: {e}")))?;
-
-        let desc_xprv = DescriptorXKey {
-            origin: Some((fingerprint, derivation_path.clone())), // only account-level path
-            xkey: xprv,
-            derivation_path: branch_path, // just the change (0 for external, 1 for internal)
-            wildcard: Wildcard::Unhardened,
-        };
-
-        let desc_secret = DescriptorSecretKey::XPrv(desc_xprv);
-
-        // Use the BDK extract() to get both descriptor and keymap
-        let (desc_key, keymap, _) =
-            IntoDescriptorKey::<Segwitv0>::into_descriptor_key(desc_secret.clone())
-            .map_err(|e| Error::DescriptorKeyError(e.to_string()))?
-        .extract(&secp)
-        .map_err(|e| Error::DescriptorKeyError(e.to_string()))?;
-
-        // Create the public descriptor from the public key
-        let public_descriptor = Descriptor::new_sh_wpkh(desc_key.clone())?;
-
-        // Here, we need to ensure that `desc_secret` is a valid descriptor type
-        // for the private descriptor; we must use DescriptorPublicKey
-        let private_descriptor = Descriptor::new_sh_wpkh(desc_key)?;
-
-        // Convert both to string representations
-        let public_descriptor_str = public_descriptor.to_string();
-        let private_descriptor_str = private_descriptor.to_string_with_secret(&keymap);
-
-        Ok((public_descriptor_str, private_descriptor_str))
-    };
-
-    let (external_pub, external_priv) = make_desc_key(0)?;
-    let (internal_pub, internal_priv) = make_desc_key(1)?;
-
-    Ok(serde_json::json!({
-        "type": "bip49",
-        "external": {
-            "public": external_pub,
-            "private": external_priv,
-        },
-        "internal": {
-            "public": internal_pub,
-            "private": internal_priv,
-        },
-        "fingerprint": fingerprint.to_string(),
-        "network": network.to_string()
-    }))
+impl ToString for DescriptorType {
+    fn to_string(&self) -> String {
+        match self {
+            DescriptorType::Bip44 => "bip44".to_string(),
+            DescriptorType::Bip49 => "bip49".to_string(),
+            DescriptorType::Bip84 => "bip84".to_string(),
+            DescriptorType::Bip86 => "bip86".to_string(),
+        }
+    }
 }
 
-pub fn generate_bip44_descriptor_from_key(
-    network: &Network,
-    key: &str,
-) -> Result<Value,Error> {
-    let secp = Secp256k1::new();
-    let derivation_path: DerivationPath = "m/44h/1h/0h".parse()
-    .map_err(|e| Error::InvalidDerivationPath(format!("DerivationPath Error: {e}")))?;
-    let xprv: Xpriv = key.parse().map_err(|e| Error::InvalidXprv(format!("Invalid xprv: {e}")))?;
-    let fingerprint = xprv.fingerprint(&secp);
+// Wrapper functions for the specific BIP types
+pub fn generate_bip84_descriptor_from_key(network: &Network, key: &str) -> Result<serde_json::Value, Error> {
+    generate_bip_descriptor_from_key(network, key, "m/84h/1h/0h", DescriptorType::Bip84)
+}
 
-    let make_desc_key = |branch: u32| -> Result<(String, String), Error> {
-        let branch_path: DerivationPath = DerivationPath::from_str(&format!("{branch}"))
-        .map_err(|e| Error::InvalidDerivationPath(format!("DerivationPath Error: {e}")))?;
+pub fn generate_bip86_descriptor_from_key(network: &Network, key: &str) -> Result<serde_json::Value, Error> {
+    generate_bip_descriptor_from_key(network, key, "m/86h/1h/0h", DescriptorType::Bip86)
+}
 
-        let desc_xprv = DescriptorXKey {
-            origin: Some((fingerprint, derivation_path.clone())), // only account-level path
-            xkey: xprv,
-            derivation_path: branch_path, // just the change (0 for external, 1 for internal)
-            wildcard: Wildcard::Unhardened,
-        };
+pub fn generate_bip49_descriptor_from_key(network: &Network, key: &str) -> Result<serde_json::Value, Error> {
+    generate_bip_descriptor_from_key(network, key, "m/49h/1h/0h", DescriptorType::Bip49)
+}
 
-        let desc_secret = DescriptorSecretKey::XPrv(desc_xprv);
-
-        // Use the BDK extract() to get both descriptor and keymap
-        let (desc_key, keymap, _) =
-            IntoDescriptorKey::<Segwitv0>::into_descriptor_key(desc_secret.clone())?
-                .extract(&secp)?;
-
-        // Create the public descriptor from the public key
-        let public_descriptor = Descriptor::new_pkh(desc_key.clone())?;
-
-        // Here, we need to ensure that `desc_secret` is a valid descriptor type
-        // for the private descriptor; we must use DescriptorPublicKey
-        let private_descriptor = Descriptor::new_pkh(desc_key)?;
-
-        // Convert both to string representations
-        let public_descriptor_str = public_descriptor.to_string();
-        let private_descriptor_str = private_descriptor.to_string_with_secret(&keymap);
-
-        Ok((public_descriptor_str, private_descriptor_str))
-    };
-
-    let (external_pub, external_priv) = make_desc_key(0)?;
-    let (internal_pub, internal_priv) = make_desc_key(1)?;
-
-    Ok(serde_json::json!({
-        "type": "bip44",
-        "external": {
-            "public": external_pub,
-            "private": external_priv,
-        },
-        "internal": {
-            "public": internal_pub,
-            "private": internal_priv,
-        },
-        "fingerprint": fingerprint.to_string(),
-        "network": network.to_string()
-    }))
+pub fn generate_bip44_descriptor_from_key(network: &Network, key: &str) -> Result<serde_json::Value, Error> {
+    generate_bip_descriptor_from_key(network, key, "m/44h/1h/0h", DescriptorType::Bip44)
 }
