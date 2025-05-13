@@ -10,7 +10,17 @@
 //!
 //! This module includes all the utility tools used by the App.
 use crate::error::BDKCliError as Error;
+use crate::commands::GenerateDescriptorArgs;
+
 use std::str::FromStr;
+
+use crate::handlers::{ 
+    generate_multipath_descriptor, 
+    generate_standard_descriptor, 
+    generate_new_bip84_descriptor_with_mnemonic 
+};
+
+
 
 #[cfg(feature = "sqlite")]
 use std::path::{Path, PathBuf};
@@ -365,4 +375,26 @@ pub async fn sync_kyoto_client(wallet: &mut Wallet, client: LightClient) -> Resu
     );
 
     Ok(())
+}
+pub fn generate_descriptor_from_args(
+    args: GenerateDescriptorArgs,
+    network: Network,
+) -> Result<serde_json::Value, Error>{
+    match (args.multipath, args.key.as_ref()) {
+        (true, Some(key)) => generate_multipath_descriptor(&network, args.r#type, key),
+        (false, Some(key)) => generate_standard_descriptor(&network, args.r#type, key),
+        (false, None) => {
+            // New default: generate descriptor from fresh mnemonic (for script_type 84 only maybe)
+            if args.r#type == 84 {
+                generate_new_bip84_descriptor_with_mnemonic(network)
+            } else {
+                Err(Error::Generic(format!(
+                    "Only script type 84 is supported for mnemonic-based generation"
+                )))
+            }
+        }
+        _ => Err(Error::InvalidArguments(format!(
+            "Invalid arguments: please provide a key or a weak string"
+        ))),
+    }
 }

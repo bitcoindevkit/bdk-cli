@@ -103,32 +103,36 @@ pub enum CliSubCommand {
         #[command(flatten)]
         wallet_opts: WalletOpts,
     },
-    /// Generate a random Bitcoin descriptor and mnemonic.
+    /// Generate a Bitcoin descriptor either from a provided XPRV or by generating a new random mnemonic.
+    /// 
+    /// This function supports two modes:
+    /// 
+    /// 1. **Using a provided XPRV**:
+    ///    - Generates BIP32-based descriptors from the provided extended private key.
+    ///    - Derives both external (`/0/*`) and internal (`/1/*`) paths.
+    ///    - Automatically detects the script type from the `--type` flag (e.g., BIP44, BIP49, BIP84, BIP86).
     ///
-    /// This function generates a new 12-word BIP39 mnemonic phrase and uses it to derive a BIP32
-    /// extended private key (XPRV). It constructs two BIP86-compatible single-sig descriptors:
-    /// - An **external descriptor** used for receiving funds (`/0/*`)
-    /// - An **internal descriptor** used for change outputs (`/1/*`)
+    /// 2. **Generating a new mnemonic**:
+    ///    - Creates a new 12-word BIP39 mnemonic phrase.
+    ///    - Derives a BIP32 root XPRV using the standard derivation path based on the selected script type.
+    ///    - Constructs external and internal descriptors using that XPRV.
+    /// 
+    /// The output is a prettified JSON object containing:
+    /// - `mnemonic` (if generated): the 12-word seed phrase.
+    /// - `external`: public and private descriptors for receive addresses (`/0/*`)
+    /// - `internal`: public and private descriptors for change addresses (`/1/*`)
+    /// - `fingerprint`: master key fingerprint used in the descriptors
+    /// - `network`: either `mainnet`, `testnet`, `signet`, or `regtest`
+    /// - `type`: one of `bip44`, `bip49`, `bip84`, or `bip86`
     ///
-    /// These descriptors follow the standard derivation path `m/86h/0h/0h` for mainnet (or `86h/1h/0h`
-    /// for testnet), and use `wpkh` (native SegWit) script format.
+    /// > ⚠️ **Security Warning**: This feature is intended for testing and development purposes. 
+    /// > Do **not** use generated descriptors or mnemonics to secure real Bitcoin funds on mainnet.
     ///
-    /// The output includes both the public and private forms of the descriptors, along with the mnemonic.
-    ///
-    /// > ⚠️ This feature is **EXPERIMENTAL** and is intended for testing or development. Do **not** use
-    /// > this output to secure real Bitcoin funds on mainnet.
-    ///
-    /// Returns a JSON object containing:
-    /// - `mnemonic`: the 12-word phrase
-    /// - `external_descriptor`: public and private forms for receive addresses
-    /// - `internal_descriptor`: public and private forms for change addresses.
+
     Descriptor(GenerateDescriptorArgs),
 }
 #[derive(Debug, Clone, PartialEq, Args)]
 pub struct GenerateDescriptorArgs {
-    #[clap(long)]
-    pub network: Network,
-
     #[clap(long, value_parser = clap::value_parser!(u8).range(44..=86))]
     pub r#type: u8, // 44, 49, 84, 86
 
@@ -138,13 +142,6 @@ pub struct GenerateDescriptorArgs {
     pub key: Option<String>, // Positional argument (tprv/tpub/xprv/xpub)
 }
 
-#[derive(Debug, Clone, PartialEq, ValueEnum)]
-pub enum ScriptType {
-    Bip44,
-    Bip49,
-    Bip84,
-    Bip86,
-}
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
 pub enum WalletSubCommand {
