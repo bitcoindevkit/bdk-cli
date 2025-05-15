@@ -2,7 +2,6 @@ use bdk_wallet::bitcoin::hex::HexToBytesError;
 use bdk_wallet::bitcoin::{base64, consensus};
 use thiserror::Error;
 
-
 #[derive(Debug, Error)]
 pub enum BDKCliError {
     #[error("BIP39 error: {0}")]

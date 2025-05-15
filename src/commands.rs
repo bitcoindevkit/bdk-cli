@@ -104,9 +104,9 @@ pub enum CliSubCommand {
         wallet_opts: WalletOpts,
     },
     /// Generate a Bitcoin descriptor either from a provided XPRV or by generating a new random mnemonic.
-    /// 
+    ///
     /// This function supports two modes:
-    /// 
+    ///
     /// 1. **Using a provided XPRV**:
     ///    - Generates BIP32-based descriptors from the provided extended private key.
     ///    - Derives both external (`/0/*`) and internal (`/1/*`) paths.
@@ -116,7 +116,7 @@ pub enum CliSubCommand {
     ///    - Creates a new 12-word BIP39 mnemonic phrase.
     ///    - Derives a BIP32 root XPRV using the standard derivation path based on the selected script type.
     ///    - Constructs external and internal descriptors using that XPRV.
-    /// 
+    ///
     /// The output is a prettified JSON object containing:
     /// - `mnemonic` (if generated): the 12-word seed phrase.
     /// - `external`: public and private descriptors for receive addresses (`/0/*`)
@@ -125,10 +125,9 @@ pub enum CliSubCommand {
     /// - `network`: either `mainnet`, `testnet`, `signet`, or `regtest`
     /// - `type`: one of `bip44`, `bip49`, `bip84`, or `bip86`
     ///
-    /// > ⚠️ **Security Warning**: This feature is intended for testing and development purposes. 
+    /// > ⚠️ **Security Warning**: This feature is intended for testing and development purposes.
     /// > Do **not** use generated descriptors or mnemonics to secure real Bitcoin funds on mainnet.
     ///
-
     Descriptor(GenerateDescriptorArgs),
 }
 #[derive(Debug, Clone, PartialEq, Args)]

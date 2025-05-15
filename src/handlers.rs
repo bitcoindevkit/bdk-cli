@@ -12,7 +12,6 @@
 
 use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::*;
-
 use crate::error::BDKCliError as Error;
 #[cfg(feature = "cbf")]
 use crate::utils::BlockchainClient::KyotoClient;
@@ -21,18 +20,18 @@ use bdk_wallet::bip39::{Language, Mnemonic};
 use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
 use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
-use bdk_wallet::bitcoin::Network;
-use serde::ser::Error as SerdeErrorTrait;
-use serde_json::Error as SerdeError;
 use bdk_wallet::bitcoin::secp256k1::Secp256k1;
+use bdk_wallet::bitcoin::Network;
 use bdk_wallet::descriptor::Segwitv0;
 use bdk_wallet::keys::bip39::WordCount;
 use bdk_wallet::keys::{GeneratableKey, GeneratedKey};
+use serde::ser::Error as SerdeErrorTrait;
 use serde_json::json;
+use serde_json::Error as SerdeError;
 use serde_json::Value;
+use std::fmt;
 
 use std::str::FromStr;
-
 
 #[cfg(any(
     feature = "electrum",
@@ -840,7 +839,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             let network = cli_opts.network; // Or just use cli_opts directly
             let json = handle_generate_descriptor(args.clone(), network)?;
             Ok(json)
-        },
+        }
     };
     result.map_err(|e| e.into())
 }
@@ -949,7 +948,7 @@ mod test {
 pub fn generate_descriptor_from_args(
     args: GenerateDescriptorArgs,
     network: Network,
-) -> Result<serde_json::Value, Error>{
+) -> Result<serde_json::Value, Error> {
     match (args.multipath, args.key.as_ref()) {
         (true, Some(key)) => generate_multipath_descriptor(&network, args.r#type, key),
         (false, Some(key)) => generate_standard_descriptor(&network, args.r#type, key),
@@ -958,17 +957,16 @@ pub fn generate_descriptor_from_args(
             if args.r#type == 84 {
                 generate_new_bip84_descriptor_with_mnemonic(network)
             } else {
-                Err(Error::Generic(format!(
-                    "Only script type 84 is supported for mnemonic-based generation"
-                )))
+                Err(Error::Generic(
+                    "Only script type 84 is supported for mnemonic-based generation".to_string(),
+                ))
             }
         }
-        _ => Err(Error::InvalidArguments(format!(
-            "Invalid arguments: please provide a key or a weak string"
-        ))),
+        _ => Err(Error::InvalidArguments(
+            "Invalid arguments: please provide a key or a weak string".to_string(),
+        )),
     }
 }
-
 
 pub fn generate_standard_descriptor(
     network: &Network,
@@ -984,30 +982,43 @@ pub fn generate_standard_descriptor(
     }
 }
 
-impl ToString for DescriptorType {
-    fn to_string(&self) -> String {
-        match self {
-            DescriptorType::Bip44 => "bip44".to_string(),
-            DescriptorType::Bip49 => "bip49".to_string(),
-            DescriptorType::Bip84 => "bip84".to_string(),
-            DescriptorType::Bip86 => "bip86".to_string(),
-        }
+impl fmt::Display for DescriptorType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            DescriptorType::Bip44 => "bip44",
+            DescriptorType::Bip49 => "bip49",
+            DescriptorType::Bip84 => "bip84",
+            DescriptorType::Bip86 => "bip86",
+        };
+        write!(f, "{}", s)
     }
 }
 
 // Wrapper functions for the specific BIP types
-pub fn generate_bip84_descriptor_from_key(network: &Network, key: &str) -> Result<serde_json::Value, Error> {
+pub fn generate_bip84_descriptor_from_key(
+    network: &Network,
+    key: &str,
+) -> Result<serde_json::Value, Error> {
     generate_bip_descriptor_from_key(network, key, "m/84h/1h/0h", DescriptorType::Bip84)
 }
 
-pub fn generate_bip86_descriptor_from_key(network: &Network, key: &str) -> Result<serde_json::Value, Error> {
+pub fn generate_bip86_descriptor_from_key(
+    network: &Network,
+    key: &str,
+) -> Result<serde_json::Value, Error> {
     generate_bip_descriptor_from_key(network, key, "m/86h/1h/0h", DescriptorType::Bip86)
 }
 
-pub fn generate_bip49_descriptor_from_key(network: &Network, key: &str) -> Result<serde_json::Value, Error> {
+pub fn generate_bip49_descriptor_from_key(
+    network: &Network,
+    key: &str,
+) -> Result<serde_json::Value, Error> {
     generate_bip_descriptor_from_key(network, key, "m/49h/1h/0h", DescriptorType::Bip49)
 }
 
-pub fn generate_bip44_descriptor_from_key(network: &Network, key: &str) -> Result<serde_json::Value, Error> {
+pub fn generate_bip44_descriptor_from_key(
+    network: &Network,
+    key: &str,
+) -> Result<serde_json::Value, Error> {
     generate_bip_descriptor_from_key(network, key, "m/44h/1h/0h", DescriptorType::Bip44)
 }
