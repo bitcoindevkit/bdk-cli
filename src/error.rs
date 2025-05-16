@@ -1,4 +1,5 @@
 use bdk_wallet::bitcoin::hex::HexToBytesError;
+use bdk_wallet::bitcoin::psbt::ExtractTxError;
 use bdk_wallet::bitcoin::{base64, consensus};
 use thiserror::Error;
 
@@ -51,7 +52,7 @@ pub enum BDKCliError {
     ParseOutPointError(#[from] bdk_wallet::bitcoin::blockdata::transaction::ParseOutPointError),
 
     #[error("PsbtExtractTxError: {0}")]
-    PsbtExtractTxError(#[from] bdk_wallet::bitcoin::psbt::ExtractTxError),
+    PsbtExtractTxError(Box<ExtractTxError>),
 
     #[error("PsbtError: {0}")]
     PsbtError(#[from] bdk_wallet::bitcoin::psbt::Error),
@@ -89,4 +90,10 @@ pub enum BDKCliError {
     #[cfg(feature = "cbf")]
     #[error("BDK-Kyoto error: {0}")]
     BuilderError(#[from] bdk_kyoto::builder::BuilderError),
+}
+
+impl From<ExtractTxError> for BDKCliError {
+    fn from(value: ExtractTxError) -> Self {
+        BDKCliError::PsbtExtractTxError(Box::new(value))
+    }
 }

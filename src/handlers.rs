@@ -42,7 +42,7 @@ use std::collections::BTreeMap;
 #[cfg(any(feature = "electrum", feature = "esplora"))]
 use std::collections::HashSet;
 use std::convert::TryFrom;
-#[cfg(feature = "repl")]
+#[cfg(any(feature = "repl", feature = "electrum", feature = "esplora"))]
 use std::io::Write;
 use std::str::FromStr;
 
@@ -580,7 +580,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                         while let Some(info) = info_subscriber.recv().await {
                             match info {
                                 Info::TxGossiped(wtxid) => {
-                                    tracing::info!("Succuessfully broadcast WTXID: {wtxid}");
+                                    tracing::info!("Successfully broadcast WTXID: {wtxid}");
                                     break;
                                 }
                                 Info::ConnectionsMet => {
@@ -745,11 +745,11 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
             let network = cli_opts.network;
+            let home_dir = prepare_home_dir(cli_opts.datadir)?;
+            let wallet_name = &wallet_opts.wallet;
+            let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
             #[cfg(feature = "sqlite")]
             let result = {
-                let home_dir = prepare_home_dir(cli_opts.datadir)?;
-                let wallet_name = &wallet_opts.wallet;
-                let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
                 let mut persister = match &wallet_opts.database_type {
                     #[cfg(feature = "sqlite")]
                     DatabaseType::Sqlite => {
@@ -762,7 +762,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
 
                 let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
                 let blockchain_client =
-                    new_blockchain_client(&wallet_opts, &wallet, Some(database_path))?;
+                    new_blockchain_client(&wallet_opts, &wallet, database_path)?;
 
                 let result = handle_online_wallet_subcommand(
                     &mut wallet,
@@ -775,6 +775,9 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             };
             #[cfg(not(any(feature = "sqlite")))]
             let result = {
+                let wallet = new_wallet(network, &wallet_opts)?;
+                let blockchain_client =
+                    crate::utils::new_blockchain_client(&wallet_opts, &wallet, database_path)?;
                 let mut wallet = new_wallet(network, &wallet_opts)?;
                 handle_online_wallet_subcommand(&mut wallet, blockchain_client, online_subcommand)
                     .await?
@@ -871,7 +874,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     &mut wallet,
                     &wallet_opts,
                     line,
-                    Some(database_path.clone()),
+                    database_path.clone(),
                 )
                 .await;
                 #[cfg(feature = "sqlite")]
@@ -904,7 +907,7 @@ async fn respond(
     wallet: &mut Wallet,
     wallet_opts: &WalletOpts,
     line: &str,
-    _datadir: Option<std::path::PathBuf>,
+    _datadir: std::path::PathBuf,
 ) -> Result<bool, String> {
     use clap::Parser;
 
