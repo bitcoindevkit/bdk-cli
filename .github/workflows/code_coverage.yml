@@ -1,52 +1,44 @@
-on: [push]
+on: [push, pull_request]
 
 name: Code Coverage
 
 jobs:
-
-  codecov:
+  Codecov:
     name: Code Coverage
     runs-on: ubuntu-latest
     env:
-      CARGO_INCREMENTAL: '0'
-      RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
-      RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
+      RUSTFLAGS: "-Cinstrument-coverage"
+      RUSTDOCFLAGS: "-Cinstrument-coverage"
+      LLVM_PROFILE_FILE: "./target/coverage/%p-%m.profraw"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install rustup
-        run: curl https://sh.rustup.rs -sSf | sh -s -- -y
-      - name: Set profile
-        run: rustup set profile minimal
-      - name: Update toolchain
-        run: rustup update
-      - name: Override the default toolchain
-        run: rustup override set nightly
-
-
-      - name: Test Compiler
-        run: cargo test --features compiler
-
-      - name: Test Electrum
-        run: cargo test --features electrum
-
-      - name: Test Esplora
-        run: cargo test --features esplora
-
-      - name: Test Cbf
-        run: cargo test --features cbf
-        
-      - name: Test RPC
-        run: cargo test --features rpc
-
-      - id: coverage
-        name: Generate coverage
-        uses: actions-rs/grcov@v0.1.5
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
         with:
-          file: ${{ steps.coverage.outputs.report }}
-          directory: ./coverage/reports/
+          persist-credentials: false
+      - name: Install lcov tools
+        run: sudo apt-get install lcov -y
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
+          components: llvm-tools-preview
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2.7.8
+      - name: Install grcov
+        run: if [[ ! -e ~/.cargo/bin/grcov ]]; then cargo install grcov; fi
+      - name: Test
+        run: cargo test --all-features
+      - name: Make coverage directory
+        run: mkdir coverage
+      - name: Run grcov
+        run: grcov . --binary-path ./target/debug/ -s . -t lcov --branch --ignore-not-existing --keep-only 'src/**' --ignore 'tests/**' -o ./coverage/lcov.info
+      - name: Check lcov.info
+        run: cat ./coverage/lcov.info
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: ./coverage/lcov.info
