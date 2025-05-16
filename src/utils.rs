@@ -12,7 +12,6 @@
 use crate::error::BDKCliError as Error;
 use std::str::FromStr;
 
-#[cfg(feature = "sqlite")]
 use std::path::{Path, PathBuf};
 
 use crate::commands::WalletOpts;
@@ -76,11 +75,11 @@ pub(crate) fn parse_address(address_str: &str) -> Result<Address, Error> {
     Ok(unchecked_address.assume_checked())
 }
 
-#[cfg(feature = "sqlite")]
 /// Prepare bdk-cli home directory
 ///
 /// This function is called to check if [`crate::CliOpts`] datadir is set.
 /// If not the default home directory is created at `~/.bdk-bitcoin`.
+#[allow(dead_code)]
 pub(crate) fn prepare_home_dir(home_path: Option<PathBuf>) -> Result<PathBuf, Error> {
     let dir = home_path.unwrap_or_else(|| {
         let mut dir = PathBuf::new();
@@ -101,11 +100,11 @@ pub(crate) fn prepare_home_dir(home_path: Option<PathBuf>) -> Result<PathBuf, Er
 }
 
 /// Prepare wallet database directory.
-#[cfg(feature = "sqlite")]
+#[allow(dead_code)]
 pub(crate) fn prepare_wallet_db_dir(
     wallet_name: &Option<String>,
     home_path: &Path,
-) -> Result<PathBuf, Error> {
+) -> Result<std::path::PathBuf, Error> {
     let mut dir = home_path.to_owned();
     if let Some(wallet_name) = wallet_name {
         dir.push(wallet_name);
@@ -153,8 +152,8 @@ pub(crate) enum BlockchainClient {
 /// Create a new blockchain from the wallet configuration options.
 pub(crate) fn new_blockchain_client(
     wallet_opts: &WalletOpts,
-    wallet: &Wallet,
-    datadir: Option<std::path::PathBuf>,
+    _wallet: &Wallet,
+    _datadir: PathBuf,
 ) -> Result<BlockchainClient, Error> {
     #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
     let url = wallet_opts.url.as_str();
@@ -200,14 +199,12 @@ pub(crate) fn new_blockchain_client(
                 None => Sync,
             };
 
-            let mut builder = NodeBuilder::new(wallet.network());
+            let builder = NodeBuilder::new(_wallet.network());
 
-            if let Some(datadir) = datadir {
-                builder = builder.data_dir(&datadir);
-            };
             let client = builder
                 .required_peers(wallet_opts.compactfilter_opts.conn_count)
-                .build_with_wallet(wallet, scan_type)?;
+                .data_dir(&_datadir)
+                .build_with_wallet(_wallet, scan_type)?;
 
             BlockchainClient::KyotoClient { client }
         }
