@@ -190,6 +190,8 @@ dependencies = [
  "dirs",
  "env_logger",
  "log",
+ "miniscript",
+ "serde",
  "serde_json",
  "shlex",
  "thiserror 2.0.12",
@@ -1287,9 +1289,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniscript"
-version = "12.3.0"
+version = "12.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5bd3c9608217b0d6fa9c9c8ddd875b85ab72bd4311cfc8db35e1b5a08fc11f4d"
+checksum = "0760e92feaf4ee26bd2e616f557de64712bf1e75f3b1b218dfb475c0a84c7943"
 dependencies = [
  "bech32",
  "bitcoin",
