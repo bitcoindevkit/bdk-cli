@@ -7,15 +7,15 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [1.0.0]
 
-- Changed the MSRV to 1.75.0 
-- Changed electrum client to use bdk_electrum, sqlite feature to use bdk_wallet/rusqlite 
-- Updated `repl` to use shlex instead of regex, rustyline and fd-lock 
+- Changed the MSRV to 1.75.0 and bumped the rust edition to 2021
+- Changed `electrum` client to use `bdk_electrum`, `sqlite` feature to use `bdk_wallet/rusqlite` 
+- Updated `repl` to use shlex instead of `regex`, `rustyline` and `fd-lock` 
 - Updated `bdk_wallet` to 1.0.0 
 - Updated `bdk_bitcoind_rpc` to `0.18.0`, `bdk_electrum` to `0.21.0`, `bdk_esplora` to `0.20.1`, `bdk-reserves` to `0.29.0` 
 - Updated `electrsd` to v31.0 
 - Updated `clap` to v4.5 
-- Added compact block filter feature using `bdk-kyoto` 
-- Replaced regtest-bitcoin feature with `rpc` 
+- Added `cbf` (compact block filter) feature using `bdk-kyoto` 
+- Replaced `regtest-bitcoin` feature with `rpc` 
 - Added custom error enum 
 - Set `repl` and `sqlite` as the default features 
 - Set default fee rate to `FeeRate::BROADCAST_MIN` 
