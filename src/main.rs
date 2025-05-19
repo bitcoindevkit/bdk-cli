@@ -36,7 +36,8 @@ async fn main() {
     match handle_command(cli_opts).await {
         Ok(result) => println!("{}", result),
         Err(e) => {
-            error!("{}", e)
+            error!("{}", e);
+            std::process::exit(1);
         }
     }
 }
