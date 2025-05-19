@@ -28,17 +28,17 @@
 ## About
 
 **EXPERIMENTAL**
-This crate is in to process of being updated to `bdk_wallet` 1.x. Only use with for testing on test networks.
+This crate has been updated to use `bdk_wallet` 1.x. Only use  for testing on test networks.
 
-This project provides a command-line Bitcoin wallet application using the latest [BDK APIs](https://docs.rs/bdk/latest/bdk/wallet/struct.Wallet.html). This might look tiny and innocent, but by harnessing the power of BDK it provides a powerful generic descriptor based command line wallet tool.
+This project provides a command-line Bitcoin wallet application using the latest [BDK Wallet APIs](https://docs.rs/bdk_wallet/1.0.0/bdk_wallet/index.html) and chain sources ([RPC](https://docs.rs/bdk_bitcoind_rpc/0.18.0/bdk_bitcoind_rpc/index.html), [Electrum](https://docs.rs/bdk_electrum/0.21.0/bdk_electrum/index.html), [Esplora](https://docs.rs/bdk_esplora/0.21.0/bdk_esplora/), [Kyoto](https://docs.rs/bdk_kyoto/0.9.0/bdk_kyoto/)). This might look tiny and innocent, but by harnessing the power of BDK it provides a powerful generic descriptor based command line wallet tool.
 And yes, it can do Taproot!!
 
 This crate can be used for the following purposes:
- - Instantly create a miniscript based wallet and connect to your backend of choice (Electrum, Esplora, Core RPC, etc) and quickly play around with your own complex bitcoin scripting workflow. With one or many wallets, connected with one or many backends.
+ - Instantly create a miniscript based wallet and connect to your backend of choice (Electrum, Esplora, Core RPC, Kyoto etc) and quickly play around with your own complex bitcoin scripting workflow. With one or many wallets, connected with one or many backends.
  - The `tests/integration.rs` module is used to document high level complex workflows between BDK and different Bitcoin infrastructure systems, like Core, Electrum and Lightning(soon TM).
  - (Planned) Expose the basic command handler via `wasm` to integrate `bdk-cli` functionality natively into the web platform. See also the [playground](https://bitcoindevkit.org/bdk-cli/playground/) page.
 
-If you are considering using BDK in your own wallet project bdk-cli is a nice playground to get started with. It allows easy testnet and regtest wallet operations, to try out what's possible with descriptors, miniscript, and BDK APIs. For more information on BDK refer to the [website](https://bitcoindevkit.org/) and the [rust docs](https://docs.rs/bdk/latest/bdk/index.html)
+If you are considering using BDK in your own wallet project bdk-cli is a nice playground to get started with. It allows easy testnet and regtest wallet operations, to try out what's possible with descriptors, miniscript, and BDK APIs. For more information on BDK refer to the [website](https://bitcoindevkit.org/) and the [rust docs](https://docs.rs/bdk_wallet/1.0.0/bdk_wallet/index.html)
 
 bdk-cli can be compiled with different features to suit your experimental needs.
   - Database Options
@@ -46,6 +46,8 @@ bdk-cli can be compiled with different features to suit your experimental needs.
   - Blockchain Client Options
      - `esplora` : Connects the wallet to an esplora server.
      - `electrum` : Connects the wallet to an electrum server.
+     - `kyoto`: Connects the wallet to a kyoto client and server.
+     - `rpc`: Connects the wallet to Bitcoind server.
   - Extra Utility Tools
      - `repl` : use bdk-cli as a [REPL](https://codewith.mu/en/tutorials/1.0/repl) shell (useful for quick manual testing of wallet operations).
      - `compiler` : opens up bdk-cli policy compiler commands.
@@ -68,14 +70,14 @@ bdk-cli help # to verify it worked
 If no blockchain client feature is enabled online wallet commands `sync` and `broadcast` will be 
 disabled. To enable these commands a blockchain client feature such as `electrum` or another 
 blockchain client feature must be enabled. Below is an example of how to run the `bdk-cli` binary with
-the `esplora` blockchain client feature.
+the `electrum` blockchain client feature.
 
 ```shell
-RUST_LOG=debug cargo run --features esplora -- wallet --client-type esplora --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
+RUST_LOG=debug cargo run --features electrum -- --network testnet4 wallet --wallet testnetwallet --ext-descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" --client-type electrum --database-type sqlite --url "ssl://mempool.space:40002" sync
 ```
 
 Available blockchain client features are:
-`electrum`, `esplora`.
+`electrum`, `esplora`, `kyoto`, `rpc`.
 
 ### From crates.io
 You can install the binary for the latest tag of `bdk-cli` with online wallet features 
@@ -96,13 +98,13 @@ cargo run
 To sync a wallet to the default electrum server:
 
 ```shell
-cargo run --features electrum -- wallet -c electrum --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" sync
+cargo run --features electrum -- --network testnet4 wallet --wallet sample_wallet --ext-descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" --database-type sqlite --client-type electrum --url "ssl://mempool.space:40002" sync
 ```
 
 To get a wallet balance with customized logging:
 
 ```shell
-RUST_LOG=debug,rusqlite=info,rustls=info cargo run -- wallet --descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" get_balance
+RUST_LOG=debug,rusqlite=info,rustls=info cargo run -- wallet --external-descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" balance
 ```
 
 To generate a new extended master key, suitable for use in a descriptor:
@@ -114,8 +116,3 @@ cargo run -- key generate
 ## Minimum Supported Rust Version (MSRV)
 
 This library should always compile with any valid combination of features on Rust **1.75.0**.
-
-## Resources
-Docs: [bitcoindevkit.org CLI Section](https://bitcoindevkit.org/bdk-cli/installation/)  
-Episode on the _Bitcoin Developers Show_: [Youtube](https://www.youtube.com/watch?v=-Q8OD8NCEe4)  
-Video Tutorials: [Youtube Playlist](https://www.youtube.com/playlist?list=PLmyfVqsSelG3jSobvpY3GoNKDtAumsrg3)  
