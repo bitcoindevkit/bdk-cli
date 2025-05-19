@@ -5,12 +5,38 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [Unreleased]
 
+## [1.0.0]
+
+- Changed the MSRV to 1.75.0 and bumped the rust edition to 2021
+- Changed `electrum` client to use `bdk_electrum`, `sqlite` feature to use `bdk_wallet/rusqlite` 
+- Updated `repl` to use shlex instead of `regex`, `rustyline` and `fd-lock` 
+- Updated `bdk_wallet` to 1.0.0 
+- Updated `bdk_bitcoind_rpc` to `0.18.0`, `bdk_electrum` to `0.21.0`, `bdk_esplora` to `0.20.1`, `bdk-reserves` to `0.29.0` 
+- Updated `electrsd` to v31.0 
+- Updated `clap` to v4.5 
+- Added `cbf` (compact block filter) feature using `bdk-kyoto` 
+- Replaced `regtest-bitcoin` feature with `rpc` 
+- Added custom error enum 
+- Set `repl` and `sqlite` as the default features 
+- Set default fee rate to `FeeRate::BROADCAST_MIN` 
+- Enabled replace-by-fee by default 
+- Replaced `ExtendedPrivateKey` with `Xpriv` 
+- Replaced `list_transactions` with `transactions` 
+- Replaced `allow_shringking` with `drain_to` methods 
+- Replaced `Wallet<D>` with `PersistedWallet<D>` 
+- Replaced `descriptor` CLI parameter with `ext-descriptor` and `change` with `int-descriptor`
+- Dropped support for `sled`
+- Dropped `key-value-db` feature 
+- Dropped `esplora-ureq`, `esplora-reqwest`, `regtest-bitcoin`, `regtest-electrum`, `regtest-node` and `reserves` features 
+
 ## [0.27.1]
+
 - Added hardware signers through the use of HWI.
 - Bumped rustc stable to 1.65.
 - Bumped electrsd version to v0.22.*.
 
 ## [0.26.0]
+
  - Check that a `PSBT` is signed before broadcast, else throw a useful error message to user.
  - Miniscript Translation capability to an `AliasMap` in wasm, to enhance the paly ground interface.
  - cli-app framework from `structop` to `clap`.
@@ -81,7 +107,8 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [0.1.0-beta.1]
 
-[unreleased]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.27.1...HEAD
+[Unreleased]: https://github.com/bitcoindevkit/bdk-cli/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.27.1...v1.0.0
 [0.27.1]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.26.0...v0.27.1
 [0.26.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.6.0...v0.26.0
 [0.6.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.5.0...v0.6.0
