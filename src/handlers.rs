@@ -25,13 +25,10 @@ use bdk_wallet::bitcoin::Network;
 use bdk_wallet::descriptor::Segwitv0;
 use bdk_wallet::keys::bip39::WordCount;
 use bdk_wallet::keys::{GeneratableKey, GeneratedKey};
-use serde::ser::Error as SerdeErrorTrait;
+use bdk_wallet::serde::ser::Error as SerdeErrorTrait;
 use serde_json::json;
 use serde_json::Error as SerdeError;
 use serde_json::Value;
-use std::fmt;
-
-use std::str::FromStr;
 
 #[cfg(any(
     feature = "electrum",
@@ -50,6 +47,8 @@ use bdk_wallet::{
     miniscript::policy::Concrete,
 };
 use bdk_wallet::{KeychainKind, SignOptions, Wallet};
+use std::fmt;
+use std::str::FromStr;
 
 use bdk_wallet::keys::DescriptorKey::Secret;
 use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey};
@@ -992,33 +991,4 @@ impl fmt::Display for DescriptorType {
         };
         write!(f, "{}", s)
     }
-}
-
-// Wrapper functions for the specific BIP types
-pub fn generate_bip84_descriptor_from_key(
-    network: &Network,
-    key: &str,
-) -> Result<serde_json::Value, Error> {
-    generate_bip_descriptor_from_key(network, key, "m/84h/1h/0h", DescriptorType::Bip84)
-}
-
-pub fn generate_bip86_descriptor_from_key(
-    network: &Network,
-    key: &str,
-) -> Result<serde_json::Value, Error> {
-    generate_bip_descriptor_from_key(network, key, "m/86h/1h/0h", DescriptorType::Bip86)
-}
-
-pub fn generate_bip49_descriptor_from_key(
-    network: &Network,
-    key: &str,
-) -> Result<serde_json::Value, Error> {
-    generate_bip_descriptor_from_key(network, key, "m/49h/1h/0h", DescriptorType::Bip49)
-}
-
-pub fn generate_bip44_descriptor_from_key(
-    network: &Network,
-    key: &str,
-) -> Result<serde_json::Value, Error> {
-    generate_bip_descriptor_from_key(network, key, "m/44h/1h/0h", DescriptorType::Bip44)
 }

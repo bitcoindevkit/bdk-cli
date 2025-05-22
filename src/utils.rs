@@ -29,7 +29,7 @@ use std::str::FromStr;
 #[cfg(feature = "sqlite")]
 use std::path::{Path, PathBuf};
 
-use crate::commands::WalletOpts;
+use crate::commands::*;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{
     builder::NodeBuilder,
@@ -380,6 +380,36 @@ pub async fn sync_kyoto_client(wallet: &mut Wallet, client: LightClient) -> Resu
 
     Ok(())
 }
+
+// Wrapper functions for the specific BIP types
+pub fn generate_bip84_descriptor_from_key(
+    network: &Network,
+    key: &str,
+) -> Result<serde_json::Value, Error> {
+    generate_bip_descriptor_from_key(network, key, "m/84h/1h/0h", DescriptorType::Bip84)
+}
+
+pub fn generate_bip86_descriptor_from_key(
+    network: &Network,
+    key: &str,
+) -> Result<serde_json::Value, Error> {
+    generate_bip_descriptor_from_key(network, key, "m/86h/1h/0h", DescriptorType::Bip86)
+}
+
+pub fn generate_bip49_descriptor_from_key(
+    network: &Network,
+    key: &str,
+) -> Result<serde_json::Value, Error> {
+    generate_bip_descriptor_from_key(network, key, "m/49h/1h/0h", DescriptorType::Bip49)
+}
+
+pub fn generate_bip44_descriptor_from_key(
+    network: &Network,
+    key: &str,
+) -> Result<serde_json::Value, Error> {
+    generate_bip_descriptor_from_key(network, key, "m/44h/1h/0h", DescriptorType::Bip44)
+}
+
 pub fn generate_new_bip84_descriptor_with_mnemonic(
     network: Network,
 ) -> Result<serde_json::Value, Error> {

@@ -190,8 +190,6 @@ dependencies = [
  "dirs",
  "env_logger",
  "log",
- "miniscript",
- "serde",
  "serde_json",
  "shlex",
  "thiserror 2.0.12",
