@@ -345,6 +345,10 @@ pub(crate) async fn handle_online_wallet_subcommand(
     client: BlockchainClient,
     online_subcommand: OnlineWalletSubCommand,
 ) -> Result<serde_json::Value, Error> {
+    use std::sync::Arc;
+
+    use payjoin::{send::v2::{Sender, SenderBuilder}, Url};
+
     match online_subcommand {
         FullScan {
             stop_gap: _stop_gap,
@@ -600,7 +604,129 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 }
             };
             Ok(json!({ "txid": txid }))
-        }
+        },
+        SendPayjoin { uri, fee_rate, ohttp_relay } => {
+            use payjoin::UriExt;
+
+            // Need to make sure that the URI is for the network we are on and actually
+            // supports Payjoin before we can go ahead with everything else.
+            let uri = payjoin::Uri::try_from(uri)
+                .map_err(|e| Error::Generic(format!("Failed parsing to PayJoin URI: {}", e)))?;
+            let uri = uri.require_network(wallet.network())
+                .map_err(|e| Error::Generic(format!("Failed setting the right network for the URI: {}", e)))?;
+            let uri = uri.check_pj_supported()
+                .map_err(|e| Error::Generic(format!("URI does not support PayJoin: {}", e)))?;
+            
+            let sats = uri.amount
+                .ok_or_else(|| Error::Generic("Amount is not specified in the URI.".to_string()))?;
+            let fee_rate = FeeRate::from_sat_per_vb(fee_rate).expect("Provided fee rate is not valid.");
+            
+            // In Payjoin terminology, original PSBT refers to the very first PSBT which is created by the sender.
+            // This will be sent to the receiver for their UTXO contributions.
+            let mut original_psbt = {
+                let mut tx_builder = wallet.build_tx();
+                tx_builder
+                    .ordering(bdk_wallet::TxOrdering::Untouched)
+                    .add_recipient(uri.address.script_pubkey(), sats)
+                    .fee_rate(fee_rate);
+                    
+                tx_builder.finish().map_err(|e| Error::Generic(format!("Error occurred when building original Payjoin transaction: {}", e)))?
+            };
+            let finalized = wallet.sign(&mut original_psbt, SignOptions {
+                try_finalize: true,
+                ..Default::default()
+            });
+            
+            // TODO: Here for debugging. Remove later.
+            match finalized {
+                Ok(true) => println!("Finalized!"),
+                Ok(false) => println!("Not finalized!!!!"),
+                Err(er) => {
+                    println!("An error occurred when signing the PSBT: {}", er)
+                }
+            }
+
+            // TODO: Add proper session persisting.
+            let mut persister = payjoin::persist::NoopPersister;
+            let new_sender = SenderBuilder::new(original_psbt, uri.clone())
+                .build_recommended(fee_rate)
+                .map_err(|e| Error::Generic(format!("Failed initializing PayJoin sender using the transaction fee rate: {}", e)))?;
+            let storage_token = new_sender.persist(&mut persister)
+                .map_err(|e| Error::Generic(format!("Failed to generate the storage token with the receiver and persister: {}", e)))?;
+            let req_ctx = Sender::load(storage_token, &persister)
+                .map_err(|e| Error::Generic(format!("Failed to load the request context using the storage token and the persister {}", e)))?;
+
+            let psbt = {
+                let attempt_v1 = || -> Result<Psbt, Error> {
+                    println!("Attempting Payjoin v1 send...");
+                    let (req, ctx) = req_ctx.extract_v1();
+                    let response = send_payjoin_post_request(req)?;
+                    match ctx.process_response(&mut response.as_bytes()) {
+                        Ok(psbt) => Ok(psbt),
+                        Err(re) => {
+                            println!("Payjoin v1 failed. Failing the entire send session.");
+                            Err(Error::Generic(format!("Failed to send a Payjoin v1: {}", re)))
+                        }
+                    }
+                };
+            
+                match ohttp_relay {
+                    Some(ohttp_relay) => {
+                        println!("ohttp_relay is defined. Attempting a Payjoin v2 send...");
+                        
+                        let ohttp_relay_url = Url::parse(ohttp_relay.as_str())
+                            .map_err(|e| Error::Generic(format!("Failed to parse the OHTTP relay into a string: {}", e)))?;
+                        
+                        match req_ctx.extract_v2(ohttp_relay_url) {
+                            Ok((req, ctx)) => {
+                                let response = send_payjoin_post_request(req)?;
+                                let v2_ctx = Arc::new(ctx.process_response(response.as_bytes())
+                                    .map_err(|e| Error::Generic(format!("Failed to initialize the v2 context: {}", e)))?);
+                                
+                                let v2_result: Result<Psbt, Error> = (|| {
+                                    loop {
+                                        let (req, ohttp_ctx) = v2_ctx.extract_req(ohttp_relay.clone())
+                                            .map_err(|e| Error::Generic(format!("Failed to extract request for polling: {}", e)))?;
+                                        let response = send_payjoin_post_request(req)?;
+                                        
+                                        match v2_ctx.process_response(response.as_bytes(), ohttp_ctx) {
+                                            Ok(Some(psbt)) => return Ok(psbt),
+                                            Ok(None) => {
+                                                println!("No response yet. Keep polling...")
+                                            }
+                                            Err(e) => return Err(Error::Generic(format!("V2 processing failed: {}", e))),
+                                        }
+                                    }
+                                })();
+                                
+                                match v2_result {
+                                    Ok(psbt) => psbt,
+                                    Err(_) => {
+                                        println!("Payjoin v2 failed. Falling back to v1...");
+                                        attempt_v1()?
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                println!("Failed to extract v2 context. Falling back to v1...");
+                                attempt_v1()?
+                            }
+                        }
+                    }
+                    None => {
+                        println!("ohttp_relay is not defined. Attempting a Payjoin v1 send...");
+                        attempt_v1()?
+                    }
+                }
+            };
+
+            println!(
+                "PSBT: {:?}",
+                psbt.serialize_hex()
+            );
+
+            todo!("WIP")
+        },
     }
 }
 

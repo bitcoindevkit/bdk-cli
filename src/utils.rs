@@ -369,3 +369,11 @@ pub async fn sync_kyoto_client(wallet: &mut Wallet, client: LightClient) -> Resu
 
     Ok(())
 }
+
+pub fn send_payjoin_post_request(req: payjoin::Request) -> Result<minreq::Response, Error> {
+    minreq::post(req.url)
+        .with_header("Content-Type", req.content_type)
+        .with_body(req.body)
+        .send()
+        .map_err(|e| Error::Generic(format!("HTTP request for Payjoin failed: {}", e)))
+}
