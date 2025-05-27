@@ -61,7 +61,13 @@ use tokio::select;
 ))]
 use {
     crate::commands::OnlineWalletSubCommand::*,
+    crate::utils::send_payjoin_post_request,
     bdk_wallet::bitcoin::{consensus::Decodable, hex::FromHex, Transaction},
+    payjoin::{
+        send::v2::{Sender, SenderBuilder},
+        UriExt, Url,
+    },
+    std::sync::Arc,
 };
 #[cfg(feature = "esplora")]
 use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
@@ -511,94 +517,207 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
-            let txid = match client {
-                #[cfg(feature = "electrum")]
-                Electrum {
-                    client,
-                    batch_size: _,
-                } => client
-                    .transaction_broadcast(&tx)
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-                #[cfg(feature = "esplora")]
-                Esplora {
-                    client,
-                    parallel_requests: _,
-                } => client
-                    .broadcast(&tx)
-                    .await
-                    .map(|()| tx.compute_txid())
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-                #[cfg(feature = "rpc")]
-                RpcClient { client } => client
-                    .send_raw_transaction(&tx)
-                    .map_err(|e| Error::Generic(e.to_string()))?,
+            let txid = broadcast_transaction(client, tx).await?;
+            Ok(json!({ "txid": txid }))
+        }
+        SendPayjoin {
+            uri,
+            fee_rate,
+            ohttp_relay,
+        } => {
+            // Need to make sure that the URI is for the network we are on and actually
+            // supports Payjoin before we can go ahead with everything else.
+            let uri = payjoin::Uri::try_from(uri)
+                .map_err(|e| Error::Generic(format!("Failed parsing to PayJoin URI: {}", e)))?;
+            let uri = uri.require_network(wallet.network()).map_err(|e| {
+                Error::Generic(format!(
+                    "Failed setting the right network for the URI: {}",
+                    e
+                ))
+            })?;
+            let uri = uri
+                .check_pj_supported()
+                .map_err(|e| Error::Generic(format!("URI does not support PayJoin: {}", e)))?;
 
-                #[cfg(feature = "cbf")]
-                KyotoClient { client } => {
-                    let LightClient {
-                        requester,
-                        mut log_subscriber,
-                        mut info_subscriber,
-                        mut warning_subscriber,
-                        update_subscriber: _,
-                        node,
-                    } = client;
+            let sats = uri
+                .amount
+                .ok_or_else(|| Error::Generic("Amount is not specified in the URI.".to_string()))?;
+            let fee_rate =
+                FeeRate::from_sat_per_vb(fee_rate).expect("Provided fee rate is not valid.");
 
-                    let subscriber = tracing_subscriber::FmtSubscriber::new();
-                    tracing::subscriber::set_global_default(subscriber)
-                        .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {}", e)))?;
+            // This original PSBT will be sent to the receiver for their UTXO contributions.
+            let mut original_psbt = {
+                let mut tx_builder = wallet.build_tx();
+                tx_builder
+                    .ordering(bdk_wallet::TxOrdering::Untouched)
+                    .add_recipient(uri.address.script_pubkey(), sats)
+                    .fee_rate(fee_rate);
 
-                    tokio::task::spawn(async move { node.run().await });
-                    tokio::task::spawn(async move {
-                        select! {
-                            log = log_subscriber.recv() => {
-                                if let Some(log) = log {
-                                    tracing::info!("{log}");
-                                }
-                            },
-                            warn = warning_subscriber.recv() => {
-                                if let Some(warn) = warn {
-                                    tracing::warn!("{warn}");
-                                }
-                            }
-                        }
-                    });
-                    let txid = tx.compute_txid();
-                    tracing::info!("Waiting for connections to broadcast...");
-                    while let Some(info) = info_subscriber.recv().await {
-                        match info {
-                            Info::ConnectionsMet => {
-                                requester
-                                    .broadcast_random(tx.clone())
-                                    .map_err(|e| Error::Generic(format!("{}", e)))?;
-                                break;
-                            }
-                            _ => tracing::info!("{info}"),
+                tx_builder.finish().map_err(|e| {
+                    Error::Generic(format!(
+                        "Error occurred when building original Payjoin transaction: {}",
+                        e
+                    ))
+                })?
+            };
+
+            if !wallet.sign(
+                &mut original_psbt,
+                SignOptions {
+                    try_finalize: true,
+                    ..Default::default()
+                },
+            )? {
+                return Err(Error::Generic(
+                    "Failed to sign and finalize the original PSBT.".to_string(),
+                ));
+            }
+
+            let mut persister = payjoin::persist::NoopPersister;
+
+            // Using an original PSBT clone since we are going to use it later to re-introduce `..._utxo` fields to the Payjoin proposal.
+            let new_sender = SenderBuilder::new(original_psbt.clone(), uri.clone())
+                .build_recommended(fee_rate)
+                .map_err(|e| {
+                    Error::Generic(format!(
+                        "Failed initializing PayJoin sender using the transaction fee rate: {}",
+                        e
+                    ))
+                })?;
+            let storage_token = new_sender.persist(&mut persister).map_err(|e| {
+                Error::Generic(format!(
+                    "Failed to generate the storage token with the receiver and persister: {}",
+                    e
+                ))
+            })?;
+            let req_ctx = Sender::load(storage_token, &persister)
+                .map_err(|e| Error::Generic(format!("Failed to load the request context using the storage token and the persister {}", e)))?;
+
+            let mut psbt = {
+                let send_payjoin_v1 = || -> Result<Psbt, Error> {
+                    let (req, ctx) = req_ctx.extract_v1();
+                    let response = send_payjoin_post_request(req)?;
+                    match ctx.process_response(&mut response.as_bytes()) {
+                        Ok(psbt) => Ok(psbt),
+                        Err(re) => {
+                            println!("Payjoin v1 failed. Failing the entire send session.");
+                            Err(Error::Generic(format!(
+                                "Failed to send a Payjoin v1: {}",
+                                re
+                            )))
                         }
                     }
-                    tokio::time::timeout(tokio::time::Duration::from_secs(15), async move {
-                        while let Some(info) = info_subscriber.recv().await {
-                            match info {
-                                Info::TxGossiped(wtxid) => {
-                                    tracing::info!("Successfully broadcast WTXID: {wtxid}");
-                                    break;
+                };
+
+                match ohttp_relay {
+                    Some(ohttp_relay) => {
+                        println!("Sending a Payjoin v2 proposal...");
+
+                        let ohttp_relay_url = Url::parse(ohttp_relay.as_str()).map_err(|e| {
+                            Error::Generic(format!(
+                                "Failed to parse the OHTTP relay into a string: {}",
+                                e
+                            ))
+                        })?;
+
+                        match req_ctx.extract_v2(ohttp_relay_url) {
+                            Ok((req, ctx)) => {
+                                let response = send_payjoin_post_request(req)?;
+                                let v2_ctx = Arc::new(
+                                    ctx.process_response(response.as_bytes()).map_err(|e| {
+                                        Error::Generic(format!(
+                                            "Failed to initialize the v2 context: {}",
+                                            e
+                                        ))
+                                    })?,
+                                );
+
+                                let v2_result: Result<Psbt, Error> = (|| loop {
+                                    let (req, ohttp_ctx) =
+                                        v2_ctx.extract_req(ohttp_relay.clone()).map_err(|e| {
+                                            Error::Generic(format!(
+                                                "Failed to extract request for polling: {}",
+                                                e
+                                            ))
+                                        })?;
+                                    let response = send_payjoin_post_request(req)?;
+
+                                    match v2_ctx.process_response(response.as_bytes(), ohttp_ctx) {
+                                        Ok(Some(psbt)) => return Ok(psbt),
+                                        Ok(None) => {
+                                            println!("Polling for the Payjoin proposal...")
+                                        }
+                                        Err(e) => {
+                                            return Err(Error::Generic(format!(
+                                                "v2 processing failed: {}",
+                                                e
+                                            )))
+                                        }
+                                    }
+                                })(
+                                );
+
+                                match v2_result {
+                                    Ok(psbt) => psbt,
+                                    Err(_) => {
+                                        println!("Payjoin v2 failed. Falling back to v1...");
+                                        send_payjoin_v1()?
+                                    }
                                 }
-                                Info::ConnectionsMet => {
-                                    tracing::info!("Rebroadcasting to new connections");
-                                    requester.broadcast_random(tx.clone()).unwrap();
-                                }
-                                _ => tracing::info!("{info}"),
+                            }
+                            Err(_) => {
+                                println!("Failed to extract v2 context. Falling back to v1...");
+                                send_payjoin_v1()?
                             }
                         }
-                    })
-                    .await
-                    .map_err(|_| {
-                        tracing::warn!("Broadcast was unsuccessful");
-                        Error::Generic("Transaction broadcast timed out after 15 seconds".into())
-                    })?;
-                    txid
+                    }
+                    None => {
+                        println!("Sending a Payjoin v1 proposal...");
+                        send_payjoin_v1()?
+                    }
                 }
             };
+            println!(
+                "Received back the transaction with receiver inputs! Signing and broadcasting..."
+            );
+
+            /// Collects the inputs of a given transaction as (TxIn, Input) pairs and returns the iterator.
+            fn input_pairs(
+                psbt: &mut Psbt,
+            ) -> impl Iterator<Item = (&payjoin::bitcoin::TxIn, &mut payjoin::bitcoin::psbt::Input)> + '_
+            {
+                psbt.unsigned_tx.input.iter().zip(psbt.inputs.iter_mut())
+            }
+
+            // We need to re-introduce the UTXO information of the original PSBT's inputs
+            // back into the Payjoin proposal we received from the receiver. The receiver strips
+            // the transaction of the information, so we need to add the `..._utxo` information back
+            // before we can re-sign our input(s) into the transaction.
+            let mut original_inputs_iter = input_pairs(&mut original_psbt).peekable();
+            for (proposal_txin, proposal_psbt_input) in input_pairs(&mut psbt) {
+                if let Some((orig_txin, orig_psbt_input)) = original_inputs_iter.peek() {
+                    if proposal_txin.previous_output == orig_txin.previous_output {
+                        proposal_psbt_input.witness_utxo = orig_psbt_input.witness_utxo.clone();
+                        proposal_psbt_input.non_witness_utxo =
+                            orig_psbt_input.non_witness_utxo.clone();
+                        original_inputs_iter.next();
+                    }
+                }
+            }
+
+            if !wallet.sign(
+                &mut psbt,
+                SignOptions {
+                    try_finalize: true,
+                    ..Default::default()
+                },
+            )? {
+                return Err(Error::Generic(
+                    "Failed to sign and finalize the Payjoin proposal PSBT.".to_string(),
+                ));
+            }
+
+            let txid = broadcast_transaction(client, psbt.extract_tx_fee_rate_limit()?).await?;
             Ok(json!({ "txid": txid }))
         }
     }
@@ -952,6 +1071,105 @@ async fn respond(
         writeln!(std::io::stdout(), "Exiting...").map_err(|e| e.to_string())?;
         std::io::stdout().flush().map_err(|e| e.to_string())?;
         Ok(true)
+    }
+}
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+/// Broadcasts a given transaction using the blockchain client.
+async fn broadcast_transaction(client: BlockchainClient, tx: Transaction) -> Result<Txid, Error> {
+    match client {
+        #[cfg(feature = "electrum")]
+        Electrum {
+            client,
+            batch_size: _,
+        } => client
+            .transaction_broadcast(&tx)
+            .map_err(|e| Error::Generic(e.to_string())),
+        #[cfg(feature = "esplora")]
+        Esplora {
+            client,
+            parallel_requests: _,
+        } => client
+            .broadcast(&tx)
+            .await
+            .map(|()| tx.compute_txid())
+            .map_err(|e| Error::Generic(e.to_string())),
+        #[cfg(feature = "rpc")]
+        RpcClient { client } => client
+            .send_raw_transaction(&tx)
+            .map_err(|e| Error::Generic(e.to_string())),
+
+        #[cfg(feature = "cbf")]
+        KyotoClient { client } => {
+            let LightClient {
+                requester,
+                mut log_subscriber,
+                mut info_subscriber,
+                mut warning_subscriber,
+                update_subscriber: _,
+                node,
+            } = client;
+
+            let subscriber = tracing_subscriber::FmtSubscriber::new();
+            tracing::subscriber::set_global_default(subscriber)
+                .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {}", e)))?;
+
+            tokio::task::spawn(async move { node.run().await });
+            tokio::task::spawn(async move {
+                select! {
+                    log = log_subscriber.recv() => {
+                        if let Some(log) = log {
+                            tracing::info!("{log}");
+                        }
+                    },
+                    warn = warning_subscriber.recv() => {
+                        if let Some(warn) = warn {
+                            tracing::warn!("{warn}");
+                        }
+                    }
+                }
+            });
+            let txid = tx.compute_txid();
+            tracing::info!("Waiting for connections to broadcast...");
+            while let Some(info) = info_subscriber.recv().await {
+                match info {
+                    Info::ConnectionsMet => {
+                        requester
+                            .broadcast_random(tx.clone())
+                            .map_err(|e| Error::Generic(format!("{}", e)))?;
+                        break;
+                    }
+                    _ => tracing::info!("{info}"),
+                }
+            }
+            // TODO: This has been and still is (after moving to a helper function) swallowing the error. Need to fix.
+            let _ = tokio::time::timeout(tokio::time::Duration::from_secs(15), async move {
+                while let Some(info) = info_subscriber.recv().await {
+                    match info {
+                        Info::TxGossiped(wtxid) => {
+                            tracing::info!("Successfully broadcast WTXID: {wtxid}");
+                            break;
+                        }
+                        Info::ConnectionsMet => {
+                            tracing::info!("Rebroadcasting to new connections");
+                            requester.broadcast_random(tx.clone()).unwrap();
+                        }
+                        _ => tracing::info!("{info}"),
+                    }
+                }
+            })
+            .await
+            .map_err(|_| {
+                tracing::warn!("Broadcast was unsuccessful");
+                Error::Generic("Transaction broadcast timed out after 15 seconds".into())
+            });
+            Ok(txid)
+        }
     }
 }
 
