@@ -21,6 +21,8 @@ log = "0.4"
 serde_json = "1.0"
 thiserror = "2.0.11"
 tokio = { version = "1", features = ["full"] }
+payjoin = { version = "0.23.0", features = ["v2", "io"] }
+minreq = { version = "2.13.4", features = ["https"] }
 
 # Optional dependencies
 bdk_bitcoind_rpc = { version = "0.18.0", optional = true }
