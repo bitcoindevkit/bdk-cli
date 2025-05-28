@@ -36,6 +36,7 @@ use serde_json::Value;
     feature = "cbf",
     feature = "rpc"
 ))]
+use bdk_wallet::bitcoin::Transaction;
 use bdk_wallet::bitcoin::Txid;
 use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
 #[cfg(feature = "sqlite")]
@@ -70,7 +71,7 @@ use bdk_wallet::bitcoin::base64::prelude::*;
 ))]
 use {
     crate::commands::OnlineWalletSubCommand::*,
-    bdk_wallet::bitcoin::{consensus::Decodable, hex::FromHex, Transaction},
+    bdk_wallet::bitcoin::{consensus::Decodable, hex::FromHex},
 };
 #[cfg(feature = "esplora")]
 use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
