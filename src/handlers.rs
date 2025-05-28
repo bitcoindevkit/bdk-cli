@@ -36,7 +36,6 @@ use serde_json::Value;
     feature = "cbf",
     feature = "rpc"
 ))]
-use bdk_wallet::bitcoin::Transaction;
 use bdk_wallet::bitcoin::Txid;
 use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
 #[cfg(feature = "sqlite")]
