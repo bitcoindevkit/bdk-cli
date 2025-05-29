@@ -69,7 +69,7 @@ use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
 use {
     crate::utils::BlockchainClient::RpcClient,
     bdk_bitcoind_rpc::{bitcoincore_rpc::RpcApi, Emitter},
-    bdk_wallet::chain::{BlockId, CheckPoint},
+    bdk_wallet::chain::{BlockId, CanonicalizationParams, CheckPoint},
 };
 
 /// Execute an offline wallet sub-command
@@ -395,7 +395,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                         hash: genesis_block.block_hash(),
                     });
                     let mut emitter =
-                        Emitter::new(&*client, genesis_cp.clone(), genesis_cp.height());
+                        Emitter::new(&*client, genesis_cp.clone(), genesis_cp.height(), [].iter());
 
                     while let Some(block_event) = emitter.next_block()? {
                         if block_event.block_height() % 10_000 == 0 {
@@ -417,7 +417,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     }
 
                     let mempool_txs = emitter.mempool()?;
-                    wallet.apply_unconfirmed_txs(mempool_txs);
+                    wallet.apply_unconfirmed_txs(mempool_txs.new_txs.into_iter());
                 }
                 #[cfg(feature = "cbf")]
                 KyotoClient { client } => {
@@ -463,7 +463,19 @@ pub(crate) async fn handle_online_wallet_subcommand(
 
                     // reload the last 200 blocks in case of a reorg
                     let emitter_height = wallet_cp.height().saturating_sub(200);
-                    let mut emitter = Emitter::new(&*client, wallet_cp, emitter_height);
+                    let mut emitter = Emitter::new(
+                        &*client,
+                        wallet_cp,
+                        emitter_height,
+                        wallet
+                            .tx_graph()
+                            .list_canonical_txs(
+                                wallet.local_chain(),
+                                wallet.local_chain().tip().block_id(),
+                                CanonicalizationParams::default(),
+                            )
+                            .filter(|tx| tx.chain_position.is_unconfirmed()),
+                    );
 
                     while let Some(block_event) = emitter.next_block()? {
                         if block_event.block_height() % 10_000 == 0 {
@@ -485,7 +497,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     }
 
                     let mempool_txs = emitter.mempool()?;
-                    wallet.apply_unconfirmed_txs(mempool_txs);
+                    wallet.apply_unconfirmed_txs(mempool_txs.new_txs.into_iter());
                 }
                 #[cfg(feature = "cbf")]
                 KyotoClient { client } => {

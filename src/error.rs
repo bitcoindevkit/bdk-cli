@@ -88,8 +88,12 @@ pub enum BDKCliError {
     BitcoinCoreRpcError(#[from] bdk_bitcoind_rpc::bitcoincore_rpc::Error),
 
     #[cfg(feature = "cbf")]
-    #[error("BDK-Kyoto error: {0}")]
-    BuilderError(#[from] bdk_kyoto::builder::BuilderError),
+    #[error("BDK-Kyoto builder error: {0}")]
+    KyotoBuilderError(#[from] bdk_kyoto::builder::BuilderError),
+
+    #[cfg(feature = "cbf")]
+    #[error("BDK-Kyoto update error: {0}")]
+    KyotoUpdateError(#[from] bdk_kyoto::UpdateError),
 }
 
 impl From<ExtractTxError> for BDKCliError {
