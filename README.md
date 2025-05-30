@@ -113,6 +113,21 @@ To generate a new extended master key, suitable for use in a descriptor:
 cargo run -- key generate
 ```
 
+## Justfile
+
+We have added the `just` command runner to help you with common commands (during development) and running regtest `bitcoind` if you are using the `rpc` feature. 
+Visit the [just](https://just.systems/man/en/packages.html) page for setup instructions.
+
+The below are some of the commands included:
+
+``` shell
+just # list all available recipes
+just start # start regtest bitcoind in default dir
+just test # test the project
+just build # build the project
+```
+
+
 ## Minimum Supported Rust Version (MSRV)
 
 This library should always compile with any valid combination of features on Rust **1.75.0**.
