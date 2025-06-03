@@ -90,6 +90,33 @@ pub enum BDKCliError {
     #[cfg(feature = "cbf")]
     #[error("BDK-Kyoto error: {0}")]
     BuilderError(#[from] bdk_kyoto::builder::BuilderError),
+
+    #[error("Mnemonic generation failed: {0}")]
+    MnemonicGenerationError(String),
+
+    #[error("Xpriv creation failed: {0}")]
+    XprivCreationError(String),
+
+    #[error("Descriptor parsing failed: {0}")]
+    DescriptorParsingError(String),
+
+    #[error("Invalid extended public key (xpub): {0}")]
+    InvalidXpub(String),
+
+    #[error("Invalid extended private key (xprv): {0}")]
+    InvalidXprv(String),
+
+    #[error("Invalid derivation path: {0}")]
+    InvalidDerivationPath(String),
+
+    #[error("Unsupported script type: {0}")]
+    UnsupportedScriptType(u8),
+
+    #[error("Descriptor key conversion failed: {0}")]
+    DescriptorKeyError(String),
+
+    #[error("Invalid arguments: {0}")]
+    InvalidArguments(String),
 }
 
 impl From<ExtractTxError> for BDKCliError {
