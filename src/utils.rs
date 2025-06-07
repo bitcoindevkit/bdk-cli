@@ -348,7 +348,7 @@ pub async fn sync_kyoto_client(wallet: &mut Wallet, client: LightClient) -> Resu
     }
     tracing::info!("Kyoto node is running");
 
-    let update = update_subscriber.update().await;
+    let update = update_subscriber.update().await?;
     tracing::info!("Received update: applying to wallet");
     wallet
         .apply_update(update)
