@@ -122,11 +122,57 @@ The below are some of the commands included:
 
 ``` shell
 just # list all available recipes
-just start # start regtest bitcoind in default dir
 just test # test the project
 just build # build the project
 ```
 
+### Using `Justfile` to run `bitcoind` as a Client
+
+If you are testing `bdk-cli` in regtest mode and wants to use your `bitcoind` node as a blockchain client, the `Justfile` can help you to quickly do so. Below are the steps to `start`, `connect` and `run` your `bitcoind` node:
+
+Note: You can modify the `Justfile` to reflect your nodes' configuration values. These values are the default values used in `bdk-cli`
+ > * default wallet: The set default wallet name is `regtest_default_wallet`
+ > * default data directory: The set default data directory is `~/.bdk-bitcoin`
+ > * RPC username: The set RPC username is `user`
+ > * RPC password: The set RPC password is `password`
+
+#### Steps
+
+1. Start bitcoind
+
+>> `just start`
+
+2. Create or load a wallet
+
+ >> `just create` # if you do not have an existing default wallet (regtest_default_wallet)
+
+ >> `load wallet` # if you have an existing default wallet
+
+3. Generate an address to mine regtest bitcoins.
+
+>> `just address` # if you want to save to use in the next step  `address=$(just address)`
+
+4. Mine bitcoin
+
+>> `just generate 101 $address` # or just generate to a new addres `just generate 101 (just address)`
+
+5. Check Balance
+
+>> `just balance`
+
+6. Connect your `bdk-cli` wallet to your node and perform a full_scan
+
+>> `cargo run --features rpc -- -n regtest wallet -w {your-bdk-cli-wallet-name} -u "127.0.0.1:18443" -c rpc -a user:password -d sqlite full_scan`
+
+7. Generate an address from your `bdk-cli` wallet and fund it with 10 bitcoins from your bitcoind node's wallet
+
+>> `just send 10 {your-bdk-cli-wallet-address-here}`
+
+8. Mine 6 more blocks 
+
+>> `just generate 6 $address`
+
+You can `sync` your `bdk-cli` wallet now and the balance should reflect
 
 ## Minimum Supported Rust Version (MSRV)
 
