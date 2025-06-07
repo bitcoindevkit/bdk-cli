@@ -381,33 +381,19 @@ pub async fn sync_kyoto_client(wallet: &mut Wallet, client: LightClient) -> Resu
     Ok(())
 }
 
-// Wrapper functions for the specific BIP types
-pub fn generate_bip84_descriptor_from_key(
+pub fn generate_descriptor_from_key_by_type(
     network: &Network,
     key: &str,
+    descriptor_type: DescriptorType,
 ) -> Result<serde_json::Value, Error> {
-    generate_bip_descriptor_from_key(network, key, "m/84h/1h/0h", DescriptorType::Bip84)
-}
+    let derivation_path = match descriptor_type {
+        DescriptorType::Bip44 => "m/44h/1h/0h",
+        DescriptorType::Bip49 => "m/49h/1h/0h",
+        DescriptorType::Bip84 => "m/84h/1h/0h",
+        DescriptorType::Bip86 => "m/86h/1h/0h",
+    };
 
-pub fn generate_bip86_descriptor_from_key(
-    network: &Network,
-    key: &str,
-) -> Result<serde_json::Value, Error> {
-    generate_bip_descriptor_from_key(network, key, "m/86h/1h/0h", DescriptorType::Bip86)
-}
-
-pub fn generate_bip49_descriptor_from_key(
-    network: &Network,
-    key: &str,
-) -> Result<serde_json::Value, Error> {
-    generate_bip_descriptor_from_key(network, key, "m/49h/1h/0h", DescriptorType::Bip49)
-}
-
-pub fn generate_bip44_descriptor_from_key(
-    network: &Network,
-    key: &str,
-) -> Result<serde_json::Value, Error> {
-    generate_bip_descriptor_from_key(network, key, "m/44h/1h/0h", DescriptorType::Bip44)
+    generate_bip_descriptor_from_key(network, key, derivation_path, descriptor_type)
 }
 
 pub fn generate_new_bip84_descriptor_with_mnemonic(

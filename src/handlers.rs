@@ -20,8 +20,8 @@ use bdk_wallet::bip39::{Language, Mnemonic};
 use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
 use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
-use bdk_wallet::bitcoin::secp256k1::Secp256k1;
 use bdk_wallet::bitcoin::Network;
+use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Txid};
 use bdk_wallet::descriptor::Segwitv0;
 use bdk_wallet::keys::bip39::WordCount;
 use bdk_wallet::keys::{GeneratableKey, GeneratedKey};
@@ -37,7 +37,6 @@ use serde_json::Value;
     feature = "rpc"
 ))]
 use bdk_wallet::bitcoin::Transaction;
-use bdk_wallet::bitcoin::Txid;
 use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
 #[cfg(feature = "sqlite")]
 use bdk_wallet::rusqlite::Connection;
@@ -835,21 +834,14 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             Ok("".to_string())
         }
         CliSubCommand::Descriptor(args) => {
-            let network = cli_opts.network; // Or just use cli_opts directly
-            let json = handle_generate_descriptor(args.clone(), network)?;
+            let network = cli_opts.network;
+            let descriptor = generate_descriptor_from_args(args.clone(), network)
+                .map_err(|e| SerdeError::custom(e.to_string()))?;
+            let json = serde_json::to_string_pretty(&descriptor)?;
             Ok(json)
         }
     };
     result.map_err(|e| e.into())
-}
-
-pub fn handle_generate_descriptor(
-    args: GenerateDescriptorArgs,
-    network: Network,
-) -> Result<String, SerdeError> {
-    let descriptor = generate_descriptor_from_args(args, network)
-        .map_err(|e| SerdeErrorTrait::custom(e.to_string()))?;
-    serde_json::to_string_pretty(&descriptor)
 }
 
 #[cfg(feature = "repl")]
@@ -918,6 +910,57 @@ fn readline() -> Result<String, Error> {
     Ok(buffer)
 }
 
+pub fn generate_descriptor_from_args(
+    args: GenerateDescriptorArgs,
+    network: Network,
+) -> Result<serde_json::Value, Error> {
+    match (args.multipath, args.key.as_ref()) {
+        (true, Some(key)) => generate_multipath_descriptor(&network, args.r#type, key),
+        (false, Some(key)) => generate_standard_descriptor(&network, args.r#type, key),
+        (false, None) => {
+            // New default: generate descriptor from fresh mnemonic (for script_type 84 only)
+            if args.r#type == 84 {
+                generate_new_bip84_descriptor_with_mnemonic(network)
+            } else {
+                Err(Error::Generic(
+                    "Only script type 84 is supported for mnemonic-based generation".to_string(),
+                ))
+            }
+        }
+        _ => Err(Error::InvalidArguments(
+            "Invalid arguments: please provide a key or a weak string".to_string(),
+        )),
+    }
+}
+
+pub fn generate_standard_descriptor(
+    network: &Network,
+    script_type: u8,
+    key: &str,
+) -> Result<Value, Error> {
+    let descriptor_type = match script_type {
+        44 => DescriptorType::Bip44,
+        49 => DescriptorType::Bip49,
+        84 => DescriptorType::Bip84,
+        86 => DescriptorType::Bip86,
+        _ => return Err(Error::UnsupportedScriptType(script_type)),
+    };
+
+    generate_descriptor_from_key_by_type(network, key, descriptor_type)
+}
+
+impl fmt::Display for DescriptorType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            DescriptorType::Bip44 => "bip44",
+            DescriptorType::Bip49 => "bip49",
+            DescriptorType::Bip84 => "bip84",
+            DescriptorType::Bip86 => "bip86",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -941,54 +984,5 @@ mod test {
 
         let full_signed_psbt = Psbt::from_str("cHNidP8BAIkBAAAAASWJHzxzyVORV/C3lAynKHVVL7+Rw7/Jj8U9fuvD24olAAAAAAD+////AiBOAAAAAAAAIgAgLzY9yE4jzTFJnHtTjkc+rFAtJ9NB7ENFQ1xLYoKsI1cfqgKVAAAAACIAIFsbWgDeLGU8EA+RGwBDIbcv4gaGG0tbEIhDvwXXa/E7LwEAAAABALUCAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////BALLAAD/////AgD5ApUAAAAAIgAgWxtaAN4sZTwQD5EbAEMhty/iBoYbS1sQiEO/Bddr8TsAAAAAAAAAACZqJKohqe3i9hw/cdHe/T+pmd+jaVN1XGkGiXmZYrSL69g2l06M+QEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQErAPkClQAAAAAiACBbG1oA3ixlPBAPkRsAQyG3L+IGhhtLWxCIQ78F12vxOwEFR1IhA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDIQLKhV/gEZYmlsQXnsL5/Uqv5Y8O31tmWW1LQqIBkiqzCVKuIgYCyoVf4BGWJpbEF57C+f1Kr+WPDt9bZlltS0KiAZIqswkEboH3lCIGA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDBDS6ZSEBBwABCNsEAEgwRQIhAJzT6busDV9h12M/LNquZ17oOHFn7whg90kh9gjSpvshAiBEDu/1EYVD7BqJJzExPhq2CX/Vsap/ULLjfRRo99nEKQFHMEQCIGoFCvJ2zPB7PCpznh4+1jsY03kMie49KPoPDdr7/T9TAiB3jV7wzR9BH11FSbi+8U8gSX95PrBlnp1lOBgTUIUw3QFHUiED8lXZT/Sldb6I/j1ByxiKUS+RkR3imGYMzydXzAL4x4MhAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJUq4AACICAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJBG6B95QiAgPyVdlP9KV1voj+PUHLGIpRL5GRHeKYZgzPJ1fMAvjHgwQ0umUhAA==").unwrap();
         assert!(is_final(&full_signed_psbt).is_ok());
-    }
-}
-
-pub fn generate_descriptor_from_args(
-    args: GenerateDescriptorArgs,
-    network: Network,
-) -> Result<serde_json::Value, Error> {
-    match (args.multipath, args.key.as_ref()) {
-        (true, Some(key)) => generate_multipath_descriptor(&network, args.r#type, key),
-        (false, Some(key)) => generate_standard_descriptor(&network, args.r#type, key),
-        (false, None) => {
-            // New default: generate descriptor from fresh mnemonic (for script_type 84 only maybe)
-            if args.r#type == 84 {
-                generate_new_bip84_descriptor_with_mnemonic(network)
-            } else {
-                Err(Error::Generic(
-                    "Only script type 84 is supported for mnemonic-based generation".to_string(),
-                ))
-            }
-        }
-        _ => Err(Error::InvalidArguments(
-            "Invalid arguments: please provide a key or a weak string".to_string(),
-        )),
-    }
-}
-
-pub fn generate_standard_descriptor(
-    network: &Network,
-    script_type: u8,
-    key: &str,
-) -> Result<Value, Error> {
-    match script_type {
-        84 => generate_bip84_descriptor_from_key(network, key),
-        86 => generate_bip86_descriptor_from_key(network, key),
-        49 => generate_bip49_descriptor_from_key(network, key),
-        44 => generate_bip44_descriptor_from_key(network, key),
-        _ => Err(Error::UnsupportedScriptType(script_type)),
-    }
-}
-
-impl fmt::Display for DescriptorType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            DescriptorType::Bip44 => "bip44",
-            DescriptorType::Bip49 => "bip49",
-            DescriptorType::Bip84 => "bip84",
-            DescriptorType::Bip86 => "bip86",
-        };
-        write!(f, "{}", s)
     }
 }

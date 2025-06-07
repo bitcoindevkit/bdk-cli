@@ -103,7 +103,7 @@ pub enum CliSubCommand {
         #[command(flatten)]
         wallet_opts: WalletOpts,
     },
-    /// Generate a Bitcoin descriptor either from a provided XPRV or by generating a new random mnemonic.
+    /// Generate a Bitcoin descriptor either from a provided (Xprv, Xpub) or by generating a new random mnemonic.
     ///
     /// This function supports two modes:
     ///
@@ -122,7 +122,7 @@ pub enum CliSubCommand {
     /// - `external`: public and private descriptors for receive addresses (`/0/*`)
     /// - `internal`: public and private descriptors for change addresses (`/1/*`)
     /// - `fingerprint`: master key fingerprint used in the descriptors
-    /// - `network`: either `mainnet`, `testnet`, `signet`, or `regtest`
+    /// - `network`: either `mainnet`, `testnet`, `signet`, `regtest`, or `testnet4`
     /// - `type`: one of `bip44`, `bip49`, `bip84`, or `bip86`
     ///
     /// > ⚠️ **Security Warning**: This feature is intended for testing and development purposes.
