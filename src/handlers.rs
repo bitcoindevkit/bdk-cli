@@ -523,92 +523,15 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
-            let txid = match client {
-                #[cfg(feature = "electrum")]
-                Electrum {
-                    client,
-                    batch_size: _,
-                } => client
-                    .transaction_broadcast(&tx)
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-                #[cfg(feature = "esplora")]
-                Esplora {
-                    client,
-                    parallel_requests: _,
-                } => client
-                    .broadcast(&tx)
-                    .await
-                    .map(|()| tx.compute_txid())
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-                #[cfg(feature = "rpc")]
-                RpcClient { client } => client
-                    .send_raw_transaction(&tx)
-                    .map_err(|e| Error::Generic(e.to_string()))?,
+            let txid = broadcast_transaction(client, tx).await?;
 
-                #[cfg(feature = "cbf")]
-                KyotoClient { client } => {
-                    let LightClient {
-                        requester,
-                        mut log_subscriber,
-                        mut info_subscriber,
-                        mut warning_subscriber,
-                        update_subscriber: _,
-                        node,
-                    } = client;
 
-                    let subscriber = tracing_subscriber::FmtSubscriber::new();
-                    tracing::subscriber::set_global_default(subscriber)
-                        .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {}", e)))?;
 
-                    tokio::task::spawn(async move { node.run().await });
-                    tokio::task::spawn(async move {
-                        select! {
-                            log = log_subscriber.recv() => {
-                                if let Some(log) = log {
-                                    tracing::info!("{log}");
-                                }
-                            },
-                            warn = warning_subscriber.recv() => {
-                                if let Some(warn) = warn {
-                                    tracing::warn!("{warn}");
                                 }
                             }
                         }
-                    });
-                    let txid = tx.compute_txid();
-                    tracing::info!("Waiting for connections to broadcast...");
-                    while let Some(info) = info_subscriber.recv().await {
-                        match info {
-                            Info::ConnectionsMet => {
-                                requester
-                                    .broadcast_random(tx.clone())
-                                    .map_err(|e| Error::Generic(format!("{}", e)))?;
-                                break;
-                            }
-                            _ => tracing::info!("{info}"),
                         }
                     }
-                    tokio::time::timeout(tokio::time::Duration::from_secs(15), async move {
-                        while let Some(info) = info_subscriber.recv().await {
-                            match info {
-                                Info::TxGossiped(wtxid) => {
-                                    tracing::info!("Successfully broadcast WTXID: {wtxid}");
-                                    break;
-                                }
-                                Info::ConnectionsMet => {
-                                    tracing::info!("Rebroadcasting to new connections");
-                                    requester.broadcast_random(tx.clone()).unwrap();
-                                }
-                                _ => tracing::info!("{info}"),
-                            }
-                        }
-                    })
-                    .await
-                    .map_err(|_| {
-                        tracing::warn!("Broadcast was unsuccessful");
-                        Error::Generic("Transaction broadcast timed out after 15 seconds".into())
-                    })?;
-                    txid
                 }
             };
             Ok(json!({ "txid": txid }))
@@ -964,6 +887,105 @@ async fn respond(
         writeln!(std::io::stdout(), "Exiting...").map_err(|e| e.to_string())?;
         std::io::stdout().flush().map_err(|e| e.to_string())?;
         Ok(true)
+    }
+}
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+/// Broadcasts a given transaction using the blockchain client.
+async fn broadcast_transaction(client: BlockchainClient, tx: Transaction) -> Result<Txid, Error> {
+    match client {
+        #[cfg(feature = "electrum")]
+        Electrum {
+            client,
+            batch_size: _,
+        } => client
+            .transaction_broadcast(&tx)
+            .map_err(|e| Error::Generic(e.to_string())),
+        #[cfg(feature = "esplora")]
+        Esplora {
+            client,
+            parallel_requests: _,
+        } => client
+            .broadcast(&tx)
+            .await
+            .map(|()| tx.compute_txid())
+            .map_err(|e| Error::Generic(e.to_string())),
+        #[cfg(feature = "rpc")]
+        RpcClient { client } => client
+            .send_raw_transaction(&tx)
+            .map_err(|e| Error::Generic(e.to_string())),
+
+        #[cfg(feature = "cbf")]
+        KyotoClient { client } => {
+            let LightClient {
+                requester,
+                mut log_subscriber,
+                mut info_subscriber,
+                mut warning_subscriber,
+                update_subscriber: _,
+                node,
+            } = client;
+
+            let subscriber = tracing_subscriber::FmtSubscriber::new();
+            tracing::subscriber::set_global_default(subscriber)
+                .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {}", e)))?;
+
+            tokio::task::spawn(async move { node.run().await });
+            tokio::task::spawn(async move {
+                select! {
+                    log = log_subscriber.recv() => {
+                        if let Some(log) = log {
+                            tracing::info!("{log}");
+                        }
+                    },
+                    warn = warning_subscriber.recv() => {
+                        if let Some(warn) = warn {
+                            tracing::warn!("{warn}");
+                        }
+                    }
+                }
+            });
+            let txid = tx.compute_txid();
+            tracing::info!("Waiting for connections to broadcast...");
+            while let Some(info) = info_subscriber.recv().await {
+                match info {
+                    Info::ConnectionsMet => {
+                        requester
+                            .broadcast_random(tx.clone())
+                            .map_err(|e| Error::Generic(format!("{}", e)))?;
+                        break;
+                    }
+                    _ => tracing::info!("{info}"),
+                }
+            }
+            // TODO: This has been and still is (after moving to a helper function) swallowing the error. Need to fix.
+            let _ = tokio::time::timeout(tokio::time::Duration::from_secs(15), async move {
+                while let Some(info) = info_subscriber.recv().await {
+                    match info {
+                        Info::TxGossiped(wtxid) => {
+                            tracing::info!("Successfully broadcast WTXID: {wtxid}");
+                            break;
+                        }
+                        Info::ConnectionsMet => {
+                            tracing::info!("Rebroadcasting to new connections");
+                            requester.broadcast_random(tx.clone()).unwrap();
+                        }
+                        _ => tracing::info!("{info}"),
+                    }
+                }
+            })
+            .await
+            .map_err(|_| {
+                tracing::warn!("Broadcast was unsuccessful");
+                Error::Generic("Transaction broadcast timed out after 15 seconds".into())
+            });
+            Ok(txid)
+        }
     }
 }
 
