@@ -10,6 +10,10 @@
 //!
 //! This module includes all the utility tools used by the App.
 use crate::error::BDKCliError as Error;
+use std::str::FromStr;
+
+use std::path::{Path, PathBuf};
+
 use bdk_wallet::bip39::{Language, Mnemonic};
 use bdk_wallet::bitcoin::bip32::DerivationPath;
 use bdk_wallet::bitcoin::bip32::{Xpriv, Xpub};
@@ -17,18 +21,13 @@ use bdk_wallet::bitcoin::secp256k1::Secp256k1;
 use bdk_wallet::descriptor::Segwitv0;
 use bdk_wallet::descriptor::{Descriptor, DescriptorPublicKey};
 use bdk_wallet::keys::bip39::WordCount;
+use bdk_wallet::keys::{DescriptorSecretKey, IntoDescriptorKey};
 use bdk_wallet::keys::{GeneratableKey, GeneratedKey};
+use bdk_wallet::miniscript::descriptor::{DescriptorXKey, Wildcard};
 use serde_json::json;
 use serde_json::Value;
 
-use bdk_wallet::keys::{DescriptorSecretKey, IntoDescriptorKey};
-use bdk_wallet::miniscript::descriptor::{DescriptorXKey, Wildcard};
-
-use std::str::FromStr;
-
-use std::path::{Path, PathBuf};
-
-use crate::commands::*;
+use crate::commands::WalletOpts;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{
     builder::NodeBuilder,

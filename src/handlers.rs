@@ -22,22 +22,9 @@ use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
 use bdk_wallet::bitcoin::Network;
 use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Txid};
+use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
 use bdk_wallet::descriptor::Segwitv0;
 use bdk_wallet::keys::bip39::WordCount;
-use bdk_wallet::keys::{GeneratableKey, GeneratedKey};
-use bdk_wallet::serde::ser::Error as SerdeErrorTrait;
-use serde_json::json;
-use serde_json::Error as SerdeError;
-use serde_json::Value;
-
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "cbf",
-    feature = "rpc"
-))]
-use bdk_wallet::bitcoin::Transaction;
-use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
 #[cfg(feature = "sqlite")]
 use bdk_wallet::rusqlite::Connection;
 #[cfg(feature = "compiler")]
@@ -46,24 +33,27 @@ use bdk_wallet::{
     miniscript::policy::Concrete,
 };
 use bdk_wallet::{KeychainKind, SignOptions, Wallet};
-use std::fmt;
-use std::str::FromStr;
-
-use bdk_wallet::keys::DescriptorKey::Secret;
-use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey};
-use bdk_wallet::miniscript::miniscript;
-use std::collections::BTreeMap;
-#[cfg(any(feature = "electrum", feature = "esplora"))]
-use std::collections::HashSet;
-use std::convert::TryFrom;
-#[cfg(any(feature = "repl", feature = "electrum", feature = "esplora"))]
-use std::io::Write;
 
 #[cfg(feature = "electrum")]
 use crate::utils::BlockchainClient::Electrum;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{Info, LightClient};
 use bdk_wallet::bitcoin::base64::prelude::*;
+use bdk_wallet::keys::DescriptorKey::Secret;
+use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
+use bdk_wallet::miniscript::miniscript;
+use bdk_wallet::serde::ser::Error as SerdeErrorTrait;
+use serde_json::json;
+use serde_json::Error as SerdeError;
+use serde_json::Value;
+use std::collections::BTreeMap;
+#[cfg(any(feature = "electrum", feature = "esplora"))]
+use std::collections::HashSet;
+use std::convert::TryFrom;
+use std::fmt;
+#[cfg(any(feature = "repl", feature = "electrum", feature = "esplora"))]
+use std::io::Write;
+use std::str::FromStr;
 #[cfg(feature = "cbf")]
 use tokio::select;
 #[cfg(any(
@@ -74,7 +64,7 @@ use tokio::select;
 ))]
 use {
     crate::commands::OnlineWalletSubCommand::*,
-    bdk_wallet::bitcoin::{consensus::Decodable, hex::FromHex},
+    bdk_wallet::bitcoin::{consensus::Decodable, hex::FromHex, Transaction},
 };
 #[cfg(feature = "esplora")]
 use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
