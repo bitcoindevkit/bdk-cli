@@ -122,11 +122,78 @@ The below are some of the commands included:
 
 ``` shell
 just # list all available recipes
-just start # start regtest bitcoind in default dir
 just test # test the project
 just build # build the project
 ```
 
+### Using `Justfile` to run `bitcoind` as a Client
+
+If you are testing `bdk-cli` in regtest mode and wants to use your `bitcoind` node as a blockchain client, the `Justfile` can help you to quickly do so. Below are the steps to use your `bitcoind` node in *regtest* mode with `bdk-cli`:
+
+Note: You can modify the `Justfile` to reflect your nodes' configuration values. These values are the default values used in `bdk-cli`
+ > * default wallet: The set default wallet name is `regtest_default_wallet`
+ > * default data directory: The set default data directory is `~/.bdk-bitcoin`
+ > * RPC username: The set RPC username is `user`
+ > * RPC password: The set RPC password is `password`
+
+#### Steps
+
+1. Start bitcoind
+   ```shell
+   just start
+   ```
+
+2. Create or load a bitcoind wallet with default wallet name
+
+   ```shell
+   just create
+   ```
+   or
+   ```shell 
+   just load
+   ```
+
+3. Generate a bitcoind wallet address to send regtest bitcoins to.
+
+   ```shell
+   just address
+   ```
+   
+4. Mine 101 blocks on regtest to bitcoind wallet address
+   ```shell
+   just generate 101 $(just address)
+   ```
+
+5. Check the bitcoind wallet balance
+   ```shell
+   just balance
+   ```
+
+6. Setup your `bdk-cli` wallet config and connect it to your regtest node to perform a `sync`
+   ```shell
+   export NETWORK=regtest
+   export EXT_DESCRIPTOR='wpkh(tprv8ZgxMBicQKsPdMzWj9KHvoExKJDqfZFuT5D8o9XVZ3wfyUcnPNPJKncq5df8kpDWnMxoKbGrpS44VawHG17ZSwTkdhEtVRzSYXd14vDYXKw/0/*)'
+   export INT_DESCRIPTOR='wpkh(tprv8ZgxMBicQKsPdMzWj9KHvoExKJDqfZFuT5D8o9XVZ3wfyUcnPNPJKncq5df8kpDWnMxoKbGrpS44VawHG17ZSwTkdhEtVRzSYXd14vDYXKw/1/*)'
+   export DATABASE_TYPE=sqlite
+   cargo run --features rpc -- wallet -u "127.0.0.1:18443" -c rpc -a user:password sync
+   ```
+
+7. Generate an address from your `bdk-cli` wallet and fund it with 10 bitcoins from your bitcoind node's wallet
+   ```shell
+   export address=$(cargo run --features rpc -- wallet -u "127.0.0.1:18443" -c rpc -a user:password new_address | jq '.address')
+   just send 10 $address
+   ```
+
+8. Mine 6 more blocks to the bitcoind wallet
+   ```shell
+   just generate 6 $(just address)
+   ```
+
+9. You can `sync` your `bdk-cli` wallet now and the balance should reflect the regtest bitcoin you received
+   ```shell
+   cargo run --features rpc -- wallet -u "127.0.0.1:18443" -c rpc -a user:password sync
+   cargo run --features rpc -- wallet -u "127.0.0.1:18443" -c rpc -a user:password balance
+   ```
 
 ## Minimum Supported Rust Version (MSRV)
 

@@ -554,7 +554,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                         mut warning_subscriber,
                         update_subscriber: _,
                         node,
-                    } = client;
+                    } = *client;
 
                     let subscriber = tracing_subscriber::FmtSubscriber::new();
                     tracing::subscriber::set_global_default(subscriber)
