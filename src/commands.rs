@@ -13,7 +13,6 @@
 //! All subcommands are defined in the below enums.
 
 #![allow(clippy::large_enum_variant)]
-
 use bdk_wallet::bitcoin::{
     bip32::{DerivationPath, Xpriv},
     Address, Network, OutPoint, ScriptBuf,
@@ -104,6 +103,42 @@ pub enum CliSubCommand {
         #[command(flatten)]
         wallet_opts: WalletOpts,
     },
+    /// Generate a Bitcoin descriptor either from a provided (Xprv, Xpub) or by generating a new random mnemonic.
+    ///
+    /// This function supports two modes:
+    ///
+    /// 1. **Using a provided XPRV**:
+    ///    - Generates BIP32-based descriptors from the provided extended private key.
+    ///    - Derives both external (`/0/*`) and internal (`/1/*`) paths.
+    ///    - Automatically detects the script type from the `--type` flag (e.g., BIP44, BIP49, BIP84, BIP86).
+    ///
+    /// 2. **Generating a new mnemonic**:
+    ///    - Creates a new 12-word BIP39 mnemonic phrase.
+    ///    - Derives a BIP32 root XPRV using the standard derivation path based on the selected script type.
+    ///    - Constructs external and internal descriptors using that XPRV.
+    ///
+    /// The output is a prettified JSON object containing:
+    /// - `mnemonic` (if generated): the 12-word seed phrase.
+    /// - `external`: public and private descriptors for receive addresses (`/0/*`)
+    /// - `internal`: public and private descriptors for change addresses (`/1/*`)
+    /// - `fingerprint`: master key fingerprint used in the descriptors
+    /// - `network`: either `mainnet`, `testnet`, `signet`, `regtest`, or `testnet4`
+    /// - `type`: one of `bip44`, `bip49`, `bip84`, or `bip86`
+    ///
+    /// > ⚠️ **Security Warning**: This feature is intended for testing and development purposes.
+    /// > Do **not** use generated descriptors or mnemonics to secure real Bitcoin funds on mainnet.
+    ///
+    Descriptor(GenerateDescriptorArgs),
+}
+#[derive(Debug, Clone, PartialEq, Args)]
+pub struct GenerateDescriptorArgs {
+    #[clap(long, value_parser = clap::value_parser!(u8).range(44..=86))]
+    pub r#type: u8, // 44, 49, 84, 86
+
+    #[clap(long)]
+    pub multipath: bool,
+
+    pub key: Option<String>, // Positional argument (tprv/tpub/xprv/xpub)
 }
 
 /// Wallet operation subcommands.
