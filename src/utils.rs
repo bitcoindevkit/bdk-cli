@@ -153,7 +153,7 @@ pub(crate) enum BlockchainClient {
     },
 
     #[cfg(feature = "cbf")]
-    KyotoClient { client: LightClient },
+    KyotoClient { client: Box<LightClient> },
 }
 
 #[cfg(any(
@@ -219,7 +219,9 @@ pub(crate) fn new_blockchain_client(
                 .data_dir(&_datadir)
                 .build_with_wallet(_wallet, scan_type)?;
 
-            BlockchainClient::KyotoClient { client }
+            BlockchainClient::KyotoClient {
+                client: Box::new(client),
+            }
         }
     };
     Ok(client)
@@ -336,7 +338,7 @@ pub async fn trace_logger(
 
 // Handle Kyoto Client sync
 #[cfg(feature = "cbf")]
-pub async fn sync_kyoto_client(wallet: &mut Wallet, client: LightClient) -> Result<(), Error> {
+pub async fn sync_kyoto_client(wallet: &mut Wallet, client: Box<LightClient>) -> Result<(), Error> {
     let LightClient {
         requester,
         log_subscriber,
@@ -344,7 +346,7 @@ pub async fn sync_kyoto_client(wallet: &mut Wallet, client: LightClient) -> Resu
         warning_subscriber,
         mut update_subscriber,
         node,
-    } = client;
+    } = *client;
 
     let subscriber = tracing_subscriber::FmtSubscriber::new();
     tracing::subscriber::set_global_default(subscriber)

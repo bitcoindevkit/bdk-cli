@@ -95,3 +95,8 @@ send n address wallet=default_wallet:
 [group('rpc')]
 descriptors private wallet=default_wallet:
     bitcoin-cli -datadir={{default_datadir}} -regtest -rpcwallet={{wallet}} -rpcuser={{rpc_user}} -rpcpassword={{rpc_password}} listdescriptors {{private}}
+
+# run any bitcoin-cli rpc command
+[group('rpc')]
+rpc command wallet=default_wallet:
+    bitcoin-cli -datadir={{default_datadir}} -regtest -rpcwallet={{wallet}} -rpcuser={{rpc_user}} -rpcpassword={{rpc_password}} {{command}}

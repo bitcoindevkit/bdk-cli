@@ -20,6 +20,7 @@ mod test {
     use std::process::Command;
 
     /// Testing errors for integration tests
+    #[allow(dead_code)]
     #[derive(Debug)]
     enum IntTestError {
         // IO error
@@ -38,11 +39,12 @@ mod test {
 
     // Helper function
     // Runs a system command with given args
+    #[allow(dead_code)]
     fn run_cmd_with_args(cmd: &str, args: &[&str]) -> Result<serde_json::Value, IntTestError> {
         let output = Command::new(cmd).args(args).output().unwrap();
         let mut value = output.stdout;
         let error = output.stderr;
-        if value.len() == 0 {
+        if value.is_empty() {
             return Err(IntTestError::CmdExec(String::from_utf8(error).unwrap()));
         }
         value.pop(); // remove `\n` at end
@@ -56,6 +58,7 @@ mod test {
 
     // Helper Function
     // Transforms a json value to string
+    #[allow(dead_code)]
     fn value_to_string(value: &Value) -> Result<String, IntTestError> {
         match value {
             Value::Bool(bool) => match bool {
@@ -72,6 +75,7 @@ mod test {
 
     // Helper Function
     // Extracts value from a given json object and key
+    #[allow(dead_code)]
     fn get_value(json: &Value, key: &str) -> Result<String, IntTestError> {
         let map = json
             .as_object()
@@ -86,6 +90,7 @@ mod test {
 
     /// The bdk-cli command struct
     /// Use it to perform all bdk-cli operations
+    #[allow(dead_code)]
     #[derive(Debug)]
     struct BdkCli {
         target: String,
@@ -108,10 +113,10 @@ mod test {
             let mut feat = "--features=".to_string();
             for item in features {
                 feat.push_str(item);
-                feat.push_str(",");
+                feat.push(',');
             }
             feat.pop(); // remove the last comma
-            let _build = Command::new("cargo").args(&["build", &feat]).output()?;
+            let _build = Command::new("cargo").args(["build", &feat]).output()?;
 
             let mut bdk_cli = Self {
                 target: "./target/debug/bdk-cli".to_string(),
@@ -159,7 +164,7 @@ mod test {
             wallet_args.push("-d");
             wallet_args.push(self.recv_desc.as_ref().unwrap());
             wallet_args.push("-c");
-            wallet_args.push(&self.chang_desc.as_ref().unwrap());
+            wallet_args.push(self.chang_desc.as_ref().unwrap());
 
             for arg in args {
                 wallet_args.push(arg);
@@ -195,6 +200,7 @@ mod test {
 
     // Run A Basic wallet operation test, with given feature
     #[cfg(test)]
+    #[allow(dead_code)]
     fn basic_wallet_ops(feature: &str) {
         // Create a temporary directory for testing env
         let mut test_dir = std::env::current_dir().unwrap();
