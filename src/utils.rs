@@ -121,16 +121,18 @@ pub(crate) fn prepare_home_dir(home_path: Option<PathBuf>) -> Result<PathBuf, Er
 /// Prepare wallet database directory.
 #[allow(dead_code)]
 pub(crate) fn prepare_wallet_db_dir(
-    wallet_name: &Option<String>,
     home_path: &Path,
+    wallet_opts: &mut WalletOpts,
 ) -> Result<std::path::PathBuf, Error> {
     let mut dir = home_path.to_owned();
+    let wallet_name = wallet_opts.wallet.clone();
     if let Some(wallet_name) = wallet_name {
-        dir.push(wallet_name);
-    }
+        dir.push(&wallet_name);
 
-    if !dir.exists() {
-        std::fs::create_dir(&dir).map_err(|e| Error::Generic(e.to_string()))?;
+        if !dir.exists() {
+            std::fs::create_dir(&dir).map_err(|e| Error::Generic(e.to_string()))?;
+        }
+        wallet_opts.load_config(wallet_name.as_str(), home_path)?;
     }
 
     Ok(dir)
@@ -175,7 +177,7 @@ pub(crate) fn new_blockchain_client(
     _datadir: PathBuf,
 ) -> Result<BlockchainClient, Error> {
     #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
-    let url = wallet_opts.url.as_str();
+    let url = &wallet_opts.url;
     let client = match wallet_opts.client_type {
         #[cfg(feature = "electrum")]
         ClientType::Electrum => {
@@ -188,7 +190,7 @@ pub(crate) fn new_blockchain_client(
         }
         #[cfg(feature = "esplora")]
         ClientType::Esplora => {
-            let client = bdk_esplora::esplora_client::Builder::new(url).build_async()?;
+            let client = bdk_esplora::esplora_client::Builder::new(&url).build_async()?;
             BlockchainClient::Esplora {
                 client: Box::new(client),
                 parallel_requests: wallet_opts.parallel_requests,

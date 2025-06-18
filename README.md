@@ -215,3 +215,42 @@ You can optionally return outputs of commands in  human-readable, tabular format
 cargo run --pretty -n signet wallet -w {wallet_name} -d sqlite balance
 ```
 This is available for wallet, key, repl and compile features. When ommitted, outputs default to `JSON`.
+
+## Initializing Wallet Configurations with `init` Subcommand
+
+The `wallet init` sub-command simplifies wallet operations by saving configuration parameters to `config.toml` in the data directory (default `~/.bdk-bitcoin/config.toml`). This allows you to run subsequent `bdk-cli wallet` commands without repeatedly specifying configuration details, easing wallet operations.
+
+To initialize a wallet configuration, use the following command structure:
+
+```shell
+cargo run --features <list-of-features> -- -n <network> wallet --wallet <wallet_name> --ext-descriptor <ext_descriptor> --int-descriptor <int_descriptor>  --client-type <client_type>  --url <server_url> [--database-type <database_type>] [--rpc-user <rpc_user>]
+  [--rpc-password <rpc_password>] init
+```
+
+For example, to initialize a wallet named `my_wallet` with `electrum` as the backend on `signet` network:
+
+```shell
+cargo run --features electrum -- -n signet wallet -w my_wallet -e "tr(tprv8Z.../0/*)#dtdqk3dx" -i "tr(tprv8Z.../1/*)#ulgptya7" -d sqlite -c electrum -u "ssl://mempool.space:60602" init
+```
+
+To overwrite an existing wallet configuration, use the  `--force` flag after the `init` sub-command.
+
+You can omit the following arguments to use their default values:
+
+`network`: Defaults to `testnet`
+
+`database_type`: Defaults to `sqlite`
+
+#### Using Saved Configuration
+
+After a wallet is initialized, you can then run `bdk-cli` wallet commands without specifying the parameters, referencing only the wallet subcommand.
+
+For example, with the wallet `my_wallet` initialized, generate a new address and sync the wallet as follow:
+
+```shell
+cargo run wallet -w my_wallet --use-config new_address
+
+cargo run --features electrum wallet -w my_wallet --use-config sync
+```
+
+Note that each wallet has its own configuration, allowing multiple wallets with different configurations.
