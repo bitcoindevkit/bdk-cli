@@ -35,7 +35,7 @@ pub enum BDKCliError {
 
     #[error("Hex conversion error: {0}")]
     HexToArrayError(#[from] bdk_wallet::bitcoin::hashes::hex::HexToArrayError),
-    
+
     #[error("Key error: {0}")]
     KeyError(#[from] bdk_wallet::keys::KeyError),
 

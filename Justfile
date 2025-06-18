@@ -102,7 +102,7 @@ rpc command wallet=default_wallet:
     bitcoin-cli -datadir={{default_datadir}} -regtest -rpcwallet={{wallet}} -rpcuser={{rpc_user}} -rpcpassword={{rpc_password}} {{command}}
 
 [group('wallet')]
-init wallet_name ext_descriptor int_descriptor client_type url database_type='sqlite' rpc_user='user' rpc_password='pass' force='false':
+init wallet_name ext_descriptor int_descriptor client_type url database_type='sqlite' rpc_user='user' rpc_password='password' force='false':
     mkdir -p {{default_datadir}}
     # Check if wallet configuration exists
     if [ "{{force}}" = "false" ] && grep -Fx "[wallets.{{wallet_name}}]" {{default_datadir}}/config.toml > /dev/null; then \

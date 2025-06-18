@@ -14,7 +14,6 @@
 
 #![allow(clippy::large_enum_variant)]
 
-use std::path::Path;
 use crate::config::WalletConfig;
 use crate::error::BDKCliError as Error;
 use bdk_wallet::bitcoin::{
@@ -22,6 +21,7 @@ use bdk_wallet::bitcoin::{
     Address, Network, OutPoint, ScriptBuf,
 };
 use clap::{value_parser, Args, Parser, Subcommand, ValueEnum};
+use std::path::Path;
 
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
@@ -173,7 +173,13 @@ pub struct WalletOpts {
     #[arg(env = "CLIENT_TYPE", short = 'c', long, value_enum)]
     pub client_type: Option<ClientType>,
     #[cfg(feature = "sqlite")]
-    #[arg(env = "DATABASE_TYPE", short = 'd', long, value_enum, default_value="sqlite")]
+    #[arg(
+        env = "DATABASE_TYPE",
+        short = 'd',
+        long,
+        value_enum,
+        default_value = "sqlite"
+    )]
     pub database_type: Option<DatabaseType>,
     /// Sets the server url.
     #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
