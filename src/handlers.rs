@@ -576,19 +576,10 @@ pub(crate) async fn handle_online_wallet_subcommand(
                         }
                     });
                     let txid = tx.compute_txid();
-                    tracing::info!("Waiting for connections to broadcast...");
-                    while let Some(info) = info_subscriber.recv().await {
-                        match info {
-                            Info::ConnectionsMet => {
-                                requester
-                                    .broadcast_random(tx.clone())
-                                    .map_err(|e| Error::Generic(format!("{}", e)))?;
-                                break;
-                            }
-                            _ => tracing::info!("{info}"),
-                        }
-                    }
-                    tokio::time::timeout(tokio::time::Duration::from_secs(15), async move {
+                    requester
+                        .broadcast_random(tx.clone())
+                        .map_err(|e| Error::Generic(format!("{}", e)))?;
+                    tokio::time::timeout(tokio::time::Duration::from_secs(30), async move {
                         while let Some(info) = info_subscriber.recv().await {
                             match info {
                                 Info::TxGossiped(wtxid) => {
@@ -606,7 +597,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     .await
                     .map_err(|_| {
                         tracing::warn!("Broadcast was unsuccessful");
-                        Error::Generic("Transaction broadcast timed out after 15 seconds".into())
+                        Error::Generic("Transaction broadcast timed out after 30 seconds".into())
                     })?;
                     txid
                 }
