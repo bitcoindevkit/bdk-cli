@@ -1058,7 +1058,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             feature = "rpc"
         ))]
         CliSubCommand::Wallet {
-            ref wallet_opts,
+            mut wallet_opts,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
             // let network = cli_opts.network;
@@ -1088,6 +1088,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                         log::debug!("Redb database opened successfully");
                         Persister::RedbStore(store)
                     }
+                    None => return Err(Error::Generic("Dataase type is required".to_string())),
                 };
 
                 let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
@@ -1115,8 +1116,8 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             Ok(result)
         }
         CliSubCommand::Wallet {
-            ref wallet_opts,
-            subcommand: WalletSubCommand::OfflineWalletSubCommand(ref offline_subcommand),
+            mut wallet_opts,
+            subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
             let network = cli_opts.network;
             #[cfg(any(feature = "sqlite", feature = "redb"))]
@@ -1126,7 +1127,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 let mut persister: Persister = match &wallet_opts.database_type {
                     #[cfg(feature = "sqlite")]
                     DatabaseType::Sqlite => {
-                        let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
+                        let database_path = prepare_wallet_db_dir(&home_dir, &mut wallet_opts)?;
                         let db_file = database_path.join("wallet.sqlite");
                         let connection = Connection::open(db_file)?;
                         log::debug!("Sqlite database opened successfully");
@@ -1144,6 +1145,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                         log::debug!("Redb database opened successfully");
                         Persister::RedbStore(store)
                     }
+                    None => return Err(Error::Generic("Database type is required".to_string())),
                 };
 
                 let mut wallet = new_persisted_wallet(network, &mut persister, wallet_opts)?;
@@ -1188,8 +1190,6 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             let network = cli_opts.network;
             #[cfg(any(feature = "sqlite", feature = "redb"))]
             let (mut wallet, mut persister) = {
-                let wallet_name = &wallet_opts.wallet;
-
                 let home_dir = prepare_home_dir(cli_opts.datadir.clone())?;
 
                 let mut persister: Persister = match &wallet_opts.database_type {
@@ -1213,6 +1213,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                         log::debug!("Redb database opened successfully");
                         Persister::RedbStore(store)
                     }
+                    None => return Err(Error::Generic("Database typ is required".to_string())),
                 };
                 let wallet = new_persisted_wallet(network, &mut persister, wallet_opts)?;
                 (wallet, persister)
@@ -1220,8 +1221,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             #[cfg(not(any(feature = "sqlite", feature = "redb")))]
             let mut wallet = new_wallet(network, &wallet_opts)?;
             let home_dir = prepare_home_dir(cli_opts.datadir.clone())?;
-            let database_path = prepare_wallet_db_dir(&wallet_opts.wallet, &home_dir)?;
-
+            let database_path = prepare_wallet_db_dir(&home_dir, &mut wallet_opts.clone())?;
             loop {
                 let line = readline()?;
                 let line = line.trim();
