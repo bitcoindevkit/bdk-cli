@@ -744,23 +744,23 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             feature = "rpc"
         ))]
         CliSubCommand::Wallet {
-            wallet_opts,
+            mut wallet_opts,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
             let network = cli_opts.network;
             let home_dir = prepare_home_dir(cli_opts.datadir)?;
             let wallet_name = &wallet_opts.wallet;
-            let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
+            let database_path = prepare_wallet_db_dir(&home_dir, &mut wallet_opts)?;
             #[cfg(feature = "sqlite")]
             let result = {
                 let mut persister = match &wallet_opts.database_type {
-                    #[cfg(feature = "sqlite")]
-                    DatabaseType::Sqlite => {
+                    Some(DatabaseType::Sqlite) => {
                         let db_file = database_path.join("wallet.sqlite");
                         let connection = Connection::open(db_file)?;
                         log::debug!("Sqlite database opened successfully");
                         connection
                     }
+                    None => return Err(Error::Generic("Dataase type is required".to_string())),
                 };
 
                 let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
@@ -788,23 +788,22 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             serde_json::to_string_pretty(&result)
         }
         CliSubCommand::Wallet {
-            wallet_opts,
+            mut wallet_opts,
             subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
             let network = cli_opts.network;
             #[cfg(feature = "sqlite")]
             let result = {
                 let home_dir = prepare_home_dir(cli_opts.datadir)?;
-                let wallet_name = &wallet_opts.wallet;
-                let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
+                let database_path = prepare_wallet_db_dir(&home_dir, &mut wallet_opts)?;
                 let mut persister = match &wallet_opts.database_type {
-                    #[cfg(feature = "sqlite")]
-                    DatabaseType::Sqlite => {
+                    Some(DatabaseType::Sqlite) => {
                         let db_file = database_path.join("wallet.sqlite");
                         let connection = Connection::open(db_file)?;
                         log::debug!("Sqlite database opened successfully");
                         connection
                     }
+                    None => return Err(Error::Generic("Database type is required".to_string())),
                 };
 
                 let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
@@ -842,20 +841,18 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             let network = cli_opts.network;
             #[cfg(feature = "sqlite")]
             let (mut wallet, mut persister) = {
-                let wallet_name = &wallet_opts.wallet;
-
                 let home_dir = prepare_home_dir(cli_opts.datadir.clone())?;
-
-                let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
+                let database_path = prepare_wallet_db_dir(&home_dir, &mut wallet_opts.clone())?;
 
                 let mut persister = match &wallet_opts.database_type {
                     #[cfg(feature = "sqlite")]
-                    DatabaseType::Sqlite => {
+                    Some(DatabaseType::Sqlite) => {
                         let db_file = database_path.join("wallet.sqlite");
                         let connection = Connection::open(db_file)?;
                         log::debug!("Sqlite database opened successfully");
                         connection
                     }
+                    None => return Err(Error::Generic("Database typ is required".to_string())),
                 };
                 let wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
                 (wallet, persister)
@@ -863,8 +860,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             #[cfg(not(any(feature = "sqlite")))]
             let mut wallet = new_wallet(network, &wallet_opts)?;
             let home_dir = prepare_home_dir(cli_opts.datadir.clone())?;
-            let database_path = prepare_wallet_db_dir(&wallet_opts.wallet, &home_dir)?;
-
+            let database_path = prepare_wallet_db_dir(&home_dir, &mut wallet_opts.clone())?;
             loop {
                 let line = readline()?;
                 let line = line.trim();
