@@ -34,18 +34,11 @@ use bdk_wallet::{
 };
 use bdk_wallet::{KeychainKind, SignOptions, Wallet};
 
-#[cfg(feature = "electrum")]
-use crate::utils::BlockchainClient::Electrum;
-#[cfg(feature = "cbf")]
-use bdk_kyoto::{Info, LightClient};
-use bdk_wallet::bitcoin::base64::prelude::*;
 use bdk_wallet::keys::DescriptorKey::Secret;
 use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
 use bdk_wallet::miniscript::miniscript;
 use bdk_wallet::serde::ser::Error as SerdeErrorTrait;
-use serde_json::json;
-use serde_json::Error as SerdeError;
-use serde_json::Value;
+use serde_json::{json, Value, Error as SerdeError};
 use std::collections::BTreeMap;
 #[cfg(any(feature = "electrum", feature = "esplora"))]
 use std::collections::HashSet;
@@ -54,6 +47,12 @@ use std::fmt;
 #[cfg(any(feature = "repl", feature = "electrum", feature = "esplora"))]
 use std::io::Write;
 use std::str::FromStr;
+
+#[cfg(feature = "electrum")]
+use crate::utils::BlockchainClient::Electrum;
+#[cfg(feature = "cbf")]
+use bdk_kyoto::{Info, LightClient};
+use bdk_wallet::bitcoin::base64::prelude::*;
 #[cfg(feature = "cbf")]
 use tokio::select;
 #[cfg(any(
