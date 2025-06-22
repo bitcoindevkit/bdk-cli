@@ -37,11 +37,12 @@ use bdk_wallet::{KeychainKind, SignOptions, Wallet};
 use bdk_wallet::keys::DescriptorKey::Secret;
 use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
 use bdk_wallet::miniscript::miniscript;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::collections::BTreeMap;
 #[cfg(any(feature = "electrum", feature = "esplora"))]
 use std::collections::HashSet;
 use std::convert::TryFrom;
+use std::fmt;
 #[cfg(any(feature = "repl", feature = "electrum", feature = "esplora"))]
 use std::io::Write;
 use std::str::FromStr;
@@ -900,6 +901,13 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             }
             Ok("".to_string())
         }
+        CliSubCommand::Descriptor(args) => {
+            let network = cli_opts.network;
+            let descriptor = generate_descriptor_from_args(args.clone(), network)
+                .map_err(|e| Error::Generic(e.to_string()))?;
+            let json = serde_json::to_string_pretty(&descriptor)?;
+            Ok(json)
+        }
     };
     result.map_err(|e| e.into())
 }
@@ -969,6 +977,80 @@ fn readline() -> Result<String, Error> {
         .read_line(&mut buffer)
         .map_err(|e| Error::Generic(e.to_string()))?;
     Ok(buffer)
+}
+
+pub fn generate_descriptor_from_args(
+    args: GenerateDescriptorArgs,
+    network: Network,
+) -> Result<serde_json::Value, Error> {
+    let descriptor_type = match args.r#type {
+        44 => DescriptorType::Bip44,
+        49 => DescriptorType::Bip49,
+        84 => DescriptorType::Bip84,
+        86 => DescriptorType::Bip86,
+        _ => {
+            return Err(Error::Generic(format!(
+                "Unsupported script type {}",
+                args.r#type
+            )))
+        }
+    };
+    if args.multipath && args.path.is_some() {
+        return Err(Error::InvalidArguments(
+            "Path can not be called here".to_string(),
+        ));
+    }
+    if args.path.is_some() && args.key.is_none() {
+        return Err(Error::InvalidArguments(
+            "Custom path requires a key".to_string(),
+        ));
+    }
+    match (args.multipath, args.key.as_ref()) {
+        (true, Some(key)) => generate_multipath_descriptor(&network, args.r#type, key),
+        (false, Some(key)) => {
+            if let Some(path) = args.path.as_ref() {
+                // Use descriptor from custom derivation path
+                generate_bip_descriptor_from_key(&network, key, path, descriptor_type)
+            } else {
+                generate_standard_descriptor(&network, args.r#type, key)
+            }
+        }
+        (false, None) => {
+            // Generate from fresh mnemonic
+            generate_new_descriptor_with_mnemonic(network, descriptor_type)
+        }
+        _ => Err(Error::InvalidArguments(
+            "Invalid arguments: please provide a key or a weak string".to_string(),
+        )),
+    }
+}
+
+pub fn generate_standard_descriptor(
+    network: &Network,
+    script_type: u8,
+    key: &str,
+) -> Result<Value, Error> {
+    let descriptor_type = match script_type {
+        44 => DescriptorType::Bip44,
+        49 => DescriptorType::Bip49,
+        84 => DescriptorType::Bip84,
+        86 => DescriptorType::Bip86,
+        _ => return Err(Error::UnsupportedScriptType(script_type)),
+    };
+
+    generate_descriptor_from_key_by_type(network, key, descriptor_type)
+}
+
+impl fmt::Display for DescriptorType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            DescriptorType::Bip44 => "bip44",
+            DescriptorType::Bip49 => "bip49",
+            DescriptorType::Bip84 => "bip84",
+            DescriptorType::Bip86 => "bip86",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 #[cfg(any(
