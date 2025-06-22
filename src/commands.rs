@@ -132,13 +132,16 @@ pub enum CliSubCommand {
 }
 #[derive(Debug, Clone, PartialEq, Args)]
 pub struct GenerateDescriptorArgs {
-    #[clap(long, value_parser = clap::value_parser!(u8).range(44..=86))]
+    #[clap(long = "type", value_parser = clap::value_parser!(u8).range(44..=86), short = 't', default_value = "84")]
     pub r#type: u8, // 44, 49, 84, 86
 
-    #[clap(long)]
+    #[arg(long = "multipath", short = 'm', default_value_t = false)]
     pub multipath: bool,
 
-    pub key: Option<String>, // Positional argument (tprv/tpub/xprv/xpub)
+    #[arg(long)]
+    pub path: Option<String>,
+
+    pub key: Option<String>,
 }
 
 /// Wallet operation subcommands.
