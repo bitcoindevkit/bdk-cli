@@ -371,3 +371,21 @@ pub async fn sync_kyoto_client(wallet: &mut Wallet, client: Box<LightClient>) ->
 
     Ok(())
 }
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf",
+))]
+pub async fn send_payjoin_post_request(
+    req: payjoin::Request,
+) -> reqwest::Result<reqwest::Response> {
+    let client = reqwest::Client::new();
+    client
+        .post(req.url)
+        .header("Content-Type", req.content_type)
+        .body(req.body)
+        .send()
+        .await
+}

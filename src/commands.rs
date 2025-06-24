@@ -414,6 +414,19 @@ pub enum OnlineWalletSubCommand {
         )]
         tx: Option<String>,
     },
+    /// Sends an original PSBT to a BIP 21 URI and broadcasts the returned PayJoin PSBT.
+    SendPayjoin {
+        /// BIP 21 URI for the Payjoin (either v1 or v2).
+        #[arg(env = "PAYJOIN_URI", long = "uri", required = true)]
+        uri: String,
+        /// Fee rate to use in sat/vbyte.
+        #[arg(env = "SATS_VBYTE", short = 'f', long = "fee_rate", required = true)]
+        fee_rate: u64,
+        /// URL of the Payjoin OHTTP relay. Can be repeated multiple times to attempt the
+        /// operation with multiple relays for redundancy.
+        #[arg(env = "PAYJOIN_OHTTP_RELAY", long = "ohttp_relay")]
+        ohttp_relay: Option<Vec<String>>,
+    },
 }
 
 /// Subcommands for Key operations.
