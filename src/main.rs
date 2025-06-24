@@ -13,6 +13,7 @@
 mod commands;
 mod error;
 mod handlers;
+mod payjoin;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 mod persister;
 mod utils;

@@ -364,3 +364,21 @@ pub(crate) fn shorten(displayable: impl Display, start: u8, end: u8) -> String {
     let end_str: &str = &displayable[displayable.len() - end as usize..];
     format!("{start_str}...{end_str}")
 }
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf",
+))]
+pub async fn send_payjoin_post_request(
+    req: payjoin::Request,
+) -> reqwest::Result<reqwest::Response> {
+    let client = reqwest::Client::new();
+    client
+        .post(req.url)
+        .header("Content-Type", req.content_type)
+        .body(req.body)
+        .send()
+        .await
+}

@@ -9,7 +9,6 @@
 //! Command Handlers
 //!
 //! This module describes all the command handling logic used by bdk-cli.
-
 use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::*;
 use crate::error::BDKCliError as Error;
@@ -52,7 +51,14 @@ use std::convert::TryFrom;
 #[cfg(any(feature = "repl", feature = "electrum", feature = "esplora"))]
 use std::io::Write;
 use std::str::FromStr;
-#[cfg(any(feature = "redb", feature = "compiler"))]
+#[cfg(any(
+    feature = "redb",
+    feature = "compiler",
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
 use std::sync::Arc;
 
 #[cfg(feature = "electrum")]
@@ -72,7 +78,9 @@ use tokio::select;
 ))]
 use {
     crate::commands::OnlineWalletSubCommand::*,
+    crate::payjoin::{PayjoinManager, ohttp::RelayManager},
     bdk_wallet::bitcoin::{Transaction, consensus::Decodable, hex::FromHex},
+    std::sync::Mutex,
 };
 #[cfg(feature = "esplora")]
 use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
@@ -783,8 +791,19 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
-            let txid = broadcast_transaction(client, tx).await?;
+            let txid = broadcast_transaction(&client, tx).await?;
             Ok(serde_json::to_string_pretty(&json!({ "txid": txid }))?)
+        }
+        SendPayjoin {
+            uri,
+            fee_rate,
+            ohttp_relay,
+        } => {
+            let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
+            let mut payjoin_manager = PayjoinManager::new(&client, wallet, relay_manager);
+            return payjoin_manager
+                .send_payjoin(uri, fee_rate, ohttp_relay)
+                .await;
         }
     }
 }
@@ -1269,7 +1288,10 @@ async fn respond(
     feature = "rpc"
 ))]
 /// Broadcasts a given transaction using the blockchain client.
-async fn broadcast_transaction(client: BlockchainClient, tx: Transaction) -> Result<Txid, Error> {
+pub async fn broadcast_transaction(
+    client: &BlockchainClient,
+    tx: Transaction,
+) -> Result<Txid, Error> {
     match client {
         #[cfg(feature = "electrum")]
         Electrum {
