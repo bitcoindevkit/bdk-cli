@@ -112,6 +112,14 @@ pub enum CliSubCommand {
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
 pub enum WalletSubCommand {
+    /// Initialize a wallet configuration and save to `config.toml`.
+    Init {
+        #[command(flatten)]
+        wallet_opts: WalletOpts,
+        /// Overwrite existing wallet configuration if it exists.
+        #[arg(long = "force", default_value_t = false)]
+        force: bool,
+    },
     #[cfg(any(
         feature = "electrum",
         feature = "esplora",
@@ -173,13 +181,7 @@ pub struct WalletOpts {
     #[arg(env = "CLIENT_TYPE", short = 'c', long, value_enum)]
     pub client_type: Option<ClientType>,
     #[cfg(feature = "sqlite")]
-    #[arg(
-        env = "DATABASE_TYPE",
-        short = 'd',
-        long,
-        value_enum,
-        default_value = "sqlite"
-    )]
+    #[arg(env = "DATABASE_TYPE", short = 'd', long, value_enum)]
     pub database_type: Option<DatabaseType>,
     /// Sets the server url.
     #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
