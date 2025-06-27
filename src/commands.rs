@@ -20,7 +20,7 @@ use bdk_wallet::bitcoin::{
     Address, Network, OutPoint, ScriptBuf,
     bip32::{DerivationPath, Xpriv},
 };
-use clap::{value_parser, Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
 use std::path::Path;
 
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
@@ -115,6 +115,14 @@ pub enum CliSubCommand {
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
 pub enum WalletSubCommand {
+    /// Initialize a wallet configuration and save to `config.toml`.
+    Init {
+        #[command(flatten)]
+        wallet_opts: WalletOpts,
+        /// Overwrite existing wallet configuration if it exists.
+        #[arg(long = "force", default_value_t = false)]
+        force: bool,
+    },
     #[cfg(any(
         feature = "electrum",
         feature = "esplora",
@@ -176,11 +184,11 @@ pub struct WalletOpts {
         feature = "rpc",
         feature = "cbf"
     ))]
-    #[arg(env = "CLIENT_TYPE", short = 'c', long, value_enum, required = true)]
-    pub client_type: ClientType,
+    #[arg(env = "CLIENT_TYPE", short = 'c', long, value_enum)]
+    pub client_type: Option<ClientType>,
     #[cfg(any(feature = "sqlite", feature = "redb"))]
-    #[arg(env = "DATABASE_TYPE", short = 'd', long, value_enum, required = true)]
-    pub database_type: DatabaseType,
+    #[arg(env = "DATABASE_TYPE", short = 'd', long, value_enum)]
+    pub database_type: Option<DatabaseType>,
     /// Sets the server url.
     #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
     #[arg(env = "SERVER_URL", short = 'u', long)]
@@ -235,7 +243,7 @@ impl WalletOpts {
                 {
                     self.client_type = self.client_type.clone().or(config_opts.client_type);
                 }
-                #[cfg(feature = "sqlite")]
+                #[cfg(any(feature = "sqlite", feature = "redb"))]
                 {
                     // prioritizing the config.toml value for database type as it has a default value
                     self.database_type = config_opts.database_type.or(self.database_type.clone());
