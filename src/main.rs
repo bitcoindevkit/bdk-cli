@@ -11,6 +11,7 @@
 #![warn(missing_docs)]
 
 mod commands;
+mod config;
 mod error;
 mod handlers;
 mod utils;
@@ -28,15 +29,15 @@ async fn main() {
     let cli_opts: CliOpts = CliOpts::parse();
 
     let network = &cli_opts.network;
-    debug!("network: {:?}", network);
+    debug!("network: {network:?}");
     if network == &Network::Bitcoin {
         warn!("This is experimental software and not currently recommended for use on Bitcoin mainnet, proceed with caution.")
     }
 
     match handle_command(cli_opts).await {
-        Ok(result) => println!("{}", result),
+        Ok(result) => println!("{result}"),
         Err(e) => {
-            error!("{}", e);
+            error!("{e}");
             std::process::exit(1);
         }
     }
