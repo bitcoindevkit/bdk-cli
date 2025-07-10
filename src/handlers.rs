@@ -355,9 +355,9 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 let mut once = HashSet::<KeychainKind>::new();
                 move |k, spk_i, _| {
                     if once.insert(k) {
-                        print!("\nScanning keychain [{:?}]", k);
+                        print!("\nScanning keychain [{k:?}]");
                     }
-                    print!(" {:<3}", spk_i);
+                    print!(" {spk_i:<3}");
                     stdout.flush().expect("must flush");
                 }
             });
@@ -432,7 +432,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 .start_sync_with_revealed_spks()
                 .inspect(|item, progress| {
                     let pc = (100 * progress.consumed()) as f32 / progress.total() as f32;
-                    eprintln!("[ SCANNING {:03.0}% ] {}", pc, item);
+                    eprintln!("[ SCANNING {pc:03.0}% ] {item}");
                 });
             match client {
                 #[cfg(feature = "electrum")]
@@ -558,7 +558,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
 
                     let subscriber = tracing_subscriber::FmtSubscriber::new();
                     tracing::subscriber::set_global_default(subscriber)
-                        .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {}", e)))?;
+                        .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {e}")))?;
 
                     tokio::task::spawn(async move { node.run().await });
                     tokio::task::spawn(async move {
@@ -578,7 +578,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     let txid = tx.compute_txid();
                     requester
                         .broadcast_random(tx.clone())
-                        .map_err(|e| Error::Generic(format!("{}", e)))?;
+                        .map_err(|e| Error::Generic(format!("{e}")))?;
                     tokio::time::timeout(tokio::time::Duration::from_secs(30), async move {
                         while let Some(info) = info_subscriber.recv().await {
                             match info {
@@ -619,8 +619,7 @@ pub(crate) fn is_final(psbt: &Psbt) -> Result<(), Error> {
     let psbt_inputs = psbt.inputs.len();
     if unsigned_tx_inputs != psbt_inputs {
         return Err(Error::Generic(format!(
-            "Malformed PSBT, {} unsigned tx inputs and {} psbt inputs.",
-            unsigned_tx_inputs, psbt_inputs
+            "Malformed PSBT, {unsigned_tx_inputs} unsigned tx inputs and {psbt_inputs} psbt inputs."
         )));
     }
     let sig_count = psbt.inputs.iter().fold(0, |count, input| {
@@ -948,7 +947,7 @@ async fn respond(
     };
     if let Some(value) = response {
         let value = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
-        writeln!(std::io::stdout(), "{}", value).map_err(|e| e.to_string())?;
+        writeln!(std::io::stdout(), "{value}").map_err(|e| e.to_string())?;
         std::io::stdout().flush().map_err(|e| e.to_string())?;
         Ok(false)
     } else {

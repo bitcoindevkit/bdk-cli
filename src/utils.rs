@@ -337,7 +337,7 @@ pub async fn sync_kyoto_client(wallet: &mut Wallet, client: Box<LightClient>) ->
 
     let subscriber = tracing_subscriber::FmtSubscriber::new();
     tracing::subscriber::set_global_default(subscriber)
-        .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {}", e)))?;
+        .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {e}")))?;
 
     tokio::task::spawn(async move { node.run().await });
     tokio::task::spawn(async move {
@@ -354,7 +354,7 @@ pub async fn sync_kyoto_client(wallet: &mut Wallet, client: Box<LightClient>) ->
     tracing::info!("Received update: applying to wallet");
     wallet
         .apply_update(update)
-        .map_err(|e| Error::Generic(format!("Failed to apply update: {}", e)))?;
+        .map_err(|e| Error::Generic(format!("Failed to apply update: {e}")))?;
 
     tracing::info!(
         "Chain tip: {}, Transactions: {}, Balance: {}",
