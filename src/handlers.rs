@@ -746,7 +746,6 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             wallet_opts,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
-            let network = cli_opts.network;
             let home_dir = prepare_home_dir(cli_opts.datadir)?;
             let wallet_name = &wallet_opts.wallet;
             let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
