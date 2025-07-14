@@ -126,6 +126,9 @@ pub enum DatabaseType {
     /// Sqlite database
     #[cfg(feature = "sqlite")]
     Sqlite,
+    /// Redb database
+    #[cfg(feature = "redb")]
+    Redb,
 }
 
 #[cfg(any(
@@ -169,7 +172,7 @@ pub struct WalletOpts {
     ))]
     #[arg(env = "CLIENT_TYPE", short = 'c', long, value_enum, required = true)]
     pub client_type: ClientType,
-    #[cfg(feature = "sqlite")]
+    #[cfg(any(feature = "sqlite", feature = "redb"))]
     #[arg(env = "DATABASE_TYPE", short = 'd', long, value_enum, required = true)]
     pub database_type: DatabaseType,
     /// Sets the server url.

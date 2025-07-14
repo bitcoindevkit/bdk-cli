@@ -33,7 +33,7 @@ use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 use crate::commands::ClientType;
 
 use bdk_wallet::Wallet;
-#[cfg(feature = "sqlite")]
+#[cfg(any(feature = "sqlite", feature = "redb"))]
 use bdk_wallet::{KeychainKind, PersistedWallet, WalletPersister};
 
 /// Parse the recipient (Address,Amount) argument from cli input.
@@ -214,7 +214,7 @@ pub(crate) fn new_blockchain_client(
     Ok(client)
 }
 
-#[cfg(feature = "sqlite")]
+#[cfg(any(feature = "sqlite", feature = "redb"))]
 /// Create a new persisted wallet from given wallet configuration options.
 pub(crate) fn new_persisted_wallet<P: WalletPersister>(
     network: Network,
@@ -271,7 +271,7 @@ where
     Ok(wallet)
 }
 
-#[cfg(not(any(feature = "sqlite",)))]
+#[cfg(not(any(feature = "sqlite", feature = "redb")))]
 /// Create a new non-persisted wallet from given wallet configuration options.
 pub(crate) fn new_wallet(network: Network, wallet_opts: &WalletOpts) -> Result<Wallet, Error> {
     let ext_descriptor = wallet_opts.ext_descriptor.clone();

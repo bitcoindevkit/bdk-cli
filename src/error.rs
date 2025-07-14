@@ -57,8 +57,17 @@ pub enum BDKCliError {
     #[error("PsbtError: {0}")]
     PsbtError(#[from] bdk_wallet::bitcoin::psbt::Error),
 
+    #[cfg(feature = "sqlite")]
     #[error("Rusqlite error: {0}")]
     RusqliteError(#[from] bdk_wallet::rusqlite::Error),
+
+    #[cfg(feature = "redb")]
+    #[error("Redb StoreError: {0}")]
+    RedbStoreError(#[from] bdk_redb::error::StoreError),
+
+    #[cfg(feature = "redb")]
+    #[error("Redb dabtabase error: {0}")]
+    RedbDatabaseError(#[from] bdk_redb::redb::DatabaseError),
 
     #[error("Serde json error: {0}")]
     SerdeJson(#[from] serde_json::Error),
