@@ -269,7 +269,8 @@ dependencies = [
 [[package]]
 name = "bdk_redb"
 version = "0.1.0"
-source = "git+https://github.com/110CodingP/bdk_redb#9985249c3f22489ccaf4ae09138fae950eca774b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f69a501c17da6d90243c112a6ad07955eadd5cd321da663283040b29e724c70d"
 dependencies = [
  "bdk_chain",
  "bdk_wallet",

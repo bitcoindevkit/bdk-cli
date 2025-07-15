@@ -1,7 +1,8 @@
 use crate::error::BDKCliError;
 use bdk_wallet::WalletPersister;
 
-pub enum Persister {
+// Types of Persistence backends supported by bdk-cli
+pub(crate) enum Persister {
     #[cfg(feature = "sqlite")]
     Connection(bdk_wallet::rusqlite::Connection),
     #[cfg(feature = "redb")]
