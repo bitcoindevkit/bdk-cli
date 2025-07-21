@@ -59,6 +59,9 @@ _payjoin-dependencies = ["payjoin", "reqwest", "url"]
 # Use this to consensus verify transactions at sync time
 verify = []
 
+# Use HWI to sign transaction with your hardware wallet
+hwi = ["async-hwi"]
+
 # Extra utility tools
 # Compile policies
 compiler = []

@@ -23,6 +23,11 @@ use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
 use crate::utils::parse_proxy_auth;
 use crate::utils::{parse_address, parse_outpoint, parse_recipient};
 
+#[cfg(feature = "hwi")]
+const ENABLE_OFFLINE_SIGNER: bool = true;
+#[cfg(not(feature = "hwi"))]
+const ENABLE_OFFLINE_SIGNER: bool = false;
+
 /// The BDK Command Line Wallet App
 ///
 /// bdk-cli is a lightweight command line bitcoin wallet, powered by BDK.
@@ -305,7 +310,7 @@ pub enum OfflineWalletSubCommand {
         #[arg(long = "enable_rbf", short = 'r', default_value_t = true)]
         enable_rbf: bool,
         /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
-        #[arg(long = "offline_signer")]
+        #[arg(long = "offline_signer", default_value_t=ENABLE_OFFLINE_SIGNER)]
         offline_signer: bool,
         /// Selects which utxos *must* be spent.
         #[arg(env = "MUST_SPEND_TXID:VOUT", long = "utxos", value_parser = parse_outpoint)]
@@ -404,6 +409,12 @@ pub enum OfflineWalletSubCommand {
         /// Add one PSBT to combine. This option can be repeated multiple times, one for each PSBT.
         #[arg(env = "BASE64_PSBT", required = true)]
         psbt: Vec<String>,
+    },
+    #[cfg(feature = "hwi")]
+    /// Hardware wallet interface operations.
+    Hwi {
+        #[clap(subcommand)]
+        subcommand: HwiSubCommand,
     },
 }
 
@@ -516,6 +527,14 @@ pub enum KeySubCommand {
         #[arg(env = "PATH", short = 'p', long = "path")]
         path: DerivationPath,
     },
+}
+
+/// Subcommands for HWI operations.
+#[cfg(feature = "hwi")]
+#[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
+pub enum HwiSubCommand {
+    /// Lists all connected hardware wallet devices.
+    Devices,
 }
 
 /// Subcommands available in REPL mode.

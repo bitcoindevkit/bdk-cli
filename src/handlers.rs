@@ -97,7 +97,7 @@ const NUMS_UNSPENDABLE_KEY_HEX: &str =
 /// Execute an offline wallet sub-command
 ///
 /// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
-pub fn handle_offline_wallet_subcommand(
+pub async fn handle_offline_wallet_subcommand(
     wallet: &mut Wallet,
     wallet_opts: &WalletOpts,
     cli_opts: &CliOpts,
@@ -591,6 +591,27 @@ pub fn handle_offline_wallet_subcommand(
                 &json!({ "psbt": BASE64_STANDARD.encode(final_psbt.serialize()) }),
             )?)
         }
+         #[cfg(feature = "hwi")]
+        Hwi { subcommand } => match subcommand {
+            HwiSubCommand::Devices => {
+                let device = crate::utils::connect_to_hardware_wallet(
+                    wallet.network(),
+                    wallet_opts,
+                    Some(wallet),
+                )
+                .await?;
+                let device = if let Some(device) = device {
+                    json!({
+                        "type": device.device_kind().to_string(),
+                        "fingerprint": device.get_master_fingerprint().await?.to_string(),
+                        "model": device.device_kind().to_string(),
+                    })
+                } else {
+                    json!(null)
+                };
+                Ok(json!({ "devices": device }))
+            }
+        },
     }
 }
 
@@ -1461,9 +1482,9 @@ async fn respond(
         ReplSubCommand::Wallet {
             subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
-            let value =
-                handle_offline_wallet_subcommand(wallet, wallet_opts, cli_opts, offline_subcommand)
-                    .map_err(|e| e.to_string())?;
+            let value = handle_offline_wallet_subcommand(wallet, wallet_opts, offline_subcommand)
+                .await
+                .map_err(|e| e.to_string())?;
             Some(value)
         }
         ReplSubCommand::Wallet {

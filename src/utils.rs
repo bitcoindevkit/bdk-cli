@@ -35,6 +35,18 @@ use bdk_wallet::{
     template::DescriptorTemplate,
 };
 use cli_table::{Cell, CellStruct, Style, Table};
+use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
+#[cfg(feature = "hwi")]
+use {
+    async_hwi::jade::{self, Jade},
+    async_hwi::ledger::{HidApi, LedgerSimulator},
+    async_hwi::specter::{Specter, SpecterSimulator},
+    async_hwi::{
+        async_hwi::bitbox::{BitBox02, PairingBitbox02WithLocalCache},
+        bitbox::api::runtime,
+    },
+    async_hwi::{coldcard, HWI},
+};
 
 #[cfg(any(
     feature = "electrum",
