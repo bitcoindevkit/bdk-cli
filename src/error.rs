@@ -103,6 +103,10 @@ pub enum BDKCliError {
     #[cfg(feature = "cbf")]
     #[error("BDK-Kyoto update error: {0}")]
     KyotoUpdateError(#[from] bdk_kyoto::UpdateError),
+
+    #[cfg(feature = "hwi")]
+    #[error("HWI error: {0}")]
+    HwiError(#[from] async_hwi::Error),
 }
 
 impl From<ExtractTxError> for BDKCliError {
