@@ -31,6 +31,8 @@ use bdk_wallet::bitcoin::{
     secp256k1::Secp256k1,
 };
 use bdk_wallet::chain::ChainPosition;
+#[cfg(feature = "hwi")]
+use bdk_wallet::bitcoin::hex::DisplayHex;
 use bdk_wallet::descriptor::Segwitv0;
 use bdk_wallet::keys::{
     DerivableKey, DescriptorKey, DescriptorKey::Secret, ExtendedKey, GeneratableKey, GeneratedKey,
@@ -591,7 +593,7 @@ pub async fn handle_offline_wallet_subcommand(
                 &json!({ "psbt": BASE64_STANDARD.encode(final_psbt.serialize()) }),
             )?)
         }
-         #[cfg(feature = "hwi")]
+        #[cfg(feature = "hwi")]
         Hwi { subcommand } => match subcommand {
             HwiSubCommand::Devices => {
                 let device = crate::utils::connect_to_hardware_wallet(
@@ -610,6 +612,31 @@ pub async fn handle_offline_wallet_subcommand(
                     json!(null)
                 };
                 Ok(json!({ "devices": device }))
+            }
+            HwiSubCommand::Register => {
+                let policy = wallet_opts.ext_descriptor.clone().ok_or_else(|| {
+                    Error::Generic(
+                        "External descriptor required for wallet registration".to_string(),
+                    )
+                })?;
+                let wallet_name = wallet_opts.wallet.clone().ok_or_else(|| {
+                    Error::Generic("Wallet name is required for wallet registration".to_string())
+                })?;
+
+                let device = crate::utils::connect_to_hardware_wallet(
+                    wallet.network(),
+                    wallet_opts,
+                    Some(wallet),
+                )
+                .await?;
+                let hmac = if let Some(device) = device {
+                    let hmac = device.register_wallet(&wallet_name, &policy).await?;
+                    hmac.map(|h| h.to_lower_hex_string())
+                } else {
+                    None
+                };
+                //TODO: return status of wallet registration
+                Ok(json!({ "hmac": hmac }))
             }
         },
     }
@@ -1482,7 +1509,7 @@ async fn respond(
         ReplSubCommand::Wallet {
             subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
-            let value = handle_offline_wallet_subcommand(wallet, wallet_opts, offline_subcommand)
+            let value = handle_offline_wallet_subcommand(wallet, wallet_opts, cli_opts, offline_subcommand)
                 .await
                 .map_err(|e| e.to_string())?;
             Some(value)

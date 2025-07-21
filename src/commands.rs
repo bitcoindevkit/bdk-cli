@@ -533,8 +533,10 @@ pub enum KeySubCommand {
 #[cfg(feature = "hwi")]
 #[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
 pub enum HwiSubCommand {
-    /// Lists all connected hardware wallet devices.
+    /// List connected hardware wallet device.
     Devices,
+    /// Register hardware wallet
+    Register,
 }
 
 /// Subcommands available in REPL mode.

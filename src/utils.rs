@@ -42,8 +42,8 @@ use {
     async_hwi::ledger::{HidApi, LedgerSimulator},
     async_hwi::specter::{Specter, SpecterSimulator},
     async_hwi::{
-        async_hwi::bitbox::{BitBox02, PairingBitbox02WithLocalCache},
         bitbox::api::runtime,
+        bitbox::{BitBox02, PairingBitbox02WithLocalCache},
     },
     async_hwi::{coldcard, HWI},
 };
