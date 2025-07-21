@@ -24,6 +24,17 @@ use bdk_kyoto::{
     builder::NodeBuilder,
 };
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
+#[cfg(feature = "hwi")]
+use {
+    async_hwi::jade::{self, Jade},
+    async_hwi::ledger::{HidApi, LedgerSimulator},
+    async_hwi::specter::{Specter, SpecterSimulator},
+    async_hwi::{
+        async_hwi::bitbox::{BitBox02, PairingBitbox02WithLocalCache},
+        bitbox::api::runtime,
+    },
+    async_hwi::{coldcard, HWI},
+};
 
 #[cfg(any(
     feature = "electrum",
@@ -378,4 +389,105 @@ pub(crate) fn shorten(displayable: impl Display, start: u8, end: u8) -> String {
     let start_str: &str = &displayable[0..start as usize];
     let end_str: &str = &displayable[displayable.len() - end as usize..];
     format!("{start_str}...{end_str}")
+}
+
+#[cfg(feature="hwi")]
+pub async fn connect_to_hardware_wallet(
+    network: Network,
+    wallet_opts: &WalletOpts,
+    wallet: Option<&Wallet>,
+) -> Result<Option<Box<dyn HWI + Send>>, Error> {
+    let wallet_name = &wallet_opts.wallet;
+    let ext_descriptor = &wallet_opts.ext_descriptor;
+
+    // TODO: add Ledger implementation
+
+    if let Ok(device) = SpecterSimulator::try_connect().await {
+        return Ok(Some(device.into()));
+    }
+
+    if let Ok(devices) = Specter::enumerate().await {
+        if let Some(device) = devices.into_iter().next() {
+            return Ok(Some(device.into()));
+        }
+    }
+
+    match Jade::enumerate().await {
+        Err(e) => {
+            println!("Jade enumeration error: {:?}", e);
+        }
+        Ok(devices) => {
+            for device in devices {
+                let device = device.with_network(network);
+                if let Ok(info) = device.get_info().await {
+                    if info.jade_state == jade::api::JadeState::Locked {
+                        if let Err(e) = device.auth().await {
+                            eprintln!("Jade auth error: {:?}", e);
+                            continue;
+                        }
+                    }
+                    return Ok(Some(device.into()));
+                }
+            }
+        }
+    }
+
+    if let Ok(device) = LedgerSimulator::try_connect().await {
+        return Ok(Some(device.into()));
+    }
+
+    let api = Box::new(
+        HidApi::new().map_err(|e| Error::HwiError(async_hwi::Error::Device(e.to_string())))?,
+    );
+
+    for device_info in api.device_list() {
+        if async_hwi::bitbox::is_bitbox02(device_info) {
+            if let Ok(device) = device_info
+                .open_device(&api)
+                .map_err(|e| Error::HwiError(async_hwi::Error::Device(e.to_string())))
+            {
+                if let Ok(device) =
+                    PairingBitbox02WithLocalCache::<runtime::TokioRuntime>::connect(device, None)
+                        .await
+                {
+                    if let Ok((device, _)) = device.wait_confirm().await {
+                        let mut bb02 = BitBox02::from(device).with_network(network);
+                        if let Some(_wallet) = wallet.as_ref() {
+                            if let Some(policy) = ext_descriptor {
+                                bb02 =
+                                    bb02.with_policy(policy.as_str()).map_err(Error::HwiError)?;
+                            }
+                        }
+                        return Ok(Some(bb02.into()));
+                    }
+                }
+            }
+        }
+        if device_info.vendor_id() == coldcard::api::COINKITE_VID
+            && device_info.product_id() == coldcard::api::CKCC_PID
+        {
+            if let Some(sn) = device_info.serial_number() {
+                if let Ok((cc, _)) = coldcard::api::Coldcard::open(&api, sn, None)
+                    .map_err(|e| Error::HwiError(async_hwi::Error::Device(e.to_string())))
+                {
+                    let mut hw = coldcard::Coldcard::from(cc);
+                    if let Some(ref _wallet) = wallet {
+                        hw = hw.with_wallet_name(
+                            wallet_name
+                                .clone()
+                                .ok_or_else(|| {
+                                    Error::HwiError(async_hwi::Error::Device(
+                                        "coldcard requires a wallet name".into(),
+                                    ))
+                                })?
+                                .to_string(),
+                        );
+                    }
+                    return Ok(Some(hw.into()));
+                }
+            }
+        }
+    }
+
+    Ok(None)
 }
