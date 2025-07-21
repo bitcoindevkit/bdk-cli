@@ -28,8 +28,8 @@ use {
     async_hwi::ledger::{HidApi, LedgerSimulator},
     async_hwi::specter::{Specter, SpecterSimulator},
     async_hwi::{
-        async_hwi::bitbox::{BitBox02, PairingBitbox02WithLocalCache},
         bitbox::api::runtime,
+        bitbox::{BitBox02, PairingBitbox02WithLocalCache},
     },
     async_hwi::{coldcard, HWI},
 };
@@ -456,7 +456,7 @@ pub async fn connect_to_hardware_wallet(
                     .map_err(|e| Error::HwiError(async_hwi::Error::Device(e.to_string())))
                 {
                     let mut hw = coldcard::Coldcard::from(cc);
-                    if let Some(ref _wallet) = wallet {
+                    if let Some(_wallet) = wallet {
                         hw = hw.with_wallet_name(
                             wallet_name
                                 .clone()
