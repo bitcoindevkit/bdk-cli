@@ -626,6 +626,10 @@ pub async fn handle_offline_wallet_subcommand(
                 //TODO: return status of wallet registration
                 Ok(json!({ "hmac": hmac }))
             }
+            HwiSubCommand::Address => {
+                let address = wallet.next_unused_address(KeychainKind::External);
+                Ok(json!({ "address": address.address }))
+            }
         },
     }
 }
