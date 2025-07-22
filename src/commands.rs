@@ -488,6 +488,8 @@ pub enum HwiSubCommand {
     Devices,
     /// Register hardware wallet
     Register,
+    /// Generate address
+    Address,
 }
 
 /// Subcommands available in REPL mode.
