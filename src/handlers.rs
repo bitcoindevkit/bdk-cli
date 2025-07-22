@@ -631,6 +631,10 @@ pub async fn handle_offline_wallet_subcommand(
                 //TODO: return status of wallet registration
                 Ok(json!({ "hmac": hmac }))
             }
+            HwiSubCommand::Address => {
+                let address = wallet.next_unused_address(KeychainKind::External);
+                Ok(json!({ "address": address.address }))
+            }
         },
     }
 }
@@ -1197,9 +1201,9 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     }
                 };
 
-                let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
+                let mut wallet = new_persisted_wallet(network, &mut persister, wallet_opts)?;
                 let result =
-                    handle_offline_wallet_subcommand(&mut wallet, &wallet_opts, &cli_opts, offline_subcommand.clone())
+                    handle_offline_wallet_subcommand(&mut wallet, wallet_opts, &cli_opts, offline_subcommand.clone())
                         .await?;
                 wallet.persist(&mut persister)?;
                 result
@@ -1355,6 +1359,7 @@ async fn respond(
         ReplSubCommand::Exit => None,
     };
     if let Some(value) = response {
+        let value = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
         writeln!(std::io::stdout(), "{value}").map_err(|e| e.to_string())?;
         std::io::stdout().flush().map_err(|e| e.to_string())?;
         Ok(false)
