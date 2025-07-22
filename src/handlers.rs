@@ -638,6 +638,10 @@ pub async fn handle_offline_wallet_subcommand(
                 //TODO: return status of wallet registration
                 Ok(json!({ "hmac": hmac }))
             }
+            HwiSubCommand::Address => {
+                let address = wallet.next_unused_address(KeychainKind::External);
+                Ok(json!({ "address": address.address }))
+            }
         },
     }
 }
@@ -1540,6 +1544,7 @@ async fn respond(
         ReplSubCommand::Exit => None,
     };
     if let Some(value) = response {
+        let value = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
         writeln!(std::io::stdout(), "{value}").map_err(|e| e.to_string())?;
         std::io::stdout().flush().map_err(|e| e.to_string())?;
         Ok(false)
