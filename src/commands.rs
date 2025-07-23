@@ -410,12 +410,6 @@ pub enum OfflineWalletSubCommand {
         #[arg(env = "BASE64_PSBT", required = true)]
         psbt: Vec<String>,
     },
-    #[cfg(feature = "hwi")]
-    /// Hardware wallet interface operations.
-    Hwi {
-        #[clap(subcommand)]
-        subcommand: HwiSubCommand,
-    },
 }
 
 /// Wallet subcommands that needs a blockchain backend.
@@ -539,6 +533,11 @@ pub enum HwiSubCommand {
     Register,
     /// Generate address
     Address,
+    /// Sign PSBT with hardware wallet
+    Sign {
+        /// The base64-encoded PSBT to sign
+        psbt: String,
+    },
 }
 
 /// Subcommands available in REPL mode.
