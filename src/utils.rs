@@ -23,6 +23,7 @@ use bdk_kyoto::{
     BuilderExt, Info, LightClient, Receiver, ScanType::Sync, UnboundedReceiver, Warning,
     builder::Builder,
 };
+use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 use bdk_wallet::{
     KeychainKind,
     bitcoin::bip32::{DerivationPath, Xpub},
@@ -34,17 +35,16 @@ use bdk_wallet::{
     template::DescriptorTemplate,
 };
 use cli_table::{Cell, CellStruct, Style, Table};
-use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 #[cfg(feature = "hwi")]
 use {
     async_hwi::jade::{self, Jade},
     async_hwi::ledger::{HidApi, LedgerSimulator},
     async_hwi::specter::{Specter, SpecterSimulator},
+    async_hwi::{HWI, coldcard},
     async_hwi::{
         bitbox::api::runtime,
         bitbox::{BitBox02, PairingBitbox02WithLocalCache},
     },
-    async_hwi::{coldcard, HWI},
 };
 
 #[cfg(any(
@@ -644,7 +644,7 @@ pub fn format_descriptor_output(result: &Value, pretty: bool) -> Result<String, 
     Ok(format!("{table}"))
 }
 
-#[cfg(feature="hwi")]
+#[cfg(feature = "hwi")]
 pub async fn connect_to_hardware_wallet(
     network: Network,
     wallet_opts: &WalletOpts,
