@@ -112,6 +112,14 @@ pub enum CliSubCommand {
         #[command(flatten)]
         wallet_opts: WalletOpts,
     },
+    /// Hardware wallet interface operations.
+    #[cfg(feature = "hwi")]
+    Hwi {
+        #[command(flatten)]
+        wallet_opts: WalletOpts,
+        #[clap(subcommand)]
+        subcommand: HwiSubCommand,
+    },
 }
 
 /// Wallet operation subcommands.
@@ -386,12 +394,6 @@ pub enum OfflineWalletSubCommand {
         #[arg(env = "BASE64_PSBT", required = true)]
         psbt: Vec<String>,
     },
-    #[cfg(feature = "hwi")]
-    /// Hardware wallet interface operations.
-    Hwi {
-        #[clap(subcommand)]
-        subcommand: HwiSubCommand,
-    },
 }
 
 /// Wallet subcommands that needs a blockchain backend.
@@ -480,6 +482,11 @@ pub enum HwiSubCommand {
     Register,
     /// Generate address
     Address,
+    /// Sign PSBT with hardware wallet
+    Sign {
+        /// The base64-encoded PSBT to sign
+        psbt: String,
+    },
 }
 
 /// Subcommands available in REPL mode.
