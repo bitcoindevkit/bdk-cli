@@ -14,24 +14,6 @@ use std::str::FromStr;
 
 use std::path::{Path, PathBuf};
 
-use bdk_wallet::bip39::{Language, Mnemonic};
-use bdk_wallet::bitcoin::{
-    bip32::{DerivationPath, Xpriv, Xpub},
-    secp256k1::Secp256k1,
-};
-use bdk_wallet::descriptor::{
-    Segwitv0, {Descriptor, DescriptorPublicKey},
-};
-use bdk_wallet::keys::{
-    bip39::WordCount,
-    {DescriptorSecretKey, GeneratableKey, GeneratedKey, IntoDescriptorKey},
-};
-use bdk_wallet::miniscript::{
-    descriptor::{DescriptorXKey, Wildcard},
-    Tap,
-};
-use serde_json::{json, Value};
-
 use crate::commands::WalletOpts;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{
@@ -53,6 +35,26 @@ use crate::commands::ClientType;
 use bdk_wallet::Wallet;
 #[cfg(feature = "sqlite")]
 use bdk_wallet::{KeychainKind, PersistedWallet, WalletPersister};
+
+use bdk_wallet::bip39::{Language, Mnemonic};
+use bdk_wallet::bitcoin::bip32::ChildNumber;
+use bdk_wallet::bitcoin::{
+    bip32::{DerivationPath, Xpriv, Xpub},
+    secp256k1::Secp256k1,
+};
+use bdk_wallet::descriptor::{
+    Segwitv0, {Descriptor, DescriptorPublicKey},
+};
+use bdk_wallet::keys::{
+    bip39::WordCount,
+    DerivableKey, ExtendedKey,
+    {DescriptorSecretKey, GeneratableKey, GeneratedKey, IntoDescriptorKey},
+};
+use bdk_wallet::miniscript::{
+    descriptor::{DescriptorXKey, Wildcard},
+    Tap,
+};
+use serde_json::{json, Value};
 
 /// Parse the recipient (Address,Amount) argument from cli input.
 pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
@@ -429,29 +431,35 @@ pub fn generate_new_descriptor_with_mnemonic(
         DescriptorType::Bip84 => ("/84h/1h/0h", "wpkh", "wpkh"),
         DescriptorType::Bip86 => ("/86h/1h/0h", "tr", "tr"),
     };
+    let path = DerivationPath::from_str(&format!("m{}", derivation_base))
+        .map_err(|e| Error::Generic(e.to_string()))?;
 
-    let xprv_str = xprv.to_string();
+    let derived_xprv = xprv
+        .derive_priv(&secp, &path)
+        .map_err(|e| Error::Generic(e.to_string()))?;
+
+    let xprv_str = derived_xprv.to_string();
 
     // Construct descriptors
     let external_desc = match descriptor_type {
         DescriptorType::Bip49 => format!(
             "{}([{}{}]{}{}))",
-            external_fmt, origin, derivation_base, xprv_str, "/0/*"
+            external_fmt, origin, derivation_base, xprv_str, "/0"
         ),
         _ => format!(
             "{}([{}{}]{}{})",
-            external_fmt, origin, derivation_base, xprv_str, "/0/*"
+            external_fmt, origin, derivation_base, xprv_str, "/0"
         ),
     };
 
     let internal_desc = match descriptor_type {
         DescriptorType::Bip49 => format!(
             "{}([{}{}]{}{}))",
-            internal_fmt, origin, derivation_base, xprv_str, "/1/*"
+            internal_fmt, origin, derivation_base, xprv_str, "/1"
         ),
         _ => format!(
             "{}([{}{}]{}{})",
-            internal_fmt, origin, derivation_base, xprv_str, "/1/*"
+            internal_fmt, origin, derivation_base, xprv_str, "/1"
         ),
     };
 
@@ -622,28 +630,29 @@ pub fn generate_bip_descriptor_from_key(
     descriptor_type: DescriptorType,
 ) -> Result<serde_json::Value, Error> {
     let secp = Secp256k1::new();
+
     let derivation_path: DerivationPath = derivation_path_str
         .parse()
         .map_err(|e| Error::InvalidDerivationPath(format!("DerivationPath Error: {e}")))?;
+
     let xprv: Xpriv = key
         .parse()
         .map_err(|e| Error::InvalidXprv(format!("Invalid xprv: {e}")))?;
+
     let fingerprint = xprv.fingerprint(&secp);
 
     let make_desc_key = |branch: u32| -> Result<(String, String), Error> {
-        let branch_path: DerivationPath = DerivationPath::from_str(&format!("{branch}"))
-            .map_err(|e| Error::InvalidDerivationPath(format!("DerivationPath Error: {e}")))?;
+        let branch_path = DerivationPath::from(vec![ChildNumber::Normal { index: branch }]);
 
         let desc_xprv = DescriptorXKey {
-            origin: Some((fingerprint, derivation_path.clone())), // only account-level path
+            origin: Some((fingerprint, derivation_path.clone())),
             xkey: xprv,
-            derivation_path: branch_path, // just the change (0 for external, 1 for internal)
+            derivation_path: branch_path.clone(),
             wildcard: Wildcard::Unhardened,
         };
 
-        let desc_secret = DescriptorSecretKey::XPrv(desc_xprv);
+        let desc_secret = DescriptorSecretKey::XPrv(desc_xprv.clone());
 
-        // Use the BDK extract() to get both descriptor and keymap
         let (desc_key, keymap, _) =
             IntoDescriptorKey::<Segwitv0>::into_descriptor_key(desc_secret.clone())
                 .map_err(|e| Error::DescriptorKeyError(e.to_string()))?
@@ -664,17 +673,16 @@ pub fn generate_bip_descriptor_from_key(
             DescriptorType::Bip44 => Descriptor::new_pkh(desc_key)?,
         };
 
-        // Convert both to string representations
-        let public_descriptor_str = public_descriptor.to_string();
-        let private_descriptor_str = private_descriptor.to_string_with_secret(&keymap);
-
-        Ok((public_descriptor_str, private_descriptor_str))
+        Ok((
+            public_descriptor.to_string(),
+            private_descriptor.to_string_with_secret(&keymap),
+        ))
     };
 
     let (external_pub, external_priv) = make_desc_key(0)?;
     let (internal_pub, internal_priv) = make_desc_key(1)?;
 
-    Ok(serde_json::json!({
+    Ok(json!({
         "type": descriptor_type.to_string(),
         "fingerprint": fingerprint.to_string(),
         "network": network.to_string(),
@@ -689,6 +697,44 @@ pub fn generate_bip_descriptor_from_key(
     }))
 }
 
+pub fn generate_descriptor_from_mnemonic_string(
+    mnemonic_str: &str,
+    network: Network,
+    derivation_path_str: &str,
+    descriptor_type: DescriptorType,
+) -> Result<serde_json::Value, Error> {
+    let secp = Secp256k1::new();
+
+    let mnemonic = Mnemonic::parse_in(Language::English, mnemonic_str)
+        .map_err(|e| Error::Generic(e.to_string()))?;
+    let ext_key: ExtendedKey = mnemonic
+        .into_extended_key()
+        .map_err(|e| Error::Generic(e.to_string()))?;
+    let xprv = ext_key
+        .into_xprv(network)
+        .ok_or_else(|| Error::Generic("No xprv found".to_string()))?;
+
+    let _fingerprint = xprv.fingerprint(&secp);
+    let derivation_path: DerivationPath = derivation_path_str
+        .parse()
+        .map_err(|e| Error::InvalidDerivationPath(format!("DerivationPath Error: {e}")))?;
+
+    let xprv = xprv
+        .derive_priv(&secp, &derivation_path)
+        .map_err(|e| Error::InvalidXprv(format!("Failed to derive xprv: {e}")))?;
+
+    generate_bip_descriptor_from_key(
+        &network,
+        &xprv.to_string(),
+        derivation_path_str,
+        descriptor_type,
+    )
+}
+
+pub fn is_mnemonic(s: &str) -> bool {
+    let word_count = s.split_whitespace().count();
+    (12..=24).contains(&word_count) && s.chars().all(|c| c.is_alphanumeric() || c.is_whitespace())
+}
 // Enum for descriptor types
 #[derive(Debug, Clone, Copy)]
 pub enum DescriptorType {
