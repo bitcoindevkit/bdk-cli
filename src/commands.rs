@@ -13,7 +13,6 @@
 //! All subcommands are defined in the below enums.
 
 #![allow(clippy::large_enum_variant)]
-
 use bdk_wallet::bitcoin::{
     bip32::{DerivationPath, Xpriv},
     Address, Network, OutPoint, ScriptBuf,
@@ -104,8 +103,15 @@ pub enum CliSubCommand {
         #[command(flatten)]
         wallet_opts: WalletOpts,
     },
+    /// Descriptor generation operations.
+    ///
+    /// Allows users to generate Bitcoin wallet descriptors from either an extended key (e.g., Xprv/Xpub) or by generating a new random mnemonic phrase.
+    /// This feature is intended for development and testing. Exercise caution when using descriptors created this way in production environments.
+    Descriptor {
+        #[clap(subcommand)]
+        subcommand: DescriptorSubCommand,
+    },
 }
-
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
 pub enum WalletSubCommand {
@@ -470,4 +476,21 @@ pub enum ReplSubCommand {
     },
     /// Exit REPL loop.
     Exit,
+}
+/// Subcommands for Key operations.
+#[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
+pub enum DescriptorSubCommand {
+    /// Generate a descriptor
+    Generate {
+        #[clap(long = "type", value_parser = clap::value_parser!(u8).range(44..=86), short = 't', default_value = "84")]
+        r#type: u8, // 44, 49, 84, 86
+
+        #[arg(long = "multipath", short = 'm', default_value_t = false)]
+        multipath: bool,
+
+        key: Option<String>,
+    },
+
+    /// Show info about a given descriptor
+    Info { descriptor: String },
 }
