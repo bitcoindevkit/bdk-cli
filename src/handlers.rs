@@ -1047,20 +1047,14 @@ pub(crate) fn handle_compile_subcommand(
 #[cfg(feature = "hwi")]
 pub async fn handle_hwi_subcommand(
     network: Network,
-    wallet_opts: &WalletOpts,
+    hwi_opts: &HwiOpts,
     subcommand: HwiSubCommand,
 ) -> Result<serde_json::Value, Error> {
     match subcommand {
         HwiSubCommand::Devices => {
-            let devices = crate::utils::connect_to_hardware_wallet(
-                wallet.network(),
-                wallet_opts,
-                Some(wallet),
-            )
-            .await?;
-            let device = if let Some(device) = device {
+            let devices = crate::utils::connect_to_hardware_wallet(network, hwi_opts).await?;
+            let device = if let Some(device) = devices {
                 json!({
-                    "type": device.device_kind().to_string(),
                     "fingerprint": device.get_master_fingerprint().await?.to_string(),
                     "model": device.device_kind().to_string(),
                 })
@@ -1070,97 +1064,82 @@ pub async fn handle_hwi_subcommand(
             Ok(json!({ "devices": device }))
         }
         HwiSubCommand::Register => {
-            let policy = wallet_opts.ext_descriptor.clone().ok_or_else(|| {
+            let policy = hwi_opts.ext_descriptor.clone().ok_or_else(|| {
                 Error::Generic("External descriptor required for wallet registration".to_string())
             })?;
-            let wallet_name = wallet_opts.wallet.clone().ok_or_else(|| {
+            let wallet_name = hwi_opts.wallet.clone().ok_or_else(|| {
                 Error::Generic("Wallet name is required for wallet registration".to_string())
             })?;
 
-            let home_dir = prepare_home_dir(None)?;
-            let database_path = prepare_wallet_db_dir(&wallet_opts.wallet, &home_dir)?;
-            #[cfg(feature = "sqlite")]
-            let wallet = {
-                let mut persister = match &wallet_opts.database_type {
-                    DatabaseType::Sqlite => {
-                        let db_file = database_path.join("wallet.sqlite");
-                        let connection = Connection::open(db_file)?;
-                        log::debug!("Sqlite database opened successfully");
-                        connection
-                    }
-                };
-                let mut wallet = new_persisted_wallet(network, &mut persister, wallet_opts)?;
-                wallet.persist(&mut persister)?;
-                wallet
-            };
-            #[cfg(not(feature = "sqlite"))]
-            let wallet = new_wallet(network, wallet_opts)?;
+            let device = crate::utils::connect_to_hardware_wallet(network, hwi_opts).await?;
 
-            let device = crate::utils::connect_to_hardware_wallet(
-                wallet.network(),
-                wallet_opts,
-                Some(wallet),
-            )
-            .await?;
-            let hmac = if let Some(device) = device {
-                let hmac = device.register_wallet(&wallet_name, &policy).await?;
-                hmac.map(|h| h.to_lower_hex_string())
-            } else {
-                None
-            };
-            Ok(json!({ "hmac": hmac }))
+            match device {
+                None => Ok(json!({
+                    "success": false,
+                    "error": "No hardware wallet detected"
+                })),
+                Some(device) => match device.register_wallet(&wallet_name, &policy).await {
+                    Ok(hmac_opt) => {
+                        let hmac_hex = hmac_opt.map(|h| {
+                            let bytes: &[u8] = &h;
+                            bytes.to_lower_hex_string()
+                        });
+                        Ok(json!({
+                            "success": true,
+                            "hmac": hmac_hex
+                        }))
+                    }
+                    Err(e) => Err(Error::Generic(format!("Wallet registration failed: {e}"))),
+                },
+            }
         }
         HwiSubCommand::Address => {
+            let ext_descriptor = hwi_opts.ext_descriptor.clone().ok_or_else(|| {
+                Error::Generic("External descriptor required for address generation".to_string())
+            })?;
+            let wallet_name = hwi_opts.wallet.clone().ok_or_else(|| {
+                Error::Generic("Wallet name is required for address generation".to_string())
+            })?;
+
+            let database = hwi_opts.database_type.clone().ok_or_else(|| {
+                Error::Generic("Database type is required for address generation".to_string())
+            })?;
+
             let home_dir = prepare_home_dir(None)?;
-            let database_path = prepare_wallet_db_dir(&wallet_opts.wallet, &home_dir)?;
+            let database_path = prepare_wallet_db_dir(&Some(wallet_name.clone()), &home_dir)?;
+
+            let wallet_opts = WalletOpts {
+                wallet: Some(wallet_name),
+                verbose: false,
+                ext_descriptor: Some(ext_descriptor),
+                int_descriptor: None,
+                #[cfg(feature = "sqlite")]
+                database_type: database,
+            };
+
             #[cfg(feature = "sqlite")]
-            let wallet = {
-                let mut persister = match &wallet_opts.database_type {
-                    DatabaseType::Sqlite => {
-                        let db_file = database_path.join("wallet.sqlite");
-                        let connection = Connection::open(db_file)?;
-                        log::debug!("Sqlite database opened successfully");
-                        connection
-                    }
-                };
-                let mut wallet = new_persisted_wallet(network, &mut persister, wallet_opts)?;
+            let mut wallet = if hwi_opts.database_type.is_some() {
+                let db_file = database_path.join("wallet.sqlite");
+                let mut persister = Connection::open(db_file)?;
+                let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
                 wallet.persist(&mut persister)?;
                 wallet
+            } else {
+                return Err(Error::Generic(
+                    "Could not connect to sqlite database".to_string(),
+                ));
             };
+
             #[cfg(not(feature = "sqlite"))]
-            let wallet = new_wallet(network, wallet_opts)?;
+            let mut wallet = new_wallet(network, &wallet_opts)?;
 
             let address = wallet.next_unused_address(KeychainKind::External);
             Ok(json!({ "address": address.address }))
         }
         HwiSubCommand::Sign { psbt } => {
-            let home_dir = prepare_home_dir(None)?;
-            let database_path = prepare_wallet_db_dir(&wallet_opts.wallet, &home_dir)?;
-            #[cfg(feature = "sqlite")]
-            let wallet = {
-                let mut persister = match &wallet_opts.database_type {
-                    DatabaseType::Sqlite => {
-                        let db_file = database_path.join("wallet.sqlite");
-                        let connection = Connection::open(db_file)?;
-                        log::debug!("Sqlite database opened successfully");
-                        connection
-                    }
-                };
-                let mut wallet = new_persisted_wallet(network, &mut persister, wallet_opts)?;
-                wallet.persist(&mut persister)?;
-                wallet
-            };
-            #[cfg(not(feature = "sqlite"))]
-            let wallet = new_wallet(network, wallet_opts)?;
-
             let mut psbt = Psbt::from_str(&psbt)
                 .map_err(|e| Error::Generic(format!("Failed to parse PSBT: {e}")))?;
-            let device = crate::utils::connect_to_hardware_wallet(
-                wallet.network(),
-                wallet_opts,
-                Some(wallet),
-            )
-            .await?;
+            let device = crate::utils::connect_to_hardware_wallet(network, hwi_opts).await?;
             let signed_psbt = if let Some(device) = device {
                 device
                     .sign_tx(&mut psbt)
@@ -1382,6 +1361,15 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 }
             }
             Ok("".to_string())
+        }
+
+        #[cfg(feature = "hwi")]
+        CliSubCommand::Hwi {
+            hwi_opts,
+            subcommand,
+        } => {
+            let result = handle_hwi_subcommand(network, &hwi_opts, subcommand).await?;
+            Ok(serde_json::to_string_pretty(&result).map_err(|e| Error::SerdeJson(e))?)
         }
     };
     result

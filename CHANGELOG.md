@@ -7,6 +7,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 - Removed MSRV and bumped Rust Edition to 2024
 - Add `--pretty` top level flag for formatting commands output in a tabular format
+- Add `hwi` top level command with subcommands: `devices`, `register`, `address` and `sign` transaction
 
 ## [1.0.0]
 
