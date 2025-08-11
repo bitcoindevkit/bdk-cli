@@ -1315,7 +1315,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     &wallet_opts,
                     &cli_opts,
                     offline_subcommand.clone(),
-                )?
+                )
             };
             Ok(result?)
         }
@@ -1424,6 +1424,15 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
         CliSubCommand::Descriptor { desc_type, key } => {
             let descriptor = handle_descriptor_command(cli_opts.network, desc_type, key, pretty)?;
             Ok(descriptor)
+        }
+
+        #[cfg(feature = "hwi")]
+        CliSubCommand::Hwi {
+            hwi_opts,
+            subcommand,
+        } => {
+            let result = handle_hwi_subcommand(network, &hwi_opts, subcommand).await?;
+            Ok(serde_json::to_string_pretty(&result).map_err(|e| Error::SerdeJson(e))?)
         }
     };
     result

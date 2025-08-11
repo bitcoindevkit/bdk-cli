@@ -7,6 +7,8 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Add wallet subcommand `config` to save wallet configs
 - Add `wallets` command to list all wallets saved configs
 
+- Add `hwi` top level command with subcommands: `devices`, `register`, `address` and `sign` transaction
+
 ## [2.0.0]
 
 - Removed MSRV and bumped Rust Edition to 2024
@@ -20,6 +22,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Renamed `BuilderError` to `KyotoBuilderError` and added `KyotoUpdateError`
 - Updated `bdk_electrum` to 0.23.0
 - Added `just` example for starting, connecting and funding a wallet in regtest
+- Add `--pretty` top level flag for formatting commands output in a tabular format
 
 ## [1.0.0]
 

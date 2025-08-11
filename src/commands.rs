@@ -247,6 +247,23 @@ pub struct WalletOpts {
     pub compactfilter_opts: CompactFilterOpts,
 }
 
+/// HWI specific options
+#[cfg(feature = "hwi")]
+#[derive(Clone, Debug, PartialEq, Eq, Args)]
+pub struct HwiOpts {
+    /// Wallet name
+    #[arg(env = "WALLET", short = 'w', long = "wallet")]
+    pub wallet: Option<String>,
+
+    /// External descriptor
+    #[arg(env = "EXT_DESCRIPTOR", short = 'e', long = "ext_descriptor")]
+    pub ext_descriptor: Option<String>,
+
+    /// Database type
+    #[arg(short = 'd', long = "database_type")]
+    pub database_type: Option<DatabaseType>,
+}
+
 /// Options to configure a SOCKS5 proxy for a blockchain client connection.
 #[cfg(any(feature = "electrum", feature = "esplora"))]
 #[derive(Debug, Args, Clone, PartialEq, Eq)]

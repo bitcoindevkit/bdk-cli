@@ -38,8 +38,9 @@ use bdk_wallet::{
 use cli_table::{Cell, CellStruct, Style, Table};
 #[cfg(feature = "hwi")]
 use {
+    crate::commands::HwiOpts,
     async_hwi::jade::{self, Jade},
-    async_hwi::ledger::{HidApi, LedgerSimulator},
+    async_hwi::ledger::{HidApi, Ledger, LedgerSimulator, TransportHID},
     async_hwi::specter::{Specter, SpecterSimulator},
     async_hwi::{HWI, coldcard},
     async_hwi::{
