@@ -13,7 +13,6 @@
     <a href="https://github.com/bitcoindevkit/bdk-cli/actions?query=workflow%3ACI"><img alt="CI Status" src="https://github.com/bitcoindevkit/bdk-cli/workflows/CI/badge.svg"></a>
     <a href="https://codecov.io/gh/bitcoindevkit/bdk-cli"><img src="https://codecov.io/gh/bitcoindevkit/bdk-cli/branch/master/graph/badge.svg"/></a>
     <a href="https://docs.rs/bdk-cli"><img alt="API Docs" src="https://img.shields.io/badge/docs.rs-bdk_cli-green"/></a>
-    <a href="https://blog.rust-lang.org/2023/12/28/Rust-1.75.0/"><img alt="Rustc Version 1.75.0+" src="https://img.shields.io/badge/rustc-1.75.0%2B-lightgrey.svg"/></a>
     <a href="https://discord.gg/d7NkDKm"><img alt="Chat on Discord" src="https://img.shields.io/discord/753336465005608961?logo=discord"></a>
   </p>
 
@@ -194,7 +193,3 @@ Note: You can modify the `Justfile` to reflect your nodes' configuration values.
    cargo run --features rpc -- wallet -u "127.0.0.1:18443" -c rpc -a user:password sync
    cargo run --features rpc -- wallet -u "127.0.0.1:18443" -c rpc -a user:password balance
    ```
-
-## Minimum Supported Rust Version (MSRV)
-
-This library should always compile with any valid combination of features on Rust **1.75.0**.
