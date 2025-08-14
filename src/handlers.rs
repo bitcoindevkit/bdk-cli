@@ -30,7 +30,7 @@ use bdk_wallet::rusqlite::Connection;
 #[cfg(feature = "compiler")]
 use bdk_wallet::{
     descriptor::{Descriptor, Legacy, Miniscript},
-    miniscript::policy::Concrete,
+    miniscript::{policy::Concrete, Tap},
 };
 use bdk_wallet::{KeychainKind, SignOptions, Wallet};
 
@@ -51,6 +51,8 @@ use crate::utils::BlockchainClient::Electrum;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{Info, LightClient};
 use bdk_wallet::bitcoin::base64::prelude::*;
+#[cfg(feature = "compiler")]
+use bdk_wallet::bitcoin::XOnlyPublicKey;
 #[cfg(feature = "cbf")]
 use tokio::select;
 #[cfg(any(
@@ -71,6 +73,10 @@ use {
     bdk_bitcoind_rpc::{bitcoincore_rpc::RpcApi, Emitter},
     bdk_wallet::chain::{BlockId, CanonicalizationParams, CheckPoint},
 };
+
+#[cfg(feature = "compiler")]
+const NUMS_UNSPENDABLE_KEY_HEX: &str =
+    "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
 
 /// Execute an offline wallet sub-command
 ///
@@ -355,9 +361,9 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 let mut once = HashSet::<KeychainKind>::new();
                 move |k, spk_i, _| {
                     if once.insert(k) {
-                        print!("\nScanning keychain [{:?}]", k);
+                        print!("\nScanning keychain [{k:?}]");
                     }
-                    print!(" {:<3}", spk_i);
+                    print!(" {spk_i:<3}");
                     stdout.flush().expect("must flush");
                 }
             });
@@ -432,7 +438,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 .start_sync_with_revealed_spks()
                 .inspect(|item, progress| {
                     let pc = (100 * progress.consumed()) as f32 / progress.total() as f32;
-                    eprintln!("[ SCANNING {:03.0}% ] {}", pc, item);
+                    eprintln!("[ SCANNING {pc:03.0}% ] {item}");
                 });
             match client {
                 #[cfg(feature = "electrum")]
@@ -558,7 +564,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
 
                     let subscriber = tracing_subscriber::FmtSubscriber::new();
                     tracing::subscriber::set_global_default(subscriber)
-                        .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {}", e)))?;
+                        .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {e}")))?;
 
                     tokio::task::spawn(async move { node.run().await });
                     tokio::task::spawn(async move {
@@ -578,7 +584,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     let txid = tx.compute_txid();
                     requester
                         .broadcast_random(tx.clone())
-                        .map_err(|e| Error::Generic(format!("{}", e)))?;
+                        .map_err(|e| Error::Generic(format!("{e}")))?;
                     tokio::time::timeout(tokio::time::Duration::from_secs(30), async move {
                         while let Some(info) = info_subscriber.recv().await {
                             match info {
@@ -619,8 +625,7 @@ pub(crate) fn is_final(psbt: &Psbt) -> Result<(), Error> {
     let psbt_inputs = psbt.inputs.len();
     if unsigned_tx_inputs != psbt_inputs {
         return Err(Error::Generic(format!(
-            "Malformed PSBT, {} unsigned tx inputs and {} psbt inputs.",
-            unsigned_tx_inputs, psbt_inputs
+            "Malformed PSBT, {unsigned_tx_inputs} unsigned tx inputs and {psbt_inputs} psbt inputs."
         )));
     }
     let sig_count = psbt.inputs.iter().fold(0, |count, input| {
@@ -714,6 +719,9 @@ pub(crate) fn handle_compile_subcommand(
     policy: String,
     script_type: String,
 ) -> Result<serde_json::Value, Error> {
+    use bdk_wallet::miniscript::descriptor::TapTree;
+    use std::sync::Arc;
+
     let policy = Concrete::<String>::from_str(policy.as_str())?;
     let legacy_policy: Miniscript<String, Legacy> = policy
         .compile()
@@ -721,12 +729,31 @@ pub(crate) fn handle_compile_subcommand(
     let segwit_policy: Miniscript<String, Segwitv0> = policy
         .compile()
         .map_err(|e| Error::Generic(e.to_string()))?;
+    let taproot_policy: Miniscript<String, Tap> = policy
+        .compile()
+        .map_err(|e| Error::Generic(e.to_string()))?;
 
     let descriptor = match script_type.as_str() {
         "sh" => Descriptor::new_sh(legacy_policy),
         "wsh" => Descriptor::new_wsh(segwit_policy),
         "sh-wsh" => Descriptor::new_sh_wsh(segwit_policy),
-        _ => panic!("Invalid type"),
+        "tr" => {
+            // For tr descriptors, we use a well-known unspendable key (NUMS point).
+            // This ensures the key path is effectively disabled and only script path can be used.
+            // See https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#constructing-and-spending-taproot-outputs
+
+            // Validate that the NUMS key is a valid XOnlyPublicKey
+            XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)
+                .map_err(|e| Error::Generic(format!("Invalid NUMS key: {e}")))?;
+
+            let tree = TapTree::Leaf(Arc::new(taproot_policy));
+            Descriptor::new_tr(NUMS_UNSPENDABLE_KEY_HEX.to_string(), Some(tree))
+        }
+        _ => {
+            return Err(Error::Generic(
+                "Invalid script type. Supported types: sh, wsh, sh-wsh, tr".to_string(),
+            ))
+        }
     }?;
 
     Ok(json!({"descriptor": descriptor.to_string()}))
@@ -747,7 +774,6 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             wallet_opts,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
-            let network = cli_opts.network;
             let home_dir = prepare_home_dir(cli_opts.datadir)?;
             let wallet_name = &wallet_opts.wallet;
             let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
@@ -948,7 +974,7 @@ async fn respond(
     };
     if let Some(value) = response {
         let value = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
-        writeln!(std::io::stdout(), "{}", value).map_err(|e| e.to_string())?;
+        writeln!(std::io::stdout(), "{value}").map_err(|e| e.to_string())?;
         std::io::stdout().flush().map_err(|e| e.to_string())?;
         Ok(false)
     } else {
@@ -994,5 +1020,80 @@ mod test {
 
         let full_signed_psbt = Psbt::from_str("cHNidP8BAIkBAAAAASWJHzxzyVORV/C3lAynKHVVL7+Rw7/Jj8U9fuvD24olAAAAAAD+////AiBOAAAAAAAAIgAgLzY9yE4jzTFJnHtTjkc+rFAtJ9NB7ENFQ1xLYoKsI1cfqgKVAAAAACIAIFsbWgDeLGU8EA+RGwBDIbcv4gaGG0tbEIhDvwXXa/E7LwEAAAABALUCAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////BALLAAD/////AgD5ApUAAAAAIgAgWxtaAN4sZTwQD5EbAEMhty/iBoYbS1sQiEO/Bddr8TsAAAAAAAAAACZqJKohqe3i9hw/cdHe/T+pmd+jaVN1XGkGiXmZYrSL69g2l06M+QEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQErAPkClQAAAAAiACBbG1oA3ixlPBAPkRsAQyG3L+IGhhtLWxCIQ78F12vxOwEFR1IhA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDIQLKhV/gEZYmlsQXnsL5/Uqv5Y8O31tmWW1LQqIBkiqzCVKuIgYCyoVf4BGWJpbEF57C+f1Kr+WPDt9bZlltS0KiAZIqswkEboH3lCIGA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDBDS6ZSEBBwABCNsEAEgwRQIhAJzT6busDV9h12M/LNquZ17oOHFn7whg90kh9gjSpvshAiBEDu/1EYVD7BqJJzExPhq2CX/Vsap/ULLjfRRo99nEKQFHMEQCIGoFCvJ2zPB7PCpznh4+1jsY03kMie49KPoPDdr7/T9TAiB3jV7wzR9BH11FSbi+8U8gSX95PrBlnp1lOBgTUIUw3QFHUiED8lXZT/Sldb6I/j1ByxiKUS+RkR3imGYMzydXzAL4x4MhAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJUq4AACICAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJBG6B95QiAgPyVdlP9KV1voj+PUHLGIpRL5GRHeKYZgzPJ1fMAvjHgwQ0umUhAA==").unwrap();
         assert!(is_final(&full_signed_psbt).is_ok());
+    }
+
+    #[cfg(feature = "compiler")]
+    #[test]
+    fn test_compile_taproot() {
+        use super::{handle_compile_subcommand, NUMS_UNSPENDABLE_KEY_HEX};
+        use bdk_wallet::bitcoin::Network;
+
+        // Expected taproot descriptors with checksums
+        const EXPECTED_PK_A: &str =
+            "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,pk(A))#a2mlskt0";
+        const EXPECTED_AND_AB: &str = "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,and_v(v:pk(A),pk(B)))#sfplm6kv";
+
+        // Verify our test expectations use the same NUMS key
+        assert!(EXPECTED_PK_A.contains(NUMS_UNSPENDABLE_KEY_HEX));
+        assert!(EXPECTED_AND_AB.contains(NUMS_UNSPENDABLE_KEY_HEX));
+
+        // Test simple pk policy compilation to taproot
+        let result =
+            handle_compile_subcommand(Network::Testnet, "pk(A)".to_string(), "tr".to_string());
+        assert!(result.is_ok());
+        let json_result = result.unwrap();
+        let descriptor = json_result.get("descriptor").unwrap().as_str().unwrap();
+        assert_eq!(descriptor, EXPECTED_PK_A);
+
+        // Test more complex policy
+        let result = handle_compile_subcommand(
+            Network::Testnet,
+            "and(pk(A),pk(B))".to_string(),
+            "tr".to_string(),
+        );
+        assert!(result.is_ok());
+        let json_result = result.unwrap();
+        let descriptor = json_result.get("descriptor").unwrap().as_str().unwrap();
+        assert_eq!(descriptor, EXPECTED_AND_AB);
+    }
+
+    #[cfg(feature = "compiler")]
+    #[test]
+    fn test_compile_invalid_cases() {
+        use super::handle_compile_subcommand;
+        use bdk_wallet::bitcoin::Network;
+
+        // Test invalid policy syntax
+        let result = handle_compile_subcommand(
+            Network::Testnet,
+            "invalid_policy".to_string(),
+            "tr".to_string(),
+        );
+        assert!(result.is_err());
+
+        // Test invalid script type
+        let result = handle_compile_subcommand(
+            Network::Testnet,
+            "pk(A)".to_string(),
+            "invalid_type".to_string(),
+        );
+        assert!(result.is_err());
+
+        // Test empty policy
+        let result = handle_compile_subcommand(Network::Testnet, "".to_string(), "tr".to_string());
+        assert!(result.is_err());
+
+        // Test malformed policy with unmatched parentheses
+        let result =
+            handle_compile_subcommand(Network::Testnet, "pk(A".to_string(), "tr".to_string());
+        assert!(result.is_err());
+
+        // Test policy with unknown function
+        let result = handle_compile_subcommand(
+            Network::Testnet,
+            "unknown_func(A)".to_string(),
+            "tr".to_string(),
+        );
+        assert!(result.is_err());
     }
 }

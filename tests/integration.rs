@@ -127,19 +127,19 @@ mod test {
                 node_datadir,
             };
 
-            println!("BDK-CLI Config : {:#?}", bdk_cli);
+            println!("BDK-CLI Config : {bdk_cli:#?}");
             let bdk_master_key = bdk_cli.key_exec(&["generate"])?;
             let bdk_xprv = get_value(&bdk_master_key, "xprv")?;
 
             let bdk_recv_desc =
                 bdk_cli.key_exec(&["derive", "--path", "m/84h/1h/0h/0", "--xprv", &bdk_xprv])?;
             let bdk_recv_desc = get_value(&bdk_recv_desc, "xprv")?;
-            let bdk_recv_desc = format!("wpkh({})", bdk_recv_desc);
+            let bdk_recv_desc = format!("wpkh({bdk_recv_desc})");
 
             let bdk_chng_desc =
                 bdk_cli.key_exec(&["derive", "--path", "m/84h/1h/0h/1", "--xprv", &bdk_xprv])?;
             let bdk_chng_desc = get_value(&bdk_chng_desc, "xprv")?;
-            let bdk_chng_desc = format!("wpkh({})", bdk_chng_desc);
+            let bdk_chng_desc = format!("wpkh({bdk_chng_desc})");
 
             bdk_cli.recv_desc = Some(bdk_recv_desc);
             bdk_cli.chang_desc = Some(bdk_chng_desc);
