@@ -51,6 +51,8 @@ use crate::utils::BlockchainClient::Electrum;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{Info, LightClient};
 use bdk_wallet::bitcoin::base64::prelude::*;
+#[cfg(feature = "compiler")]
+use bdk_wallet::bitcoin::XOnlyPublicKey;
 #[cfg(feature = "cbf")]
 use tokio::select;
 #[cfg(any(
@@ -72,10 +74,8 @@ use {
     bdk_wallet::chain::{BlockId, CanonicalizationParams, CheckPoint},
 };
 
-/// Well-known unspendable key used for Taproot descriptors when only script path is intended.
-/// This is a NUMS (Nothing Up My Sleeve) point that ensures the key path cannot be used.
 #[cfg(feature = "compiler")]
-const NUMS_UNSPENDABLE_KEY: &str =
+const NUMS_UNSPENDABLE_KEY_HEX: &str =
     "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
 
 /// Execute an offline wallet sub-command
@@ -741,10 +741,19 @@ pub(crate) fn handle_compile_subcommand(
             // For tr descriptors, we use a well-known unspendable key (NUMS point).
             // This ensures the key path is effectively disabled and only script path can be used.
             // See https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#constructing-and-spending-taproot-outputs
+
+            // Validate that the NUMS key is a valid XOnlyPublicKey
+            XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)
+                .map_err(|e| Error::Generic(format!("Invalid NUMS key: {e}")))?;
+
             let tree = TapTree::Leaf(Arc::new(taproot_policy));
-            Descriptor::new_tr(NUMS_UNSPENDABLE_KEY.to_string(), Some(tree))
+            Descriptor::new_tr(NUMS_UNSPENDABLE_KEY_HEX.to_string(), Some(tree))
         }
-        _ => panic!("Invalid type"),
+        _ => {
+            return Err(Error::Generic(
+                "Invalid script type. Supported types: sh, wsh, sh-wsh, tr".to_string(),
+            ))
+        }
     }?;
 
     Ok(json!({"descriptor": descriptor.to_string()}))
@@ -1016,7 +1025,7 @@ mod test {
     #[cfg(feature = "compiler")]
     #[test]
     fn test_compile_taproot() {
-        use super::{handle_compile_subcommand, NUMS_UNSPENDABLE_KEY};
+        use super::{handle_compile_subcommand, NUMS_UNSPENDABLE_KEY_HEX};
         use bdk_wallet::bitcoin::Network;
 
         // Expected taproot descriptors with checksums
@@ -1025,8 +1034,8 @@ mod test {
         const EXPECTED_AND_AB: &str = "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,and_v(v:pk(A),pk(B)))#sfplm6kv";
 
         // Verify our test expectations use the same NUMS key
-        assert!(EXPECTED_PK_A.contains(NUMS_UNSPENDABLE_KEY));
-        assert!(EXPECTED_AND_AB.contains(NUMS_UNSPENDABLE_KEY));
+        assert!(EXPECTED_PK_A.contains(NUMS_UNSPENDABLE_KEY_HEX));
+        assert!(EXPECTED_AND_AB.contains(NUMS_UNSPENDABLE_KEY_HEX));
 
         // Test simple pk policy compilation to taproot
         let result =
@@ -1046,5 +1055,45 @@ mod test {
         let json_result = result.unwrap();
         let descriptor = json_result.get("descriptor").unwrap().as_str().unwrap();
         assert_eq!(descriptor, EXPECTED_AND_AB);
+    }
+
+    #[cfg(feature = "compiler")]
+    #[test]
+    fn test_compile_invalid_cases() {
+        use super::handle_compile_subcommand;
+        use bdk_wallet::bitcoin::Network;
+
+        // Test invalid policy syntax
+        let result = handle_compile_subcommand(
+            Network::Testnet,
+            "invalid_policy".to_string(),
+            "tr".to_string(),
+        );
+        assert!(result.is_err());
+
+        // Test invalid script type
+        let result = handle_compile_subcommand(
+            Network::Testnet,
+            "pk(A)".to_string(),
+            "invalid_type".to_string(),
+        );
+        assert!(result.is_err());
+
+        // Test empty policy
+        let result = handle_compile_subcommand(Network::Testnet, "".to_string(), "tr".to_string());
+        assert!(result.is_err());
+
+        // Test malformed policy with unmatched parentheses
+        let result =
+            handle_compile_subcommand(Network::Testnet, "pk(A".to_string(), "tr".to_string());
+        assert!(result.is_err());
+
+        // Test policy with unknown function
+        let result = handle_compile_subcommand(
+            Network::Testnet,
+            "unknown_func(A)".to_string(),
+            "tr".to_string(),
+        );
+        assert!(result.is_err());
     }
 }
