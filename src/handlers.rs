@@ -21,14 +21,15 @@ use crate::utils::*;
 #[cfg(feature = "redb")]
 use bdk_redb::Store as RedbStore;
 use bdk_wallet::bip39::{Language, Mnemonic};
-use bdk_wallet::bitcoin::Network;
-use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
-use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
-use bdk_wallet::bitcoin::script::PushBytesBuf;
-use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
-use bdk_wallet::bitcoin::{Txid, secp256k1::Secp256k1};
+use bdk_wallet::bitcoin::{
+    bip32::{DerivationPath, KeySource},
+    consensus::encode::serialize_hex,
+    script::PushBytesBuf,
+    secp256k1::Secp256k1,
+    Amount, FeeRate, Network, Psbt, Sequence, Txid,
+};
+use bdk_wallet::chain::ChainPosition;
 use bdk_wallet::descriptor::Segwitv0;
-use bdk_wallet::keys::bip39::WordCount;
 #[cfg(feature = "sqlite")]
 use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::{KeychainKind, SignOptions, Wallet};
@@ -37,9 +38,12 @@ use bdk_wallet::{
     descriptor::{Descriptor, Legacy, Miniscript},
     miniscript::policy::Concrete,
 };
+use cli_table::{format::Justify, Cell, CellStruct, Style, Table};
 
-use bdk_wallet::keys::DescriptorKey::Secret;
-use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
+use bdk_wallet::keys::{
+    bip39::WordCount, DerivableKey, DescriptorKey, DescriptorKey::Secret, ExtendedKey,
+    GeneratableKey, GeneratedKey,
+};
 use bdk_wallet::miniscript::miniscript;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -84,57 +88,235 @@ use {
 pub fn handle_offline_wallet_subcommand(
     wallet: &mut Wallet,
     wallet_opts: &WalletOpts,
+    cli_opts: &CliOpts,
     offline_subcommand: OfflineWalletSubCommand,
-) -> Result<serde_json::Value, Error> {
+) -> Result<String, Error> {
     match offline_subcommand {
         NewAddress => {
             let addr = wallet.reveal_next_address(KeychainKind::External);
-            if wallet_opts.verbose {
-                Ok(json!({
+            if cli_opts.pretty {
+                let table = vec![
+                    vec!["Address".cell().bold(true), addr.address.to_string().cell()],
+                    vec![
+                        "Index".cell().bold(true),
+                        addr.index.to_string().cell().justify(Justify::Right),
+                    ],
+                ]
+                .table()
+                .display()
+                .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(format!("{table}"))
+            } else if wallet_opts.verbose {
+                Ok(serde_json::to_string_pretty(&json!({
                     "address": addr.address,
                     "index": addr.index
-                }))
+                }))?)
             } else {
-                Ok(json!({
+                Ok(serde_json::to_string_pretty(&json!({
                     "address": addr.address,
-                }))
+                }))?)
             }
         }
         UnusedAddress => {
             let addr = wallet.next_unused_address(KeychainKind::External);
-            if wallet_opts.verbose {
-                Ok(json!({
+
+            if cli_opts.pretty {
+                let table = vec![
+                    vec!["Address".cell().bold(true), addr.address.to_string().cell()],
+                    vec![
+                        "Index".cell().bold(true),
+                        addr.index.to_string().cell().justify(Justify::Right),
+                    ],
+                ]
+                .table()
+                .display()
+                .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(format!("{table}"))
+            } else if wallet_opts.verbose {
+                Ok(serde_json::to_string_pretty(&json!({
                     "address": addr.address,
                     "index": addr.index
-                }))
+                }))?)
             } else {
-                Ok(json!({
+                Ok(serde_json::to_string_pretty(&json!({
                     "address": addr.address,
-                }))
+                }))?)
             }
         }
-        Unspent => Ok(serde_json::to_value(
-            wallet.list_unspent().collect::<Vec<_>>(),
-        )?),
-        Transactions => {
-            let transactions: Vec<_> = wallet
-                .transactions()
-                .map(|tx| {
-                    json!({
-                        "txid": tx.tx_node.txid,
-                        "is_coinbase": tx.tx_node.is_coinbase(),
-                        "wtxid": tx.tx_node.compute_wtxid(),
-                        "version": tx.tx_node.version,
-                        "is_rbf": tx.tx_node.is_explicitly_rbf(),
-                        "inputs": tx.tx_node.input,
-                        "outputs": tx.tx_node.output,
-                    })
-                })
-                .collect();
+        Unspent => {
+            let utxos = wallet.list_unspent().collect::<Vec<_>>();
+            if cli_opts.pretty {
+                let mut rows: Vec<Vec<CellStruct>> = vec![];
+                for utxo in &utxos {
+                    let height = utxo
+                        .chain_position
+                        .confirmation_height_upper_bound()
+                        .map(|h| h.to_string())
+                        .unwrap_or("Pending".to_string());
 
-            Ok(serde_json::to_value(transactions)?)
+                    let block_hash = match &utxo.chain_position {
+                        ChainPosition::Confirmed { anchor, .. } => anchor.block_id.hash.to_string(),
+                        ChainPosition::Unconfirmed { .. } => "Unconfirmed".to_string(),
+                    };
+
+                    rows.push(vec![
+                        utxo.outpoint.cell(),
+                        utxo.txout
+                            .value
+                            .to_sat()
+                            .to_string()
+                            .cell()
+                            .justify(Justify::Right),
+                        utxo.txout.script_pubkey.to_hex_string().cell(),
+                        utxo.keychain.cell(),
+                        utxo.is_spent.cell(),
+                        utxo.derivation_index.cell(),
+                        height.to_string().cell().justify(Justify::Right),
+                        block_hash.cell().justify(Justify::Right),
+                    ]);
+                }
+                let table = rows
+                    .table()
+                    .title(vec![
+                        "Outpoint".cell().bold(true),
+                        "Output (sat)".cell().bold(true),
+                        "Output ScriptPubkey".cell().bold(true),
+                        "Keychain".cell().bold(true),
+                        "Is Spent".cell().bold(true),
+                        "Index".cell().bold(true),
+                        "Block Height".cell().bold(true),
+                        "Block Hash".cell().bold(true),
+                    ])
+                    .display()
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(format!("{table}"))
+            } else {
+                Ok(serde_json::to_string_pretty(&utxos)?)
+            }
         }
-        Balance => Ok(json!({"satoshi": wallet.balance()})),
+        Transactions => {
+            let transactions = wallet.transactions();
+
+            if cli_opts.pretty {
+                let txns = transactions
+                    .map(|tx| {
+                        let total_value = tx
+                            .tx_node
+                            .output
+                            .iter()
+                            .map(|output| output.value.to_sat())
+                            .sum::<u64>();
+                        (
+                            tx.tx_node.txid.to_string(),
+                            tx.tx_node.version,
+                            tx.tx_node.is_explicitly_rbf(),
+                            tx.tx_node.input.len(),
+                            tx.tx_node.output.len(),
+                            total_value,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let mut rows: Vec<Vec<CellStruct>> = vec![];
+                for (txid, version, is_rbf, input_count, output_count, total_value) in txns {
+                    rows.push(vec![
+                        txid.cell(),
+                        version.to_string().cell().justify(Justify::Right),
+                        is_rbf.to_string().cell().justify(Justify::Center),
+                        input_count.to_string().cell().justify(Justify::Right),
+                        output_count.to_string().cell().justify(Justify::Right),
+                        total_value.to_string().cell().justify(Justify::Right),
+                    ]);
+                }
+                let table = rows
+                    .table()
+                    .title(vec![
+                        "Txid".cell().bold(true),
+                        "Version".cell().bold(true),
+                        "Is RBF".cell().bold(true),
+                        "Input Count".cell().bold(true),
+                        "Output Count".cell().bold(true),
+                        "Total Value (sat)".cell().bold(true),
+                    ])
+                    .display()
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(format!("{table}"))
+            } else {
+                let txns: Vec<_> = transactions
+                    .map(|tx| {
+                        json!({
+                            "txid": tx.tx_node.txid,
+                            "is_coinbase": tx.tx_node.is_coinbase(),
+                            "wtxid": tx.tx_node.compute_wtxid(),
+                            "version": tx.tx_node.version,
+                            "is_rbf": tx.tx_node.is_explicitly_rbf(),
+                            "inputs": tx.tx_node.input,
+                            "outputs": tx.tx_node.output,
+                        })
+                    })
+                    .collect();
+                Ok(serde_json::to_string_pretty(&txns)?)
+            }
+        }
+        Balance => {
+            let balance = wallet.balance();
+            if cli_opts.pretty {
+                let table = vec![
+                    vec!["Type".cell().bold(true), "Amount (sat)".cell().bold(true)],
+                    vec![
+                        "Total".cell(),
+                        balance
+                            .total()
+                            .to_sat()
+                            .to_string()
+                            .cell()
+                            .justify(Justify::Right),
+                    ],
+                    vec![
+                        "Confirmed".cell(),
+                        balance
+                            .confirmed
+                            .to_sat()
+                            .to_string()
+                            .cell()
+                            .justify(Justify::Right),
+                    ],
+                    vec![
+                        "Unconfirmed".cell(),
+                        balance
+                            .immature
+                            .to_sat()
+                            .to_string()
+                            .cell()
+                            .justify(Justify::Right),
+                    ],
+                    vec![
+                        "Trusted Pending".cell(),
+                        balance
+                            .trusted_pending
+                            .to_sat()
+                            .cell()
+                            .justify(Justify::Right),
+                    ],
+                    vec![
+                        "Untrusted Pending".cell(),
+                        balance
+                            .untrusted_pending
+                            .to_sat()
+                            .cell()
+                            .justify(Justify::Right),
+                    ],
+                ]
+                .table()
+                .display()
+                .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(format!("{table}"))
+            } else {
+                Ok(serde_json::to_string_pretty(
+                    &json!({"satoshi": wallet.balance()}),
+                )?)
+            }
+        }
+
         CreateTx {
             recipients,
             send_all,
@@ -205,9 +387,13 @@ pub fn handle_offline_wallet_subcommand(
             let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
 
             if wallet_opts.verbose {
-                Ok(json!({"psbt": psbt_base64, "details": psbt}))
+                Ok(serde_json::to_string_pretty(
+                    &json!({"psbt": psbt_base64, "details": psbt}),
+                )?)
             } else {
-                Ok(json!({"psbt": psbt_base64 }))
+                Ok(serde_json::to_string_pretty(
+                    &json!({"psbt": psbt_base64 }),
+                )?)
             }
         }
         BumpFee {
@@ -246,21 +432,61 @@ pub fn handle_offline_wallet_subcommand(
 
             let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
 
-            Ok(json!({"psbt": psbt_base64 }))
+            Ok(serde_json::to_string_pretty(
+                &json!({"psbt": psbt_base64 }),
+            )?)
         }
         Policies => {
             let external_policy = wallet.policies(KeychainKind::External)?;
             let internal_policy = wallet.policies(KeychainKind::Internal)?;
-
-            Ok(json!({
-                "external": external_policy,
-                "internal": internal_policy,
-            }))
+            if cli_opts.pretty {
+                let table = vec![
+                    vec![
+                        "External".cell().bold(true),
+                        serde_json::to_string_pretty(&external_policy)?.cell(),
+                    ],
+                    vec![
+                        "Internal".cell().bold(true),
+                        serde_json::to_string_pretty(&internal_policy)?.cell(),
+                    ],
+                ]
+                .table()
+                .display()
+                .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(format!("{table}"))
+            } else {
+                Ok(serde_json::to_string_pretty(&json!({
+                    "external": external_policy,
+                    "internal": internal_policy,
+                }))?)
+            }
         }
-        PublicDescriptor => Ok(json!({
-            "external": wallet.public_descriptor(KeychainKind::External).to_string(),
-            "internal": wallet.public_descriptor(KeychainKind::Internal).to_string(),
-        })),
+        PublicDescriptor => {
+            let external = wallet.public_descriptor(KeychainKind::External).to_string();
+            let internal = wallet.public_descriptor(KeychainKind::Internal).to_string();
+
+            if cli_opts.pretty {
+                let table = vec![
+                    vec![
+                        "External Descriptor".cell().bold(true),
+                        external.to_string().cell(),
+                    ],
+                    vec![
+                        "Internal Descriptor".cell().bold(true),
+                        internal.to_string().cell(),
+                    ],
+                ]
+                .table()
+                .display()
+                .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(format!("{table}"))
+            } else {
+                Ok(serde_json::to_string_pretty(&json!({
+                    "external": external.to_string(),
+                    "internal": internal.to_string(),
+                }))?)
+            }
+        }
         Sign {
             psbt,
             assume_height,
@@ -276,18 +502,33 @@ pub fn handle_offline_wallet_subcommand(
             let finalized = wallet.sign(&mut psbt, signopt)?;
             let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
             if wallet_opts.verbose {
-                Ok(
-                    json!({"psbt": &psbt_base64, "is_finalized": finalized, "serialized_psbt": &psbt}),
-                )
+                Ok(serde_json::to_string_pretty(
+                    &json!({"psbt": &psbt_base64, "is_finalized": finalized, "serialized_psbt": &psbt}),
+                )?)
             } else {
-                Ok(json!({"psbt": &psbt_base64, "is_finalized": finalized,}))
+                Ok(serde_json::to_string_pretty(
+                    &json!({"psbt": &psbt_base64, "is_finalized": finalized}),
+                )?)
             }
         }
         ExtractPsbt { psbt } => {
             let psbt_serialized = BASE64_STANDARD.decode(psbt)?;
             let psbt = Psbt::deserialize(&psbt_serialized)?;
             let raw_tx = psbt.extract_tx()?;
-            Ok(json!({"raw_tx": serialize_hex(&raw_tx),}))
+            if cli_opts.pretty {
+                let table = vec![vec![
+                    "Raw Transaction".cell().bold(true),
+                    serialize_hex(&raw_tx).cell(),
+                ]]
+                .table()
+                .display()
+                .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(format!("{table}"))
+            } else {
+                Ok(serde_json::to_string_pretty(
+                    &json!({"raw_tx": serialize_hex(&raw_tx)}),
+                )?)
+            }
         }
         FinalizePsbt {
             psbt,
@@ -304,13 +545,13 @@ pub fn handle_offline_wallet_subcommand(
             };
             let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
             if wallet_opts.verbose {
-                Ok(
-                    json!({ "psbt": BASE64_STANDARD.encode(psbt.serialize()), "is_finalized": finalized, "details": psbt}),
-                )
+                Ok(serde_json::to_string_pretty(
+                    &json!({ "psbt": BASE64_STANDARD.encode(psbt.serialize()), "is_finalized": finalized, "details": psbt}),
+                )?)
             } else {
-                Ok(
-                    json!({ "psbt": BASE64_STANDARD.encode(psbt.serialize()), "is_finalized": finalized,}),
-                )
+                Ok(serde_json::to_string_pretty(
+                    &json!({ "psbt": BASE64_STANDARD.encode(psbt.serialize()), "is_finalized": finalized}),
+                )?)
             }
         }
         CombinePsbt { psbt } => {
@@ -332,7 +573,9 @@ pub fn handle_offline_wallet_subcommand(
                     Ok(acc)
                 },
             )?;
-            Ok(json!({ "psbt": BASE64_STANDARD.encode(final_psbt.serialize()) }))
+            Ok(serde_json::to_string_pretty(
+                &json!({ "psbt": BASE64_STANDARD.encode(final_psbt.serialize()) }),
+            )?)
         }
     }
 }
@@ -350,7 +593,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
     wallet: &mut Wallet,
     client: BlockchainClient,
     online_subcommand: OnlineWalletSubCommand,
-) -> Result<serde_json::Value, Error> {
+) -> Result<String, Error> {
     match online_subcommand {
         FullScan {
             stop_gap: _stop_gap,
@@ -430,7 +673,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     sync_kyoto_client(wallet, client).await?;
                 }
             }
-            Ok(json!({}))
+            Ok(serde_json::to_string_pretty(&json!({}))?)
         }
         Sync => {
             #[cfg(any(feature = "electrum", feature = "esplora"))]
@@ -510,7 +753,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     sync_kyoto_client(wallet, client).await?;
                 }
             }
-            Ok(json!({}))
+            Ok(serde_json::to_string_pretty(&json!({}))?)
         }
         Broadcast { psbt, tx } => {
             let tx = match (psbt, tx) {
@@ -608,7 +851,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     txid
                 }
             };
-            Ok(json!({ "txid": txid }))
+            Ok(serde_json::to_string_pretty(&json!({ "txid": txid }))?)
         }
     }
 }
@@ -650,7 +893,8 @@ pub(crate) fn is_final(psbt: &Psbt) -> Result<(), Error> {
 pub(crate) fn handle_key_subcommand(
     network: Network,
     subcommand: KeySubCommand,
-) -> Result<serde_json::Value, Error> {
+    pretty: bool,
+) -> Result<String, Error> {
     let secp = Secp256k1::new();
 
     match subcommand {
@@ -676,19 +920,50 @@ pub(crate) fn handle_key_subcommand(
                 .fold("".to_string(), |phrase, w| phrase + w + " ")
                 .trim()
                 .to_string();
-            Ok(
-                json!({ "mnemonic": phrase, "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }),
-            )
+            if pretty {
+                let table = vec![
+                    vec![
+                        "Fingerprint".cell().bold(true),
+                        fingerprint.to_string().cell(),
+                    ],
+                    vec!["Mnemonic".cell().bold(true), mnemonic.to_string().cell()],
+                    vec!["Xprv".cell().bold(true), xprv.to_string().cell()],
+                ]
+                .table()
+                .display()
+                .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(format!("{table}"))
+            } else {
+                Ok(serde_json::to_string_pretty(
+                    &json!({ "mnemonic": phrase, "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }),
+                )?)
+            }
         }
         KeySubCommand::Restore { mnemonic, password } => {
             let mnemonic = Mnemonic::parse_in(Language::English, mnemonic)?;
-            let xkey: ExtendedKey = (mnemonic, password).into_extended_key()?;
+            let xkey: ExtendedKey = (mnemonic.clone(), password).into_extended_key()?;
             let xprv = xkey.into_xprv(network).ok_or_else(|| {
                 Error::Generic("Privatekey info not found (should not happen)".to_string())
             })?;
             let fingerprint = xprv.fingerprint(&secp);
-
-            Ok(json!({ "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }))
+            if pretty {
+                let table = vec![
+                    vec![
+                        "Fingerprint".cell().bold(true),
+                        fingerprint.to_string().cell(),
+                    ],
+                    vec!["Mnemonic".cell().bold(true), mnemonic.to_string().cell()],
+                    vec!["Xprv".cell().bold(true), xprv.to_string().cell()],
+                ]
+                .table()
+                .display()
+                .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(format!("{table}"))
+            } else {
+                Ok(serde_json::to_string_pretty(
+                    &json!({ "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }),
+                )?)
+            }
         }
         KeySubCommand::Derive { xprv, path } => {
             if xprv.network != network.into() {
@@ -703,7 +978,20 @@ pub(crate) fn handle_key_subcommand(
 
             if let Secret(desc_seckey, _, _) = derived_xprv_desc_key {
                 let desc_pubkey = desc_seckey.to_public(&secp)?;
-                Ok(json!({"xpub": desc_pubkey.to_string(), "xprv": desc_seckey.to_string()}))
+                if pretty {
+                    let table = vec![
+                        vec!["Xpub".cell().bold(true), desc_pubkey.to_string().cell()],
+                        vec!["Xprv".cell().bold(true), xprv.to_string().cell()],
+                    ]
+                    .table()
+                    .display()
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+                    Ok(format!("{table}"))
+                } else {
+                    Ok(serde_json::to_string_pretty(
+                        &json!({"xpub": desc_pubkey.to_string(), "xprv": desc_seckey.to_string()}),
+                    )?)
+                }
             } else {
                 Err(Error::Generic("Invalid key variant".to_string()))
             }
@@ -719,7 +1007,8 @@ pub(crate) fn handle_compile_subcommand(
     _network: Network,
     policy: String,
     script_type: String,
-) -> Result<serde_json::Value, Error> {
+    pretty: bool,
+) -> Result<String, Error> {
     let policy = Concrete::<String>::from_str(policy.as_str())?;
     let legacy_policy: Miniscript<String, Legacy> = policy
         .compile()
@@ -734,15 +1023,28 @@ pub(crate) fn handle_compile_subcommand(
         "sh-wsh" => Descriptor::new_sh_wsh(segwit_policy),
         _ => panic!("Invalid type"),
     }?;
-
-    Ok(json!({"descriptor": descriptor.to_string()}))
+    if pretty {
+        let table = vec![vec![
+            "Descriptor".cell().bold(true),
+            descriptor.to_string().cell(),
+        ]]
+        .table()
+        .display()
+        .map_err(|e| Error::Generic(e.to_string()))?;
+        Ok(format!("{table}"))
+    } else {
+        Ok(serde_json::to_string_pretty(
+            &json!({"descriptor": descriptor.to_string()}),
+        )?)
+    }
 }
 
 /// The global top level handler.
 pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
     let network = cli_opts.network;
+    let pretty = cli_opts.pretty;
 
-    let result = match cli_opts.subcommand {
+    let result: Result<String, Error> = match cli_opts.subcommand {
         #[cfg(any(
             feature = "electrum",
             feature = "esplora",
@@ -750,10 +1052,10 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             feature = "rpc"
         ))]
         CliSubCommand::Wallet {
-            wallet_opts,
+            ref wallet_opts,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
-            let network = cli_opts.network;
+            // let network = cli_opts.network;
             let home_dir = prepare_home_dir(cli_opts.datadir)?;
             let wallet_name = &wallet_opts.wallet;
             let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
@@ -804,16 +1106,16 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 handle_online_wallet_subcommand(&mut wallet, blockchain_client, online_subcommand)
                     .await?
             };
-            serde_json::to_string_pretty(&result)
+            Ok(result)
         }
         CliSubCommand::Wallet {
-            wallet_opts,
-            subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
+            ref wallet_opts,
+            subcommand: WalletSubCommand::OfflineWalletSubCommand(ref offline_subcommand),
         } => {
             let network = cli_opts.network;
             #[cfg(any(feature = "sqlite", feature = "redb"))]
             let result = {
-                let home_dir = prepare_home_dir(cli_opts.datadir)?;
+                let home_dir = prepare_home_dir(cli_opts.datadir.clone())?;
                 let wallet_name = &wallet_opts.wallet;
                 let mut persister: Persister = match &wallet_opts.database_type {
                     #[cfg(feature = "sqlite")]
@@ -838,11 +1140,13 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     }
                 };
 
-                let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
+                let mut wallet = new_persisted_wallet(network, &mut persister, wallet_opts)?;
+
                 let result = handle_offline_wallet_subcommand(
                     &mut wallet,
-                    &wallet_opts,
-                    offline_subcommand,
+                    wallet_opts,
+                    &cli_opts,
+                    offline_subcommand.clone(),
                 )?;
                 wallet.persist(&mut persister)?;
                 result
@@ -850,26 +1154,26 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             #[cfg(not(any(feature = "sqlite", feature = "redb")))]
             let result = {
                 let mut wallet = new_wallet(network, &wallet_opts)?;
-                handle_offline_wallet_subcommand(&mut wallet, &wallet_opts, offline_subcommand)?
+                handle_offline_wallet_subcommand(&mut wallet, &wallet_opts, &cli_opts, offline_subcommand)?
             };
-            serde_json::to_string_pretty(&result)
+            Ok(result)
         }
         CliSubCommand::Key {
             subcommand: key_subcommand,
         } => {
-            let result = handle_key_subcommand(network, key_subcommand)?;
-            serde_json::to_string_pretty(&result)
+            let result = handle_key_subcommand(network, key_subcommand, pretty)?;
+            Ok(result)
         }
         #[cfg(feature = "compiler")]
         CliSubCommand::Compile {
             policy,
             script_type,
         } => {
-            let result = handle_compile_subcommand(network, policy, script_type)?;
-            serde_json::to_string_pretty(&result)
+            let result = handle_compile_subcommand(network, policy, script_type, pretty)?;
+            Ok(result)
         }
-        #[cfg(feature = "repl")]
-        CliSubCommand::Repl { wallet_opts } => {
+        // #[cfg(feature = "repl")]
+        CliSubCommand::Repl { ref wallet_opts } => {
             let network = cli_opts.network;
             #[cfg(any(feature = "sqlite", feature = "redb"))]
             let (mut wallet, mut persister) = {
@@ -899,7 +1203,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                         Persister::RedbStore(store)
                     }
                 };
-                let wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
+                let wallet = new_persisted_wallet(network, &mut persister, wallet_opts)?;
                 (wallet, persister)
             };
             #[cfg(not(any(feature = "sqlite", feature = "redb")))]
@@ -917,9 +1221,10 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 let result = respond(
                     network,
                     &mut wallet,
-                    &wallet_opts,
+                    wallet_opts,
                     line,
                     database_path.clone(),
+                    &cli_opts,
                 )
                 .await;
                 #[cfg(any(feature = "sqlite", feature = "redb"))]
@@ -943,7 +1248,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             Ok("".to_string())
         }
     };
-    result.map_err(|e| e.into())
+    result
 }
 
 #[cfg(feature = "repl")]
@@ -953,6 +1258,7 @@ async fn respond(
     wallet_opts: &WalletOpts,
     line: &str,
     _datadir: std::path::PathBuf,
+    cli_opts: &CliOpts,
 ) -> Result<bool, String> {
     use clap::Parser;
 
@@ -978,18 +1284,19 @@ async fn respond(
         ReplSubCommand::Wallet {
             subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
-            let value = handle_offline_wallet_subcommand(wallet, wallet_opts, offline_subcommand)
-                .map_err(|e| e.to_string())?;
+            let value =
+                handle_offline_wallet_subcommand(wallet, wallet_opts, cli_opts, offline_subcommand)
+                    .map_err(|e| e.to_string())?;
             Some(value)
         }
         ReplSubCommand::Key { subcommand } => {
-            let value = handle_key_subcommand(network, subcommand).map_err(|e| e.to_string())?;
+            let value = handle_key_subcommand(network, subcommand, cli_opts.pretty)
+                .map_err(|e| e.to_string())?;
             Some(value)
         }
         ReplSubCommand::Exit => None,
     };
     if let Some(value) = response {
-        let value = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
         writeln!(std::io::stdout(), "{value}").map_err(|e| e.to_string())?;
         std::io::stdout().flush().map_err(|e| e.to_string())?;
         Ok(false)
