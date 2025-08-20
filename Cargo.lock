@@ -186,6 +186,7 @@ dependencies = [
  "bdk_esplora",
  "bdk_kyoto",
  "bdk_redb",
+ "bdk_sp",
  "bdk_wallet",
  "clap",
  "cli-table",
@@ -279,6 +280,14 @@ dependencies = [
  "redb",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "bdk_sp"
+version = "0.1.0"
+source = "git+https://github.com/bitcoindevkit/bdk-sp?tag=v0.1.0#79cfaf1e8829dd771c4461e6cd2a46c8abb00503"
+dependencies = [
+ "bitcoin",
 ]
 
 [[package]]
