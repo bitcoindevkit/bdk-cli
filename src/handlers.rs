@@ -54,6 +54,16 @@ use std::io::Write;
 use std::str::FromStr;
 #[cfg(any(feature = "redb", feature = "compiler"))]
 use std::sync::Arc;
+#[cfg(feature = "sp")]
+use {
+    bdk_sp::{
+        bitcoin::{PrivateKey, PublicKey, ScriptBuf, XOnlyPublicKey},
+        encoding::SilentPaymentCode,
+        send::psbt::derive_sp,
+    },
+    bdk_wallet::keys::{DescriptorPublicKey, DescriptorSecretKey, SinglePubKey},
+    std::collections::HashMap,
+};
 
 #[cfg(feature = "electrum")]
 use crate::utils::BlockchainClient::Electrum;
@@ -323,7 +333,152 @@ pub fn handle_offline_wallet_subcommand(
                 )?)
             }
         }
+        #[cfg(feature = "sp")]
+        CreateSpTx {
+            recipients: maybe_recipients,
+            silent_payment_recipients,
+            send_all,
+            offline_signer,
+            utxos,
+            unspendable,
+            fee_rate,
+            external_policy,
+            internal_policy,
+            add_data,
+            add_string,
+        } => {
+            let mut tx_builder = wallet.build_tx();
 
+            let sp_recipients: Vec<SilentPaymentCode> = silent_payment_recipients
+                .iter()
+                .map(|(sp_code, _)| sp_code.clone())
+                .collect();
+
+            let mut outputs: Vec<(ScriptBuf, Amount)> = silent_payment_recipients
+                .iter()
+                .map(|(sp_code, amount)| {
+                    let script = sp_code.get_placeholder_p2tr_spk();
+                    (script, Amount::from_sat(*amount))
+                })
+                .collect();
+
+            if let Some(recipients) = maybe_recipients {
+                if send_all {
+                    tx_builder.drain_wallet().drain_to(recipients[0].0.clone());
+                } else {
+                    let recipients = recipients
+                        .into_iter()
+                        .map(|(script, amount)| (script, Amount::from_sat(amount)));
+
+                    outputs.extend(recipients);
+                }
+            }
+
+            tx_builder.set_recipients(outputs);
+
+            // Do not enable RBF for this transaction
+            tx_builder.set_exact_sequence(Sequence::MAX);
+
+            if offline_signer {
+                tx_builder.include_output_redeem_witness_script();
+            }
+
+            if let Some(fee_rate) = fee_rate {
+                if let Some(fee_rate) = FeeRate::from_sat_per_vb(fee_rate as u64) {
+                    tx_builder.fee_rate(fee_rate);
+                }
+            }
+
+            if let Some(utxos) = utxos {
+                tx_builder.add_utxos(&utxos[..]).unwrap();
+            }
+
+            if let Some(unspendable) = unspendable {
+                tx_builder.unspendable(unspendable);
+            }
+
+            if let Some(base64_data) = add_data {
+                let op_return_data = BASE64_STANDARD.decode(base64_data).unwrap();
+                tx_builder.add_data(&PushBytesBuf::try_from(op_return_data).unwrap());
+            } else if let Some(string_data) = add_string {
+                let data = PushBytesBuf::try_from(string_data.as_bytes().to_vec()).unwrap();
+                tx_builder.add_data(&data);
+            }
+
+            let policies = vec![
+                external_policy.map(|p| (p, KeychainKind::External)),
+                internal_policy.map(|p| (p, KeychainKind::Internal)),
+            ];
+
+            for (policy, keychain) in policies.into_iter().flatten() {
+                let policy = serde_json::from_str::<BTreeMap<String, Vec<usize>>>(&policy)?;
+                tx_builder.policy_path(policy, keychain);
+            }
+
+            let mut psbt = tx_builder.finish()?;
+
+            let unsigned_psbt = psbt.clone();
+
+            let _signed = wallet.sign(&mut psbt, SignOptions::default())?;
+
+            for (full_input, psbt_input) in unsigned_psbt.inputs.iter().zip(psbt.inputs.iter_mut())
+            {
+                // repopulate key derivation data
+                psbt_input.bip32_derivation = full_input.bip32_derivation.clone();
+                psbt_input.tap_key_origins = full_input.tap_key_origins.clone();
+            }
+
+            let secp = Secp256k1::new();
+            let mut external_signers = wallet.get_signers(KeychainKind::External).as_key_map(&secp);
+            let internal_signers = wallet.get_signers(KeychainKind::Internal).as_key_map(&secp);
+            external_signers.extend(internal_signers);
+
+            match external_signers.iter().next().expect("not empty") {
+                (DescriptorPublicKey::Single(single_pub), DescriptorSecretKey::Single(prv)) => {
+                    match single_pub.key {
+                        SinglePubKey::FullKey(pk) => {
+                            let keys: HashMap<PublicKey, PrivateKey> = [(pk, prv.key)].into();
+                            derive_sp(&mut psbt, &keys, &sp_recipients, &secp)
+                                .expect("will fix later");
+                        }
+                        SinglePubKey::XOnly(xonly) => {
+                            let keys: HashMap<XOnlyPublicKey, PrivateKey> =
+                                [(xonly, prv.key)].into();
+                            derive_sp(&mut psbt, &keys, &sp_recipients, &secp)
+                                .expect("will fix later");
+                        }
+                    };
+                }
+                (_, DescriptorSecretKey::XPrv(k)) => {
+                    derive_sp(&mut psbt, &k.xkey, &sp_recipients, &secp).expect("will fix later");
+                }
+                _ => unimplemented!("multi xkey signer"),
+            };
+
+            // Unfinalize PSBT to resign
+            for psbt_input in psbt.inputs.iter_mut() {
+                psbt_input.final_script_sig = None;
+                psbt_input.final_script_witness = None;
+            }
+
+            let _resigned = wallet.sign(&mut psbt, SignOptions::default())?;
+
+            let raw_tx = psbt.extract_tx()?;
+            if cli_opts.pretty {
+                let table = vec![vec![
+                    "Raw Transaction".cell().bold(true),
+                    serialize_hex(&raw_tx).cell(),
+                ]]
+                .table()
+                .display()
+                .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(format!("{table}"))
+            } else {
+                Ok(serde_json::to_string_pretty(
+                    &json!({"raw_tx": serialize_hex(&raw_tx)}),
+                )?)
+            }
+        }
         CreateTx {
             recipients,
             send_all,
