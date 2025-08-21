@@ -193,3 +193,12 @@ Note: You can modify the `Justfile` to reflect your nodes' configuration values.
    cargo run --features rpc -- wallet -u "127.0.0.1:18443" -c rpc -a user:password sync
    cargo run --features rpc -- wallet -u "127.0.0.1:18443" -c rpc -a user:password balance
    ```
+
+## Formatting Responses using `--pretty` flag
+
+You can optionally return outputs of commands in  human-readable, tabular format instead of `JSON`. To enable this option, simply add the `--pretty` flag as a top level flag. For instance, you wallet's balance in a pretty format, you can run:
+
+```shell
+cargo run --pretty -n signet wallet -w {wallet_name} -d sqlite balance
+```
+This is available for wallet, key, repl and compile features. When ommitted, outputs default to `JSON`.

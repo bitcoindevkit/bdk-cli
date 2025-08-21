@@ -22,11 +22,11 @@ use crate::utils::*;
 use bdk_redb::Store as RedbStore;
 use bdk_wallet::bip39::{Language, Mnemonic};
 use bdk_wallet::bitcoin::{
+    Address, Amount, FeeRate, Network, Psbt, Sequence, Txid,
     bip32::{DerivationPath, KeySource},
     consensus::encode::serialize_hex,
     script::PushBytesBuf,
     secp256k1::Secp256k1,
-    Amount, FeeRate, Network, Psbt, Sequence, Txid,
 };
 use bdk_wallet::chain::ChainPosition;
 use bdk_wallet::descriptor::Segwitv0;
@@ -38,11 +38,11 @@ use bdk_wallet::{
     descriptor::{Descriptor, Legacy, Miniscript},
     miniscript::policy::Concrete,
 };
-use cli_table::{format::Justify, Cell, CellStruct, Style, Table};
+use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
 
 use bdk_wallet::keys::{
-    bip39::WordCount, DerivableKey, DescriptorKey, DescriptorKey::Secret, ExtendedKey,
-    GeneratableKey, GeneratedKey,
+    DerivableKey, DescriptorKey, DescriptorKey::Secret, ExtendedKey, GeneratableKey, GeneratedKey,
+    bip39::WordCount,
 };
 use bdk_wallet::miniscript::miniscript;
 use serde_json::json;
@@ -160,19 +160,21 @@ pub fn handle_offline_wallet_subcommand(
                     };
 
                     rows.push(vec![
-                        utxo.outpoint.cell(),
+                        shorten(utxo.outpoint, 8, 10).cell(),
                         utxo.txout
                             .value
                             .to_sat()
                             .to_string()
                             .cell()
                             .justify(Justify::Right),
-                        utxo.txout.script_pubkey.to_hex_string().cell(),
+                        Address::from_script(&utxo.txout.script_pubkey, cli_opts.network)
+                            .unwrap()
+                            .cell(),
                         utxo.keychain.cell(),
                         utxo.is_spent.cell(),
                         utxo.derivation_index.cell(),
                         height.to_string().cell().justify(Justify::Right),
-                        block_hash.cell().justify(Justify::Right),
+                        shorten(block_hash, 8, 8).cell().justify(Justify::Right),
                     ]);
                 }
                 let table = rows
@@ -180,7 +182,7 @@ pub fn handle_offline_wallet_subcommand(
                     .title(vec![
                         "Outpoint".cell().bold(true),
                         "Output (sat)".cell().bold(true),
-                        "Output ScriptPubkey".cell().bold(true),
+                        "Output Address".cell().bold(true),
                         "Keychain".cell().bold(true),
                         "Is Spent".cell().bold(true),
                         "Index".cell().bold(true),
@@ -1154,7 +1156,12 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             #[cfg(not(any(feature = "sqlite", feature = "redb")))]
             let result = {
                 let mut wallet = new_wallet(network, &wallet_opts)?;
-                handle_offline_wallet_subcommand(&mut wallet, &wallet_opts, &cli_opts, offline_subcommand)?
+                handle_offline_wallet_subcommand(
+                    &mut wallet,
+                    &wallet_opts,
+                    &cli_opts,
+                    offline_subcommand.clone(),
+                )?
             };
             Ok(result)
         }
@@ -1172,7 +1179,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             let result = handle_compile_subcommand(network, policy, script_type, pretty)?;
             Ok(result)
         }
-        // #[cfg(feature = "repl")]
+        #[cfg(feature = "repl")]
         CliSubCommand::Repl { ref wallet_opts } => {
             let network = cli_opts.network;
             #[cfg(any(feature = "sqlite", feature = "redb"))]

@@ -10,6 +10,7 @@
 //!
 //! This module includes all the utility tools used by the App.
 use crate::error::BDKCliError as Error;
+use std::fmt::Display;
 use std::str::FromStr;
 
 use std::path::{Path, PathBuf};
@@ -370,4 +371,11 @@ pub async fn sync_kyoto_client(wallet: &mut Wallet, client: Box<LightClient>) ->
     );
 
     Ok(())
+}
+
+pub(crate) fn shorten(displayable: impl Display, start: u8, end: u8) -> String {
+    let displayable = displayable.to_string();
+    let start_str: &str = &displayable[0..start as usize];
+    let end_str: &str = &displayable[displayable.len() - end as usize..];
+    format!("{start_str}...{end_str}")
 }
