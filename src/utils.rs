@@ -17,10 +17,10 @@ use std::path::{Path, PathBuf};
 use crate::commands::WalletOpts;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{
-    builder::NodeBuilder,
     Info, LightClient, NodeBuilderExt, Receiver,
     ScanType::{Recovery, Sync},
     UnboundedReceiver, Warning,
+    builder::NodeBuilder,
 };
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 

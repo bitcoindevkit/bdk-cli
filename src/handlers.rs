@@ -17,22 +17,22 @@ use crate::error::BDKCliError as Error;
 use crate::utils::BlockchainClient::KyotoClient;
 use crate::utils::*;
 use bdk_wallet::bip39::{Language, Mnemonic};
+use bdk_wallet::bitcoin::Network;
 use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
 use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
-use bdk_wallet::bitcoin::Network;
-use bdk_wallet::bitcoin::{secp256k1::Secp256k1, Txid};
 use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence};
+use bdk_wallet::bitcoin::{Txid, secp256k1::Secp256k1};
 use bdk_wallet::descriptor::Segwitv0;
 use bdk_wallet::keys::bip39::WordCount;
 #[cfg(feature = "sqlite")]
 use bdk_wallet::rusqlite::Connection;
+use bdk_wallet::{KeychainKind, SignOptions, Wallet};
 #[cfg(feature = "compiler")]
 use bdk_wallet::{
     descriptor::{Descriptor, Legacy, Miniscript},
     miniscript::policy::Concrete,
 };
-use bdk_wallet::{KeychainKind, SignOptions, Wallet};
 
 use bdk_wallet::keys::DescriptorKey::Secret;
 use bdk_wallet::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
@@ -61,14 +61,14 @@ use tokio::select;
 ))]
 use {
     crate::commands::OnlineWalletSubCommand::*,
-    bdk_wallet::bitcoin::{consensus::Decodable, hex::FromHex, Transaction},
+    bdk_wallet::bitcoin::{Transaction, consensus::Decodable, hex::FromHex},
 };
 #[cfg(feature = "esplora")]
 use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
 #[cfg(feature = "rpc")]
 use {
     crate::utils::BlockchainClient::RpcClient,
-    bdk_bitcoind_rpc::{bitcoincore_rpc::RpcApi, Emitter},
+    bdk_bitcoind_rpc::{Emitter, bitcoincore_rpc::RpcApi},
     bdk_wallet::chain::{BlockId, CanonicalizationParams, CheckPoint},
 };
 
@@ -948,7 +948,7 @@ async fn respond(
     };
     if let Some(value) = response {
         let value = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
-        writeln!(std::io::stdout(), "{}", value).map_err(|e| e.to_string())?;
+        writeln!(std::io::stdout(), "{value}").map_err(|e| e.to_string())?;
         std::io::stdout().flush().map_err(|e| e.to_string())?;
         Ok(false)
     } else {

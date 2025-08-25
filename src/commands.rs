@@ -15,10 +15,10 @@
 #![allow(clippy::large_enum_variant)]
 
 use bdk_wallet::bitcoin::{
-    bip32::{DerivationPath, Xpriv},
     Address, Network, OutPoint, ScriptBuf,
+    bip32::{DerivationPath, Xpriv},
 };
-use clap::{value_parser, Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
 
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;

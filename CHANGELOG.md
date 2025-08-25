@@ -5,6 +5,8 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [Unreleased]
 
+- Removed MSRV and bumped Rust Edition to 2024
+
 ## [1.0.0]
 
 - Changed the MSRV to 1.75.0 and bumped the rust edition to 2021

@@ -11,7 +11,6 @@ jobs:
       matrix:
         rust:
           - stable # STABLE
-          - 1.75.0 # MSRV
         features:
           - --features default
           - --no-default-features
@@ -36,14 +35,6 @@ jobs:
           profile: minimal
           override: true
           components: rustfmt, clippy
-      - name: If Rust 1.75 remove and update Cargo.lock
-        if: matrix.rust == '1.75.0'
-        run: |
-          rm Cargo.lock
-          cargo update
-      - name: If Rust 1.75 pin dependencies
-        if: matrix.rust == '1.75.0'
-        run: ./ci/pin-msrv.sh
       - name: Build
         run: cargo build ${{ matrix.features }}
       - name: Clippy
