@@ -193,3 +193,47 @@ Note: You can modify the `Justfile` to reflect your nodes' configuration values.
    cargo run --features rpc -- wallet -u "127.0.0.1:18443" -c rpc -a user:password sync
    cargo run --features rpc -- wallet -u "127.0.0.1:18443" -c rpc -a user:password balance
    ```
+
+### Initializing Wallet Configurations with `bdk-cli wallet init`
+
+The `bdk-cli wallet init` command simplifies wallet setup by saving configuration parameters to `config.toml` in the data directory (default `~/.bdk-bitcoin/config.toml`). This allows you to run subsequent `bdk-cli` wallet commands without repeatedly specifying configuration details, easing wallet operations.
+
+To initialize a wallet configuration, use the following command structure:
+
+```shell
+cargo run --features <list-of-features> -- -n <network> wallet init --wallet <wallet_name> --ext-descriptor <ext_descriptor> --int-descriptor <int_descriptor>  --client-type <client_type>  --url <server_url> [--database-type <database_type>] [--rpc-user <rpc_user>]
+  [--rpc-password <rpc_password>]
+```
+
+For example, to initialize a wallet named `my_wallet` with `electrum` as the backend on `signet` network:
+
+```shell
+cargo run --features electrum -- -n signet wallet init -w my_wallet -e "tr(tprv8Z.../0/*)#dtdqk3dx" -i "tr(tprv8Z.../1/*)#ulgptya7" -d sqlite -c electrum -u "ssl://mempool.space:60602"
+```
+
+To overwrite an existing wallet configuration, use the  `--force` flag at the end of the command.
+
+You can omit the following arguments to use their default values:
+
+`network`: Defaults to `testnet`
+
+`database_type`: Defaults to `sqlite`
+
+#### Using Saved Configuration
+
+After a wallet is initialized, you can then run `bdk-cli` wallet commands without specifying the parameters, referencing only the wallet subcommand.
+
+For example, with the wallet `my_wallet` initialized, generate a new address and sync the wallet as follow:
+
+```shell
+cargo run wallet -w my_wallet new_address
+
+cargo run --features electrum wallet -w my_wallet sync
+```
+
+Note that each wallet has its own configuration, allowing multiple wallets with different configurations.
+
+
+## Minimum Supported Rust Version (MSRV)
+
+This library should always compile with any valid combination of features on Rust **1.75.0**.

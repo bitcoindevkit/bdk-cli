@@ -6,6 +6,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 ## [Unreleased]
 
 - Removed MSRV and bumped Rust Edition to 2024
+- Add wallet configs initialization for initialiazing and saving wallet configs
 
 ## [1.0.0]
 
