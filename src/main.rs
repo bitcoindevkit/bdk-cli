@@ -13,6 +13,8 @@
 mod commands;
 mod error;
 mod handlers;
+#[cfg(any(feature = "sqlite", feature = "redb"))]
+mod persister;
 mod utils;
 
 use bdk_wallet::bitcoin::Network;

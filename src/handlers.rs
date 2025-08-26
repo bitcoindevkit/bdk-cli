@@ -13,9 +13,13 @@
 use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::*;
 use crate::error::BDKCliError as Error;
+#[cfg(any(feature = "sqlite", feature = "redb"))]
+use crate::persister::Persister;
 #[cfg(feature = "cbf")]
 use crate::utils::BlockchainClient::KyotoClient;
 use crate::utils::*;
+#[cfg(feature = "redb")]
+use bdk_redb::Store as RedbStore;
 use bdk_wallet::bip39::{Language, Mnemonic};
 use bdk_wallet::bitcoin::Network;
 use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource};
@@ -51,6 +55,8 @@ use crate::utils::BlockchainClient::Electrum;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{Info, LightClient};
 use bdk_wallet::bitcoin::base64::prelude::*;
+#[cfg(feature = "redb")]
+use std::sync::Arc;
 #[cfg(feature = "cbf")]
 use tokio::select;
 #[cfg(any(
@@ -751,15 +757,28 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             let home_dir = prepare_home_dir(cli_opts.datadir)?;
             let wallet_name = &wallet_opts.wallet;
             let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
-            #[cfg(feature = "sqlite")]
+
+            #[cfg(any(feature = "sqlite", feature = "redb"))]
             let result = {
-                let mut persister = match &wallet_opts.database_type {
+                let mut persister: Persister = match &wallet_opts.database_type {
                     #[cfg(feature = "sqlite")]
                     DatabaseType::Sqlite => {
                         let db_file = database_path.join("wallet.sqlite");
                         let connection = Connection::open(db_file)?;
                         log::debug!("Sqlite database opened successfully");
-                        connection
+                        Persister::Connection(connection)
+                    }
+                    #[cfg(feature = "redb")]
+                    DatabaseType::Redb => {
+                        let db = Arc::new(bdk_redb::redb::Database::create(
+                            home_dir.join("wallet.redb"),
+                        )?);
+                        let store = RedbStore::new(
+                            db,
+                            wallet_name.as_deref().unwrap_or("wallet").to_string(),
+                        )?;
+                        log::debug!("Redb database opened successfully");
+                        Persister::RedbStore(store)
                     }
                 };
 
@@ -776,7 +795,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 wallet.persist(&mut persister)?;
                 result
             };
-            #[cfg(not(any(feature = "sqlite")))]
+            #[cfg(not(any(feature = "sqlite", feature = "redb")))]
             let result = {
                 let wallet = new_wallet(network, &wallet_opts)?;
                 let blockchain_client =
@@ -792,18 +811,30 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
             let network = cli_opts.network;
-            #[cfg(feature = "sqlite")]
+            #[cfg(any(feature = "sqlite", feature = "redb"))]
             let result = {
                 let home_dir = prepare_home_dir(cli_opts.datadir)?;
                 let wallet_name = &wallet_opts.wallet;
-                let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
-                let mut persister = match &wallet_opts.database_type {
+                let mut persister: Persister = match &wallet_opts.database_type {
                     #[cfg(feature = "sqlite")]
                     DatabaseType::Sqlite => {
+                        let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
                         let db_file = database_path.join("wallet.sqlite");
                         let connection = Connection::open(db_file)?;
                         log::debug!("Sqlite database opened successfully");
-                        connection
+                        Persister::Connection(connection)
+                    }
+                    #[cfg(feature = "redb")]
+                    DatabaseType::Redb => {
+                        let db = Arc::new(bdk_redb::redb::Database::create(
+                            home_dir.join("wallet.redb"),
+                        )?);
+                        let store = RedbStore::new(
+                            db,
+                            wallet_name.as_deref().unwrap_or("wallet").to_string(),
+                        )?;
+                        log::debug!("Redb database opened successfully");
+                        Persister::RedbStore(store)
                     }
                 };
 
@@ -816,7 +847,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 wallet.persist(&mut persister)?;
                 result
             };
-            #[cfg(not(any(feature = "sqlite")))]
+            #[cfg(not(any(feature = "sqlite", feature = "redb")))]
             let result = {
                 let mut wallet = new_wallet(network, &wallet_opts)?;
                 handle_offline_wallet_subcommand(&mut wallet, &wallet_opts, offline_subcommand)?
@@ -840,27 +871,38 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
         #[cfg(feature = "repl")]
         CliSubCommand::Repl { wallet_opts } => {
             let network = cli_opts.network;
-            #[cfg(feature = "sqlite")]
+            #[cfg(any(feature = "sqlite", feature = "redb"))]
             let (mut wallet, mut persister) = {
                 let wallet_name = &wallet_opts.wallet;
 
                 let home_dir = prepare_home_dir(cli_opts.datadir.clone())?;
 
-                let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
-
-                let mut persister = match &wallet_opts.database_type {
+                let mut persister: Persister = match &wallet_opts.database_type {
                     #[cfg(feature = "sqlite")]
                     DatabaseType::Sqlite => {
+                        let database_path = prepare_wallet_db_dir(wallet_name, &home_dir)?;
                         let db_file = database_path.join("wallet.sqlite");
                         let connection = Connection::open(db_file)?;
                         log::debug!("Sqlite database opened successfully");
-                        connection
+                        Persister::Connection(connection)
+                    }
+                    #[cfg(feature = "redb")]
+                    DatabaseType::Redb => {
+                        let db = Arc::new(bdk_redb::redb::Database::create(
+                            home_dir.join("wallet.redb"),
+                        )?);
+                        let store = RedbStore::new(
+                            db,
+                            wallet_name.as_deref().unwrap_or("wallet").to_string(),
+                        )?;
+                        log::debug!("Redb database opened successfully");
+                        Persister::RedbStore(store)
                     }
                 };
                 let wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
                 (wallet, persister)
             };
-            #[cfg(not(any(feature = "sqlite")))]
+            #[cfg(not(any(feature = "sqlite", feature = "redb")))]
             let mut wallet = new_wallet(network, &wallet_opts)?;
             let home_dir = prepare_home_dir(cli_opts.datadir.clone())?;
             let database_path = prepare_wallet_db_dir(&wallet_opts.wallet, &home_dir)?;
@@ -880,7 +922,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     database_path.clone(),
                 )
                 .await;
-                #[cfg(feature = "sqlite")]
+                #[cfg(any(feature = "sqlite", feature = "redb"))]
                 wallet.persist(&mut persister)?;
 
                 match result {
