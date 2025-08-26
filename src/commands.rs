@@ -51,6 +51,9 @@ pub struct CliOpts {
     /// Default value : ~/.bdk-bitcoin
     #[arg(env = "DATADIR", short = 'd', long = "datadir")]
     pub datadir: Option<std::path::PathBuf>,
+    /// Output results in pretty format (instead of JSON).
+    #[arg(long = "pretty")]
+    pub pretty: bool,
     /// Top level cli sub-commands.
     #[command(subcommand)]
     pub subcommand: CliSubCommand,

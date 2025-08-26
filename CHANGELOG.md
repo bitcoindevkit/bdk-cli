@@ -6,6 +6,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 ## [Unreleased]
 
 - Removed MSRV and bumped Rust Edition to 2024
+- Add `--pretty` top level flag for formatting commands output in a tabular format
 
 ## [1.0.0]
 
