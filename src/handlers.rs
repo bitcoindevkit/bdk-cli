@@ -78,7 +78,7 @@ use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
 #[cfg(feature = "rpc")]
 use {
     crate::utils::BlockchainClient::RpcClient,
-    bdk_bitcoind_rpc::{Emitter, bitcoincore_rpc::RpcApi},
+    bdk_bitcoind_rpc::{Emitter, NO_EXPECTED_MEMPOOL_TXS, bitcoincore_rpc::RpcApi},
     bdk_wallet::chain::{BlockId, CanonicalizationParams, CheckPoint},
 };
 
@@ -645,8 +645,12 @@ pub(crate) async fn handle_online_wallet_subcommand(
                         height: 0,
                         hash: genesis_block.block_hash(),
                     });
-                    let mut emitter =
-                        Emitter::new(&*client, genesis_cp.clone(), genesis_cp.height(), [].iter());
+                    let mut emitter = Emitter::new(
+                        &*client,
+                        genesis_cp.clone(),
+                        genesis_cp.height(),
+                        NO_EXPECTED_MEMPOOL_TXS,
+                    );
 
                     while let Some(block_event) = emitter.next_block()? {
                         if block_event.block_height() % 10_000 == 0 {
@@ -668,7 +672,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     }
 
                     let mempool_txs = emitter.mempool()?;
-                    wallet.apply_unconfirmed_txs(mempool_txs.new_txs.into_iter());
+                    wallet.apply_unconfirmed_txs(mempool_txs.update);
                 }
                 #[cfg(feature = "cbf")]
                 KyotoClient { client } => {
@@ -748,7 +752,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     }
 
                     let mempool_txs = emitter.mempool()?;
-                    wallet.apply_unconfirmed_txs(mempool_txs.new_txs.into_iter());
+                    wallet.apply_unconfirmed_txs(mempool_txs.update);
                 }
                 #[cfg(feature = "cbf")]
                 KyotoClient { client } => {
