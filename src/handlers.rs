@@ -21,6 +21,8 @@ use crate::utils::*;
 #[cfg(feature = "redb")]
 use bdk_redb::Store as RedbStore;
 use bdk_wallet::bip39::{Language, Mnemonic};
+#[cfg(feature = "hwi")]
+use bdk_wallet::bitcoin::hex::DisplayHex;
 use bdk_wallet::bitcoin::{
     Address, Amount, FeeRate, Network, Psbt, Sequence, Txid,
     bip32::{DerivationPath, KeySource},
@@ -29,8 +31,6 @@ use bdk_wallet::bitcoin::{
     secp256k1::Secp256k1,
 };
 use bdk_wallet::chain::ChainPosition;
-#[cfg(feature = "hwi")]
-use bdk_wallet::bitcoin::hex::DisplayHex;
 use bdk_wallet::descriptor::Segwitv0;
 #[cfg(feature = "sqlite")]
 use bdk_wallet::rusqlite::Connection;
@@ -1113,8 +1113,40 @@ pub async fn handle_hwi_subcommand(
                 verbose: false,
                 ext_descriptor: Some(ext_descriptor),
                 int_descriptor: None,
-                #[cfg(feature = "sqlite")]
+                #[cfg(any(
+                    feature = "electrum",
+                    feature = "esplora",
+                    feature = "rpc",
+                    feature = "cbf"
+                ))]
+                client_type: {
+                    if cfg!(feature = "electrum") {
+                        ClientType::Electrum
+                    } else if cfg!(feature = "esplora") {
+                        ClientType::Esplora
+                    } else if cfg!(feature = "rpc") {
+                        ClientType::Rpc
+                    } else {
+                        ClientType::Cbf
+                    }
+                },
+                #[cfg(any(feature = "sqlite", feature = "redb"))]
                 database_type: database,
+                #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+                url: String::new(),
+                #[cfg(feature = "electrum")]
+                batch_size: 10,
+                #[cfg(feature = "esplora")]
+                parallel_requests: 5,
+                #[cfg(feature = "rpc")]
+                basic_auth: (String::new(), String::new()),
+                #[cfg(feature = "rpc")]
+                cookie: None,
+                #[cfg(feature = "cbf")]
+                compactfilter_opts: CompactFilterOpts {
+                    conn_count: 2,
+                    skip_blocks: None,
+                },
             };
 
             #[cfg(feature = "sqlite")]
@@ -1256,8 +1288,12 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 };
 
                 let mut wallet = new_persisted_wallet(network, &mut persister, wallet_opts)?;
-                let result =
-                    handle_offline_wallet_subcommand(&mut wallet, wallet_opts, &cli_opts, offline_subcommand.clone());
+                let result = handle_offline_wallet_subcommand(
+                    &mut wallet,
+                    wallet_opts,
+                    &cli_opts,
+                    offline_subcommand.clone(),
+                );
                 wallet.persist(&mut persister)?;
                 result
             };
@@ -1269,7 +1305,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     &wallet_opts,
                     &cli_opts,
                     offline_subcommand.clone(),
-                )?
+                )
             };
             Ok(result?)
         }
@@ -1408,8 +1444,9 @@ async fn respond(
         ReplSubCommand::Wallet {
             subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
-            let value = handle_offline_wallet_subcommand(wallet, wallet_opts, cli_opts, offline_subcommand)
-                .map_err(|e| e.to_string())?;
+            let value =
+                handle_offline_wallet_subcommand(wallet, wallet_opts, cli_opts, offline_subcommand)
+                    .map_err(|e| e.to_string())?;
             Some(value)
         }
         ReplSubCommand::Key { subcommand } => {

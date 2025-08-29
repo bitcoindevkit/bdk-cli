@@ -30,11 +30,11 @@ use {
     async_hwi::jade::{self, Jade},
     async_hwi::ledger::{HidApi, Ledger, LedgerSimulator, TransportHID},
     async_hwi::specter::{Specter, SpecterSimulator},
+    async_hwi::{HWI, coldcard},
     async_hwi::{
         bitbox::api::runtime,
         bitbox::{BitBox02, PairingBitbox02WithLocalCache},
     },
-    async_hwi::{coldcard, HWI},
 };
 
 #[cfg(any(
@@ -392,7 +392,7 @@ pub(crate) fn shorten(displayable: impl Display, start: u8, end: u8) -> String {
     format!("{start_str}...{end_str}")
 }
 
-#[cfg(feature="hwi")]
+#[cfg(feature = "hwi")]
 pub async fn connect_to_hardware_wallet(
     network: Network,
     hwi_opts: &HwiOpts,
