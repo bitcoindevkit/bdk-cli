@@ -24,6 +24,18 @@ use bdk_kyoto::{
     builder::NodeBuilder,
 };
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
+#[cfg(feature = "hwi")]
+use {
+    crate::commands::HwiOpts,
+    async_hwi::jade::{self, Jade},
+    async_hwi::ledger::{HidApi, Ledger, LedgerSimulator, TransportHID},
+    async_hwi::specter::{Specter, SpecterSimulator},
+    async_hwi::{HWI, coldcard},
+    async_hwi::{
+        bitbox::api::runtime,
+        bitbox::{BitBox02, PairingBitbox02WithLocalCache},
+    },
+};
 
 #[cfg(any(
     feature = "electrum",
@@ -378,4 +390,112 @@ pub(crate) fn shorten(displayable: impl Display, start: u8, end: u8) -> String {
     let start_str: &str = &displayable[0..start as usize];
     let end_str: &str = &displayable[displayable.len() - end as usize..];
     format!("{start_str}...{end_str}")
+}
+
+#[cfg(feature = "hwi")]
+pub async fn connect_to_hardware_wallet(
+    network: Network,
+    hwi_opts: &HwiOpts,
+) -> Result<Option<Box<dyn HWI + Send>>, Error> {
+    if let Ok(device) = SpecterSimulator::try_connect().await {
+        return Ok(Some(device.into()));
+    }
+
+    if let Ok(devices) = Specter::enumerate().await {
+        if let Some(device) = devices.into_iter().next() {
+            return Ok(Some(device.into()));
+        }
+    }
+
+    match Jade::enumerate().await {
+        Err(e) => {
+            println!("Jade enumeration error: {e:?}");
+        }
+        Ok(devices) => {
+            for device in devices {
+                let device = device.with_network(network);
+                if let Ok(info) = device.get_info().await {
+                    if info.jade_state == jade::api::JadeState::Locked {
+                        if let Err(e) = device.auth().await {
+                            eprintln!("Jade auth error: {:?}", e);
+                            continue;
+                        }
+                    }
+                    return Ok(Some(device.into()));
+                }
+            }
+        }
+    }
+
+    if let Ok(device) = LedgerSimulator::try_connect().await {
+        return Ok(Some(device.into()));
+    }
+
+    let api = Box::new(HidApi::new().map_err(|e| Error::Generic(e.to_string()))?);
+
+    for device_info in api.device_list() {
+        let ext_descriptor = hwi_opts.ext_descriptor.clone().ok_or_else(|| {
+                Error::Generic("External descriptor is required for connecting to bitbox  and coldcard hardware devices".to_string())
+            })?;
+        let wallet_name = hwi_opts.wallet.clone().ok_or_else(|| {
+            Error::Generic(
+                "Wallet name is required for connecting to bitbox and coldcard hardware devices"
+                    .to_string(),
+            )
+        })?;
+        if async_hwi::bitbox::is_bitbox02(device_info) {
+            if let Ok(device) = device_info
+                .open_device(&api)
+                .map_err(|e| Error::Generic(e.to_string()))
+            {
+                if let Ok(device) =
+                    PairingBitbox02WithLocalCache::<runtime::TokioRuntime>::connect(device, None)
+                        .await
+                {
+                    if let Ok((device, _)) = device.wait_confirm().await {
+                        let mut bb02 = BitBox02::from(device).with_network(network);
+                        bb02 = bb02
+                            .with_policy(&ext_descriptor.as_str())
+                            .map_err(Error::HwiError)?;
+                        return Ok(Some(bb02.into()));
+                    }
+                }
+            }
+        }
+        if device_info.vendor_id() == coldcard::api::COINKITE_VID
+            && device_info.product_id() == coldcard::api::CKCC_PID
+        {
+            if let Some(sn) = device_info.serial_number() {
+                if let Ok((cc, _)) = coldcard::api::Coldcard::open(&api, sn, None)
+                    .map_err(|e| Error::Generic(e.to_string()))
+                {
+                    let mut hw = coldcard::Coldcard::from(cc);
+                    hw = hw.with_wallet_name(wallet_name.to_string());
+                    return Ok(Some(hw.into()));
+                }
+            }
+        }
+    }
+
+    for detected in Ledger::<TransportHID>::enumerate(&api) {
+        let ext_descriptor = hwi_opts.ext_descriptor.clone().ok_or_else(|| {
+            Error::Generic(
+                "External descriptor required for connecting to ledger hardware device".to_string(),
+            )
+        })?;
+        let wallet_name = hwi_opts.wallet.clone().ok_or_else(|| {
+            Error::Generic(
+                "Wallet name is required for connecting to ledger hardware device".to_string(),
+            )
+        })?;
+
+        if let Ok(mut device) = Ledger::<TransportHID>::connect(&api, detected) {
+            device = device
+                .with_wallet(wallet_name, &ext_descriptor, None)
+                .map_err(Error::HwiError)?;
+            return Ok(Some(device.into()));
+        }
+    }
+
+    Ok(None)
 }
