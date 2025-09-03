@@ -8,7 +8,8 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Removed MSRV and bumped Rust Edition to 2024
 - Add `--pretty` top level flag for formatting commands output in a tabular format
 - Updated `bdk_wallet ` to  `2.1.0`,  `bdk_bitcoind_rpc` to `0.21.0`, `bdk_esplora` to `0.22.1`, `bdk_kyoto` to `0.13.1` 
-- Add wallet configs initialization for initialiazing and saving wallet configs
+- Add wallet subcommand `init` to save wallet configs
+- Add an optional flag `--use-config` to use saved configs for a wallet
 
 ## [1.0.0]
 

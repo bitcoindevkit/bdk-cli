@@ -889,34 +889,24 @@ pub fn handle_init_subcommand(
 
     let ext_descriptor = wallet_opts
         .ext_descriptor
-        .as_ref()
+        .clone()
         .ok_or_else(|| Error::Generic("External descriptor is required".to_string()))?;
-    let int_descriptor = wallet_opts
-        .int_descriptor
-        .as_ref()
-        .ok_or_else(|| Error::Generic("Internal descriptor is required".to_string()))?;
+    let int_descriptor = wallet_opts.int_descriptor.clone();
     #[cfg(any(
         feature = "electrum",
         feature = "esplora",
         feature = "rpc",
         feature = "cbf"
     ))]
-    let client_type = wallet_opts
-        .client_type
-        .as_ref()
-        .ok_or_else(|| Error::Generic("Client type is required".to_string()))?;
+    let client_type = wallet_opts.client_type.clone();
     #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
-    let url = wallet_opts
-        .url
-        .as_ref()
-        .ok_or_else(|| Error::Generic("Server URL is required".to_string()))?;
+    let url = &wallet_opts.url.clone();
     #[cfg(any(feature = "sqlite", feature = "redb"))]
     let database_type = match wallet_opts.database_type {
         #[cfg(feature = "sqlite")]
-        Some(DatabaseType::Sqlite) => "sqlite".to_string(),
+        DatabaseType::Sqlite => "sqlite".to_string(),
         #[cfg(feature = "redb")]
-        Some(DatabaseType::Redb) => "redb".to_string(),
-        None => "sqlite".to_string(),
+        DatabaseType::Redb => "redb".to_string(),
     };
 
     #[cfg(any(
@@ -937,11 +927,11 @@ pub fn handle_init_subcommand(
     };
 
     let wallet_config = WalletConfigInner {
-        name: wallet_name.to_string(),
+        wallet: wallet_name.to_string(),
         network: network.to_string(),
-        ext_descriptor: ext_descriptor.to_string(),
-        int_descriptor: int_descriptor.to_string(),
-        #[cfg(feature = "sqlite")]
+        ext_descriptor,
+        int_descriptor,
+        #[cfg(any(feature = "sqlite", feature = "redb"))]
         database_type,
         #[cfg(any(
             feature = "electrum",
@@ -953,17 +943,15 @@ pub fn handle_init_subcommand(
         #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc",))]
         server_url: Some(url.to_string()),
         #[cfg(feature = "rpc")]
-        rpc_user: wallet_opts
-            .basic_auth
-            .as_ref()
-            .map(|(user, _)| user.clone())
-            .unwrap_or("user".to_string()),
+        rpc_user: Some(wallet_opts.basic_auth.0.clone()),
         #[cfg(feature = "rpc")]
-        rpc_password: wallet_opts
-            .basic_auth
-            .as_ref()
-            .map(|(_, pass)| pass.clone())
-            .unwrap_or("password".to_string()),
+        rpc_password: Some(wallet_opts.basic_auth.1.clone()),
+        #[cfg(feature = "electrum")]
+        batch_size: Some(wallet_opts.batch_size),
+        #[cfg(feature = "esplora")]
+        parallel_requests: Some(wallet_opts.parallel_requests),
+        #[cfg(feature = "rpc")]
+        cookie: wallet_opts.cookie.clone(),
     };
 
     config.network = network;
@@ -973,7 +961,7 @@ pub fn handle_init_subcommand(
     config.save(datadir)?;
 
     Ok(serde_json::to_string_pretty(&json!({
-        "message": format!("Wallet '{wallet_name}' initialized successfully in {file_location:?}", file_location=datadir.join("config.toml"))
+        "message": format!("Wallet '{wallet_name}' initialized successfully in {:?}", datadir.join("config.toml"))
     }))?)
 }
 
@@ -1184,14 +1172,14 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             let result = {
                 let mut persister: Persister = match &wallet_opts.database_type {
                     #[cfg(feature = "sqlite")]
-                    Some(DatabaseType::Sqlite) => {
+                    DatabaseType::Sqlite => {
                         let db_file = database_path.join("wallet.sqlite");
                         let connection = Connection::open(db_file)?;
                         log::debug!("Sqlite database opened successfully");
                         Persister::Connection(connection)
                     }
                     #[cfg(feature = "redb")]
-                    Some(DatabaseType::Redb) => {
+                    DatabaseType::Redb => {
                         let wallet_name = &wallet_opts.wallet;
                         let db = Arc::new(bdk_redb::redb::Database::create(
                             home_dir.join("wallet.redb"),
@@ -1203,7 +1191,6 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                         log::debug!("Redb database opened successfully");
                         Persister::RedbStore(store)
                     }
-                    None => return Err(Error::Generic("Dataase type is required".to_string())),
                 };
 
                 let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
@@ -1241,7 +1228,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 let home_dir = prepare_home_dir(datadir)?;
                 let mut persister: Persister = match &wallet_opts.database_type {
                     #[cfg(feature = "sqlite")]
-                    Some(DatabaseType::Sqlite) => {
+                    DatabaseType::Sqlite => {
                         let database_path = prepare_wallet_db_dir(&home_dir, &mut wallet_opts)?;
                         let db_file = database_path.join("wallet.sqlite");
                         let connection = Connection::open(db_file)?;
@@ -1249,7 +1236,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                         Persister::Connection(connection)
                     }
                     #[cfg(feature = "redb")]
-                    Some(DatabaseType::Redb) => {
+                    DatabaseType::Redb => {
                         let wallet_name = &wallet_opts.wallet;
 
                         let db = Arc::new(bdk_redb::redb::Database::create(
@@ -1262,7 +1249,6 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                         log::debug!("Redb database opened successfully");
                         Persister::RedbStore(store)
                     }
-                    None => return Err(Error::Generic("Database type is required".to_string())),
                 };
 
                 let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
@@ -1289,16 +1275,12 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             Ok(result)
         }
         CliSubCommand::Wallet {
-            wallet_opts: _,
-            subcommand:
-                WalletSubCommand::Init {
-                    wallet_opts: init_wallet_opts,
-                    force,
-                },
+            wallet_opts,
+            subcommand: WalletSubCommand::Init { force },
         } => {
             let network = cli_opts.network;
             let home_dir = prepare_home_dir(cli_opts.datadir)?;
-            let result = handle_init_subcommand(&home_dir, network, &init_wallet_opts, force)?;
+            let result = handle_init_subcommand(&home_dir, network, &wallet_opts, force)?;
             Ok(result)
         }
         CliSubCommand::Key {
@@ -1324,7 +1306,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
 
                 let mut persister: Persister = match &wallet_opts.database_type {
                     #[cfg(feature = "sqlite")]
-                    Some(DatabaseType::Sqlite) => {
+                    DatabaseType::Sqlite => {
                         let database_path =
                             prepare_wallet_db_dir(&home_dir, &mut wallet_opts.clone())?;
                         let db_file = database_path.join("wallet.sqlite");
@@ -1333,7 +1315,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                         Persister::Connection(connection)
                     }
                     #[cfg(feature = "redb")]
-                    Some(DatabaseType::Redb) => {
+                    DatabaseType::Redb => {
                         let wallet_name = &wallet_opts.wallet;
                         let db = Arc::new(bdk_redb::redb::Database::create(
                             home_dir.join("wallet.redb"),
@@ -1345,7 +1327,6 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                         log::debug!("Redb database opened successfully");
                         Persister::RedbStore(store)
                     }
-                    None => return Err(Error::Generic("Database typ is required".to_string())),
                 };
                 let wallet = new_persisted_wallet(network, &mut persister, wallet_opts)?;
                 (wallet, persister)
@@ -1433,9 +1414,9 @@ async fn respond(
             Some(value)
         }
         ReplSubCommand::Wallet {
-            subcommand: WalletSubCommand::Init { wallet_opts, force },
+            subcommand: WalletSubCommand::Init { force },
         } => {
-            let value = handle_init_subcommand(&_datadir, network, &wallet_opts, force)
+            let value = handle_init_subcommand(&_datadir, network, wallet_opts, force)
                 .map_err(|e| e.to_string())?;
             Some(value)
         }

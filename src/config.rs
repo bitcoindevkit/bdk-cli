@@ -23,11 +23,11 @@ pub struct WalletConfig {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WalletConfigInner {
-    pub name: String,
+    pub wallet: String,
     pub network: String,
     pub ext_descriptor: String,
-    pub int_descriptor: String,
-    #[cfg(feature = "sqlite")]
+    pub int_descriptor: Option<String>,
+    #[cfg(any(feature = "sqlite", feature = "redb"))]
     pub database_type: String,
     #[cfg(any(
         feature = "electrum",
@@ -39,9 +39,15 @@ pub struct WalletConfigInner {
     #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
     pub server_url: Option<String>,
     #[cfg(feature = "rpc")]
-    pub rpc_user: String,
+    pub rpc_user: Option<String>,
     #[cfg(feature = "rpc")]
-    pub rpc_password: String,
+    pub rpc_password: Option<String>,
+    #[cfg(feature = "electrum")]
+    pub batch_size: Option<usize>,
+    #[cfg(feature = "esplora")]
+    pub parallel_requests: Option<usize>,
+    #[cfg(feature = "rpc")]
+    pub cookie: Option<String>,
 }
 
 impl WalletConfig {
@@ -85,21 +91,18 @@ impl WalletConfig {
             "regtest" => Network::Regtest,
             "signet" => Network::Signet,
             _ => {
-                return Err(Error::Generic(format!(
-                    "Invalid network: {network}",
-                    network = wallet_config.network
-                )));
+                return Err(Error::Generic("Invalid network".to_string()));
             }
         };
 
-        #[cfg(feature = "sqlite")]
+        #[cfg(any(feature = "sqlite", feature = "redb"))]
         let database_type = match wallet_config.database_type.as_str() {
+            #[cfg(feature = "sqlite")]
             "sqlite" => DatabaseType::Sqlite,
+            #[cfg(feature = "redb")]
+            "redb" => DatabaseType::Redb,
             _ => {
-                return Err(Error::Generic(format!(
-                    "Invalid database type: {database_type}",
-                    database_type = wallet_config.database_type
-                )));
+                return Err(Error::Generic("Invalid database type".to_string()));
             }
         };
 
@@ -111,22 +114,21 @@ impl WalletConfig {
         ))]
         let client_type = match wallet_config.client_type.as_deref() {
             #[cfg(feature = "electrum")]
-            Some("electrum") => Some(ClientType::Electrum),
+            Some("electrum") => ClientType::Electrum,
             #[cfg(feature = "esplora")]
-            Some("esplora") => Some(ClientType::Esplora),
+            Some("esplora") => ClientType::Esplora,
             #[cfg(feature = "rpc")]
-            Some("rpc") => Some(ClientType::Rpc),
+            Some("rpc") => ClientType::Rpc,
             #[cfg(feature = "cbf")]
-            Some("cbf") => Some(ClientType::Cbf),
-            Some(other) => return Err(Error::Generic(format!("Invalid client type: {other}"))),
-            None => None,
+            Some("cbf") => ClientType::Cbf,
+            _ => return Err(Error::Generic(format!("Invalid client type"))),
         };
 
         Ok(WalletOpts {
-            wallet: Some(wallet_config.name.clone()),
+            wallet: Some(wallet_config.wallet.clone()),
             verbose: false,
             ext_descriptor: Some(wallet_config.ext_descriptor.clone()),
-            int_descriptor: Some(wallet_config.int_descriptor.clone()),
+            int_descriptor: wallet_config.int_descriptor.clone(),
             #[cfg(any(
                 feature = "electrum",
                 feature = "esplora",
@@ -134,21 +136,30 @@ impl WalletConfig {
                 feature = "cbf"
             ))]
             client_type,
-            #[cfg(feature = "sqlite")]
-            database_type: Some(database_type),
+            #[cfg(any(feature = "sqlite", feature = "redb"))]
+            database_type,
             #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
-            url: wallet_config.server_url.clone(),
+            url: wallet_config
+                .server_url
+                .clone()
+                .ok_or_else(|| Error::Generic(format!("Server url not found")))?,
             #[cfg(feature = "electrum")]
             batch_size: 10,
             #[cfg(feature = "esplora")]
             parallel_requests: 5,
             #[cfg(feature = "rpc")]
-            basic_auth: Some((
-                wallet_config.rpc_user.clone(),
-                wallet_config.rpc_password.clone(),
-            )),
+            basic_auth: (
+                wallet_config
+                    .rpc_user
+                    .clone()
+                    .unwrap_or_else(|| "user".into()),
+                wallet_config
+                    .rpc_password
+                    .clone()
+                    .unwrap_or_else(|| "password".into()),
+            ),
             #[cfg(feature = "rpc")]
-            cookie: None,
+            cookie: wallet_config.cookie.clone(),
             #[cfg(feature = "cbf")]
             compactfilter_opts: crate::commands::CompactFilterOpts {
                 conn_count: 2,

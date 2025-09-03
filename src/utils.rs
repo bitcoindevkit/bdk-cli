@@ -159,13 +159,10 @@ pub(crate) fn new_blockchain_client(
     _datadir: PathBuf,
 ) -> Result<BlockchainClient, Error> {
     #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
-    let url = wallet_opts
-        .url
-        .as_ref()
-        .ok_or_else(|| Error::Generic("Server URL is required".to_string()))?;
+    let url = &wallet_opts.url;
     let client = match wallet_opts.client_type {
         #[cfg(feature = "electrum")]
-        Some(ClientType::Electrum) => {
+        ClientType::Electrum => {
             let client = bdk_electrum::electrum_client::Client::new(url)
                 .map(bdk_electrum::BdkElectrumClient::new)?;
             BlockchainClient::Electrum {
@@ -174,8 +171,8 @@ pub(crate) fn new_blockchain_client(
             }
         }
         #[cfg(feature = "esplora")]
-        Some(ClientType::Esplora) => {
-            let client = bdk_esplora::esplora_client::Builder::new(url).build_async()?;
+        ClientType::Esplora => {
+            let client = bdk_esplora::esplora_client::Builder::new(&url).build_async()?;
             BlockchainClient::Esplora {
                 client: Box::new(client),
                 parallel_requests: wallet_opts.parallel_requests,
@@ -183,26 +180,12 @@ pub(crate) fn new_blockchain_client(
         }
 
         #[cfg(feature = "rpc")]
-        Some(ClientType::Rpc) => {
+        ClientType::Rpc => {
             let auth = match &wallet_opts.cookie {
                 Some(cookie) => bdk_bitcoind_rpc::bitcoincore_rpc::Auth::CookieFile(cookie.into()),
                 None => bdk_bitcoind_rpc::bitcoincore_rpc::Auth::UserPass(
-                    wallet_opts
-                        .basic_auth
-                        .as_ref()
-                        .ok_or_else(|| {
-                            Error::Generic("RPC authentication is required".to_string())
-                        })?
-                        .0
-                        .clone(),
-                    wallet_opts
-                        .basic_auth
-                        .as_ref()
-                        .ok_or_else(|| {
-                            Error::Generic("RPC authentication is required".to_string())
-                        })?
-                        .1
-                        .clone(),
+                    wallet_opts.basic_auth.0.clone(),
+                    wallet_opts.basic_auth.1.clone(),
                 ),
             };
             let client = bdk_bitcoind_rpc::bitcoincore_rpc::Client::new(url, auth)
@@ -213,7 +196,7 @@ pub(crate) fn new_blockchain_client(
         }
 
         #[cfg(feature = "cbf")]
-        Some(ClientType::Cbf) => {
+        ClientType::Cbf => {
             let scan_type = match wallet_opts.compactfilter_opts.skip_blocks {
                 Some(from_height) => Recovery { from_height },
                 None => Sync,
@@ -230,7 +213,6 @@ pub(crate) fn new_blockchain_client(
                 client: Box::new(client),
             }
         }
-        None => return Err(Error::Generic("Client type is required".to_string())),
     };
     Ok(client)
 }

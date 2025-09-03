@@ -117,8 +117,6 @@ pub enum CliSubCommand {
 pub enum WalletSubCommand {
     /// Initialize a wallet configuration and save to `config.toml`.
     Init {
-        #[command(flatten)]
-        wallet_opts: WalletOpts,
         /// Overwrite existing wallet configuration if it exists.
         #[arg(long = "force", default_value_t = false)]
         force: bool,
@@ -184,15 +182,15 @@ pub struct WalletOpts {
         feature = "rpc",
         feature = "cbf"
     ))]
-    #[arg(env = "CLIENT_TYPE", short = 'c', long, value_enum)]
-    pub client_type: Option<ClientType>,
+    #[arg(env = "CLIENT_TYPE", short = 'c', long, value_enum, required = true)]
+    pub client_type: ClientType,
     #[cfg(any(feature = "sqlite", feature = "redb"))]
-    #[arg(env = "DATABASE_TYPE", short = 'd', long, value_enum)]
-    pub database_type: Option<DatabaseType>,
+    #[arg(env = "DATABASE_TYPE", short = 'd', long, value_enum, required = true)]
+    pub database_type: DatabaseType,
     /// Sets the server url.
     #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
-    #[arg(env = "SERVER_URL", short = 'u', long)]
-    pub url: Option<String>,
+    #[arg(env = "SERVER_URL", short = 'u', long, required = true)]
+    pub url: String,
     /// Electrum batch size.
     #[cfg(feature = "electrum")]
     #[arg(env = "ELECTRUM_BATCH_SIZE", short = 'b', long, default_value = "10")]
@@ -215,7 +213,7 @@ pub struct WalletOpts {
         value_parser = parse_proxy_auth,
         default_value = "user:password",
     )]
-    pub basic_auth: Option<(String, String)>,
+    pub basic_auth: (String, String),
     #[cfg(feature = "rpc")]
     /// Sets an optional cookie authentication.
     #[arg(env = "COOKIE")]
@@ -226,56 +224,48 @@ pub struct WalletOpts {
 }
 
 impl WalletOpts {
-    /// Load configuration from TOML file and merge with CLI options
+    /// Merges optional configuration values from config.toml into the current WalletOpts.
     pub fn load_config(&mut self, wallet_name: &str, datadir: &Path) -> Result<(), Error> {
         if let Some(config) = WalletConfig::load(datadir)? {
             if let Ok(config_opts) = config.get_wallet_opts(wallet_name) {
-                self.wallet = self.wallet.take().or(config_opts.wallet);
                 self.verbose = self.verbose || config_opts.verbose;
-                self.ext_descriptor = self.ext_descriptor.take().or(config_opts.ext_descriptor);
-                self.int_descriptor = self.int_descriptor.take().or(config_opts.int_descriptor);
-                #[cfg(any(
-                    feature = "electrum",
-                    feature = "esplora",
-                    feature = "rpc",
-                    feature = "cbf"
-                ))]
-                {
-                    self.client_type = self.client_type.clone().or(config_opts.client_type);
-                }
-                #[cfg(any(feature = "sqlite", feature = "redb"))]
-                {
-                    // prioritizing the config.toml value for database type as it has a default value
-                    self.database_type = config_opts.database_type.or(self.database_type.clone());
-                }
-                #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
-                {
-                    self.url = self.url.take().or(config_opts.url);
-                }
                 #[cfg(feature = "electrum")]
                 {
                     self.batch_size = if self.batch_size != 10 {
-                        config_opts.batch_size
-                    } else {
                         self.batch_size
+                    } else {
+                        config_opts.batch_size
                     };
                 }
                 #[cfg(feature = "esplora")]
                 {
                     self.parallel_requests = if self.parallel_requests != 5 {
-                        config_opts.parallel_requests
-                    } else {
                         self.parallel_requests
+                    } else {
+                        config_opts.parallel_requests
                     };
                 }
                 #[cfg(feature = "rpc")]
                 {
-                    self.basic_auth = self.basic_auth.take().or(config_opts.basic_auth);
+                    self.basic_auth = if self.basic_auth != ("user".into(), "password".into()) {
+                        self.basic_auth.clone()
+                    } else {
+                        config_opts.basic_auth
+                    };
                     self.cookie = self.cookie.take().or(config_opts.cookie);
                 }
                 #[cfg(feature = "cbf")]
                 {
-                    self.compactfilter_opts = config_opts.compactfilter_opts;
+                    if self.compactfilter_opts.conn_count == 2
+                        && config_opts.compactfilter_opts.conn_count != 2
+                    {
+                        self.compactfilter_opts.conn_count =
+                            config_opts.compactfilter_opts.conn_count;
+                    }
+                    if self.compactfilter_opts.skip_blocks.is_none() {
+                        self.compactfilter_opts.skip_blocks =
+                            config_opts.compactfilter_opts.skip_blocks;
+                    }
                 }
             }
         }
