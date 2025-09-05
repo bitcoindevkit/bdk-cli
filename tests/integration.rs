@@ -13,7 +13,7 @@
 
 #[cfg(feature = "rpc")]
 mod test {
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use std::convert::From;
     use std::env::temp_dir;
     use std::path::PathBuf;

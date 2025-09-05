@@ -10,6 +10,7 @@
 //!
 //! This module includes all the utility tools used by the App.
 use crate::error::BDKCliError as Error;
+use std::fmt::Display;
 use std::str::FromStr;
 
 use std::path::{Path, PathBuf};
@@ -17,10 +18,10 @@ use std::path::{Path, PathBuf};
 use crate::commands::WalletOpts;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{
-    builder::NodeBuilder,
     Info, LightClient, NodeBuilderExt, Receiver,
     ScanType::{Recovery, Sync},
     UnboundedReceiver, Warning,
+    builder::NodeBuilder,
 };
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 
@@ -33,7 +34,7 @@ use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 use crate::commands::ClientType;
 
 use bdk_wallet::Wallet;
-#[cfg(feature = "sqlite")]
+#[cfg(any(feature = "sqlite", feature = "redb"))]
 use bdk_wallet::{KeychainKind, PersistedWallet, WalletPersister};
 
 use bdk_wallet::bip39::{Language, Mnemonic};
@@ -234,7 +235,7 @@ pub(crate) fn new_blockchain_client(
     Ok(client)
 }
 
-#[cfg(feature = "sqlite")]
+#[cfg(any(feature = "sqlite", feature = "redb"))]
 /// Create a new persisted wallet from given wallet configuration options.
 pub(crate) fn new_persisted_wallet<P: WalletPersister>(
     network: Network,
@@ -291,7 +292,7 @@ where
     Ok(wallet)
 }
 
-#[cfg(not(any(feature = "sqlite",)))]
+#[cfg(not(any(feature = "sqlite", feature = "redb")))]
 /// Create a new non-persisted wallet from given wallet configuration options.
 pub(crate) fn new_wallet(network: Network, wallet_opts: &WalletOpts) -> Result<Wallet, Error> {
     let ext_descriptor = wallet_opts.ext_descriptor.clone();
@@ -742,4 +743,11 @@ pub enum DescriptorType {
     Bip49,
     Bip84,
     Bip86,
+}
+
+pub(crate) fn shorten(displayable: impl Display, start: u8, end: u8) -> String {
+    let displayable = displayable.to_string();
+    let start_str: &str = &displayable[0..start as usize];
+    let end_str: &str = &displayable[displayable.len() - end as usize..];
+    format!("{start_str}...{end_str}")
 }

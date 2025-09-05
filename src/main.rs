@@ -13,6 +13,8 @@
 mod commands;
 mod error;
 mod handlers;
+#[cfg(any(feature = "sqlite", feature = "redb"))]
+mod persister;
 mod utils;
 
 use bdk_wallet::bitcoin::Network;
@@ -28,15 +30,17 @@ async fn main() {
     let cli_opts: CliOpts = CliOpts::parse();
 
     let network = &cli_opts.network;
-    debug!("network: {:?}", network);
+    debug!("network: {network:?}");
     if network == &Network::Bitcoin {
-        warn!("This is experimental software and not currently recommended for use on Bitcoin mainnet, proceed with caution.")
+        warn!(
+            "This is experimental software and not currently recommended for use on Bitcoin mainnet, proceed with caution."
+        )
     }
 
     match handle_command(cli_opts).await {
-        Ok(result) => println!("{}", result),
+        Ok(result) => println!("{result}"),
         Err(e) => {
-            error!("{}", e);
+            error!("{e}");
             std::process::exit(1);
         }
     }

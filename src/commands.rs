@@ -14,10 +14,10 @@
 
 #![allow(clippy::large_enum_variant)]
 use bdk_wallet::bitcoin::{
-    bip32::{DerivationPath, Xpriv},
     Address, Network, OutPoint, ScriptBuf,
+    bip32::{DerivationPath, Xpriv},
 };
-use clap::{value_parser, Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
 
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
@@ -50,6 +50,9 @@ pub struct CliOpts {
     /// Default value : ~/.bdk-bitcoin
     #[arg(env = "DATADIR", short = 'd', long = "datadir")]
     pub datadir: Option<std::path::PathBuf>,
+    /// Output results in pretty format (instead of JSON).
+    #[arg(long = "pretty")]
+    pub pretty: bool,
     /// Top level cli sub-commands.
     #[command(subcommand)]
     pub subcommand: CliSubCommand,
@@ -132,6 +135,9 @@ pub enum DatabaseType {
     /// Sqlite database
     #[cfg(feature = "sqlite")]
     Sqlite,
+    /// Redb database
+    #[cfg(feature = "redb")]
+    Redb,
 }
 
 #[cfg(any(
@@ -175,7 +181,7 @@ pub struct WalletOpts {
     ))]
     #[arg(env = "CLIENT_TYPE", short = 'c', long, value_enum, required = true)]
     pub client_type: ClientType,
-    #[cfg(feature = "sqlite")]
+    #[cfg(any(feature = "sqlite", feature = "redb"))]
     #[arg(env = "DATABASE_TYPE", short = 'd', long, value_enum, required = true)]
     pub database_type: DatabaseType,
     /// Sets the server url.
