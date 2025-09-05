@@ -41,11 +41,11 @@ use bdk_wallet::{
 use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
 
 use bdk_wallet::keys::{
-    DerivableKey, DescriptorKey, DescriptorKey::Secret, ExtendedKey, GeneratableKey, GeneratedKey,
-    bip39::WordCount, DescriptorPublicKey,
+    DerivableKey, DescriptorKey, DescriptorKey::Secret, DescriptorPublicKey, ExtendedKey,
+    GeneratableKey, GeneratedKey, bip39::WordCount,
 };
 use bdk_wallet::miniscript::miniscript;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::BTreeMap;
 #[cfg(any(feature = "electrum", feature = "esplora"))]
 use std::collections::HashSet;
@@ -1352,16 +1352,11 @@ pub fn handle_descriptor_subcommand(
             key,
         } => {
             let (descriptor_type, derivation_path_str) = match r#type {
-                44 => (DescriptorType::Bip44, "m/44'/1'/0'"),
-                49 => (DescriptorType::Bip49, "m/49'/1'/0'"),
-                84 => (DescriptorType::Bip84, "m/84'/1'/0'"),
-                86 => (DescriptorType::Bip86, "m/86'/1'/0'"),
-                _ => {
-                    return Err(Error::Generic(format!(
-                        "Unsupported script type {}",
-                        r#type
-                    )))
-                }
+                44 => (DescriptorType::Bip44, "m/44h/1h/0h"),
+                49 => (DescriptorType::Bip49, "m/49h/1h/0h"),
+                84 => (DescriptorType::Bip84, "m/84h/1h/0h"),
+                86 => (DescriptorType::Bip86, "m/86h/1h/0h"),
+                _ => return Err(Error::UnsupportedScriptType(r#type)),
             };
 
             match (multipath, key.as_ref()) {
@@ -1380,7 +1375,7 @@ pub fn handle_descriptor_subcommand(
                 }
                 (false, None) => generate_new_descriptor_with_mnemonic(network, descriptor_type),
                 _ => Err(Error::InvalidArguments(
-                    "Invalid arguments: provide a key or weak string".to_string(),
+                    "Provide a key or weak string".to_string(),
                 )),
             }
         }

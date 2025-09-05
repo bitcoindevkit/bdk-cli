@@ -113,11 +113,8 @@ pub enum BDKCliError {
     #[error("Descriptor parsing failed: {0}")]
     DescriptorParsingError(String),
 
-    #[error("Invalid extended public key (xpub): {0}")]
-    InvalidXpub(String),
-
-    #[error("Invalid extended private key (xprv): {0}")]
-    InvalidXprv(String),
+    #[error("Invalid extended key (xpub): {0}")]
+    InvalidKey(String),
 
     #[error("Invalid derivation path: {0}")]
     InvalidDerivationPath(String),

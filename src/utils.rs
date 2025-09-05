@@ -47,15 +47,15 @@ use bdk_wallet::descriptor::{
     Segwitv0, {Descriptor, DescriptorPublicKey},
 };
 use bdk_wallet::keys::{
-    bip39::WordCount,
     DerivableKey, ExtendedKey,
+    bip39::WordCount,
     {DescriptorSecretKey, GeneratableKey, GeneratedKey, IntoDescriptorKey},
 };
 use bdk_wallet::miniscript::{
-    descriptor::{DescriptorXKey, Wildcard},
     Tap,
+    descriptor::{DescriptorXKey, Wildcard},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Parse the recipient (Address,Amount) argument from cli input.
 pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
@@ -537,7 +537,7 @@ pub fn generate_multipath_descriptor(
     let (fingerprint, make_desc): (_, DescriptorBuilderFn) = if is_private {
         let xprv: Xpriv = key
             .parse()
-            .map_err(|e| Error::InvalidXprv(format!("Invalid xprv: {e}")))?;
+            .map_err(|e| Error::InvalidKey(format!("Invalid xprv: {e}")))?;
         let fingerprint = xprv.fingerprint(&secp);
 
         let closure = move |change: u32| -> Result<(String, Option<String>), Error> {
@@ -578,7 +578,7 @@ pub fn generate_multipath_descriptor(
     } else {
         let xpub: Xpub = key
             .parse()
-            .map_err(|e| Error::InvalidXpub(format!("Invalid xpub: {e}")))?;
+            .map_err(|e| Error::InvalidKey(format!("Invalid xpub: {e}")))?;
         let fingerprint = xpub.fingerprint();
 
         let closure = move |change: u32| -> Result<(String, Option<String>), Error> {
@@ -638,7 +638,7 @@ pub fn generate_bip_descriptor_from_key(
 
     let xprv: Xpriv = key
         .parse()
-        .map_err(|e| Error::InvalidXprv(format!("Invalid xprv: {e}")))?;
+        .map_err(|e| Error::InvalidKey(format!("Invalid xprv: {e}")))?;
 
     let fingerprint = xprv.fingerprint(&secp);
 
@@ -722,7 +722,7 @@ pub fn generate_descriptor_from_mnemonic_string(
 
     let xprv = xprv
         .derive_priv(&secp, &derivation_path)
-        .map_err(|e| Error::InvalidXprv(format!("Failed to derive xprv: {e}")))?;
+        .map_err(|e| Error::InvalidKey(format!("Failed to derive xprv: {e}")))?;
 
     generate_bip_descriptor_from_key(
         &network,

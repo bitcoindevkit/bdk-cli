@@ -17,7 +17,7 @@ use bdk_wallet::bitcoin::{
     Address, Network, OutPoint, ScriptBuf,
     bip32::{DerivationPath, Xpriv},
 };
-use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
+use clap::{Args, Parser, Subcommand, ValueEnum, value_parser, builder::TypedValueParser};
 
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
@@ -106,10 +106,10 @@ pub enum CliSubCommand {
         #[command(flatten)]
         wallet_opts: WalletOpts,
     },
-    /// Descriptor generation operations.
-    ///
-    /// Allows users to generate Bitcoin wallet descriptors from either an extended key (e.g., Xprv/Xpub) or by generating a new random mnemonic phrase.
-    /// This feature is intended for development and testing. Exercise caution when using descriptors created this way in production environments.
+    /// Output Descriptors operations.
+    /// 
+    /// Generate output descriptors from either extended key (Xprv/Xpub) or mnemonic phrase.
+    /// This feature is intended for development and testing purposes only.
     Descriptor {
         #[clap(subcommand)]
         subcommand: DescriptorSubCommand,
@@ -488,12 +488,19 @@ pub enum ReplSubCommand {
 pub enum DescriptorSubCommand {
     /// Generate a descriptor
     Generate {
-        #[clap(long = "type", value_parser = clap::value_parser!(u8).range(44..=86), short = 't', default_value = "84")]
-        r#type: u8, // 44, 49, 84, 86
-
+        /// Descriptor type (script type).
+        #[arg(
+            long = "type",
+            short = 't',
+            value_parser = clap::builder::PossibleValuesParser::new(["44", "49", "84", "86"])
+                .map(|s| s.parse::<u8>().unwrap()),
+            default_value = "84"
+        )]
+        r#type: u8,
+        /// Enable multipath descriptors
         #[arg(long = "multipath", short = 'm', default_value_t = false)]
         multipath: bool,
-
+        /// Optional key input
         key: Option<String>,
     },
 
