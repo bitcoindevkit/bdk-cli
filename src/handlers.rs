@@ -29,27 +29,28 @@ use bdk_wallet::bitcoin::{
     secp256k1::Secp256k1,
 };
 use bdk_wallet::chain::ChainPosition;
-use bdk_wallet::descriptor::Segwitv0;
+use bdk_wallet::descriptor::{Descriptor, Segwitv0};
 #[cfg(feature = "sqlite")]
 use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::{KeychainKind, SignOptions, Wallet};
 #[cfg(feature = "compiler")]
 use bdk_wallet::{
-    descriptor::{Descriptor, Legacy, Miniscript},
+    descriptor::{Legacy, Miniscript},
     miniscript::policy::Concrete,
 };
 use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
 
 use bdk_wallet::keys::{
-    DerivableKey, DescriptorKey, DescriptorKey::Secret, ExtendedKey, GeneratableKey, GeneratedKey,
-    bip39::WordCount,
+    DerivableKey, DescriptorKey, DescriptorKey::Secret, DescriptorPublicKey, ExtendedKey,
+    GeneratableKey, GeneratedKey, bip39::WordCount,
 };
 use bdk_wallet::miniscript::miniscript;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::collections::BTreeMap;
 #[cfg(any(feature = "electrum", feature = "esplora"))]
 use std::collections::HashSet;
 use std::convert::TryFrom;
+use std::fmt;
 #[cfg(any(feature = "repl", feature = "electrum", feature = "esplora"))]
 use std::io::Write;
 use std::str::FromStr;
@@ -1258,6 +1259,15 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             }
             Ok("".to_string())
         }
+        CliSubCommand::Descriptor {
+            subcommand: descriptor_subcommand,
+        } => {
+            let network = cli_opts.network;
+            let descriptor = handle_descriptor_subcommand(network, descriptor_subcommand)
+                .map_err(|e| Error::Generic(e.to_string()))?;
+            let json = serde_json::to_string_pretty(&descriptor)?;
+            Ok(json)
+        }
     };
     result
 }
@@ -1329,6 +1339,97 @@ fn readline() -> Result<String, Error> {
         .read_line(&mut buffer)
         .map_err(|e| Error::Generic(e.to_string()))?;
     Ok(buffer)
+}
+
+pub fn handle_descriptor_subcommand(
+    network: Network,
+    subcommand: DescriptorSubCommand,
+) -> Result<Value, Error> {
+    match subcommand {
+        DescriptorSubCommand::Generate {
+            r#type,
+            multipath,
+            key,
+        } => {
+            let (descriptor_type, derivation_path_str) = match r#type {
+                44 => (DescriptorType::Bip44, "m/44h/1h/0h"),
+                49 => (DescriptorType::Bip49, "m/49h/1h/0h"),
+                84 => (DescriptorType::Bip84, "m/84h/1h/0h"),
+                86 => (DescriptorType::Bip86, "m/86h/1h/0h"),
+                _ => return Err(Error::UnsupportedScriptType(r#type)),
+            };
+
+            match (multipath, key.as_ref()) {
+                (true, Some(k)) => generate_multipath_descriptor(&network, r#type, k),
+                (false, Some(k)) => {
+                    if is_mnemonic(k) {
+                        generate_descriptor_from_mnemonic_string(
+                            k,
+                            network,
+                            derivation_path_str,
+                            descriptor_type,
+                        )
+                    } else {
+                        generate_standard_descriptor(&network, r#type, k)
+                    }
+                }
+                (false, None) => generate_new_descriptor_with_mnemonic(network, descriptor_type),
+                _ => Err(Error::InvalidArguments(
+                    "Provide a key or weak string".to_string(),
+                )),
+            }
+        }
+        DescriptorSubCommand::Info { descriptor } => {
+            let parsed: Descriptor<DescriptorPublicKey> = descriptor
+                .parse()
+                .map_err(|e| Error::Generic(format!("Failed to parse descriptor: {}", e)))?;
+
+            let checksum = parsed.to_string();
+            let script_type = match parsed {
+                Descriptor::Wpkh(_) => "wpkh",
+                Descriptor::Pkh(_) => "pkh",
+                Descriptor::Sh(_) => "sh",
+                Descriptor::Tr(_) => "tr",
+                _ => "other",
+            };
+
+            let json = json!({
+                "descriptor": checksum,
+                "type": script_type,
+                "is_multipath": descriptor.contains("/*"),
+            });
+
+            Ok(json)
+        }
+    }
+}
+
+pub fn generate_standard_descriptor(
+    network: &Network,
+    script_type: u8,
+    key: &str,
+) -> Result<Value, Error> {
+    let descriptor_type = match script_type {
+        44 => DescriptorType::Bip44,
+        49 => DescriptorType::Bip49,
+        84 => DescriptorType::Bip84,
+        86 => DescriptorType::Bip86,
+        _ => return Err(Error::UnsupportedScriptType(script_type)),
+    };
+
+    generate_descriptor_from_key_by_type(network, key, descriptor_type)
+}
+
+impl fmt::Display for DescriptorType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            DescriptorType::Bip44 => "bip44",
+            DescriptorType::Bip49 => "bip49",
+            DescriptorType::Bip84 => "bip84",
+            DescriptorType::Bip86 => "bip86",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 #[cfg(any(
