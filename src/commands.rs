@@ -17,7 +17,7 @@ use bdk_wallet::bitcoin::{
     Address, Network, OutPoint, ScriptBuf,
     bip32::{DerivationPath, Xpriv},
 };
-use clap::{Args, Parser, Subcommand, ValueEnum, value_parser, builder::TypedValueParser};
+use clap::{Args, Parser, Subcommand, ValueEnum, builder::TypedValueParser, value_parser};
 
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
@@ -107,7 +107,7 @@ pub enum CliSubCommand {
         wallet_opts: WalletOpts,
     },
     /// Output Descriptors operations.
-    /// 
+    ///
     /// Generate output descriptors from either extended key (Xprv/Xpub) or mnemonic phrase.
     /// This feature is intended for development and testing purposes only.
     Descriptor {
