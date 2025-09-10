@@ -5,11 +5,19 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [Unreleased]
 
+## [2.0.0]
+
 - Removed MSRV and bumped Rust Edition to 2024
-- Add `--pretty` top level flag for formatting commands output in a tabular format
+- Add `--pretty` flag for formatting outputs in human-readable form
 - Updated `bdk_wallet ` to  `2.1.0`,  `bdk_bitcoind_rpc` to `0.21.0`, `bdk_esplora` to `0.22.1`, `bdk_kyoto` to `0.13.1` 
 - Updated `tracing-subscriber` to 0.3.20
-
+- Added `tr` script type to `compile` command to support creating taproot descriptors
+- Added `redb` as an alternative persistence to `sqlite`
+- Removed connection requirement for sending transactions in `bdk_kyoto`
+- Added `just` command runner for common commands and `regtest` bitcoind
+- Renamed `BuilderError` to `KyotoBuilderError` and added `KyotoUpdateError`
+- Updated `bdk_electrum` to 0.23.0
+- Added `just` example for starting, connecting and funding a wallet in regtest
 
 ## [1.0.0]
 
@@ -113,7 +121,8 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [0.1.0-beta.1]
 
-[Unreleased]: https://github.com/bitcoindevkit/bdk-cli/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/bitcoindevkit/bdk-cli/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v1.0.0....v2.0.0
 [1.0.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.27.1...v1.0.0
 [0.27.1]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.26.0...v0.27.1
 [0.26.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.6.0...v0.26.0
