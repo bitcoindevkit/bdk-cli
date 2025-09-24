@@ -5,8 +5,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum BDKCliError {
-    #[error("BIP39 error: {0}")]
-    BIP39Error(#[from] bdk_wallet::bip39::Error),
+    #[error("BIP39 error: {0:?}")]
+    BIP39Error(#[from] Option<bdk_wallet::bip39::Error>),
 
     #[error("BIP32 error: {0}")]
     BIP32Error(#[from] bdk_wallet::bitcoin::bip32::Error),
@@ -103,30 +103,6 @@ pub enum BDKCliError {
     #[cfg(feature = "cbf")]
     #[error("BDK-Kyoto update error: {0}")]
     KyotoUpdateError(#[from] bdk_kyoto::UpdateError),
-
-    #[error("Mnemonic generation failed: {0}")]
-    MnemonicGenerationError(String),
-
-    #[error("Xpriv creation failed: {0}")]
-    XprivCreationError(String),
-
-    #[error("Descriptor parsing failed: {0}")]
-    DescriptorParsingError(String),
-
-    #[error("Invalid extended key (xpub): {0}")]
-    InvalidKey(String),
-
-    #[error("Invalid derivation path: {0}")]
-    InvalidDerivationPath(String),
-
-    #[error("Unsupported script type: {0}")]
-    UnsupportedScriptType(u8),
-
-    #[error("Descriptor key conversion failed: {0}")]
-    DescriptorKeyError(String),
-
-    #[error("Invalid arguments: {0}")]
-    InvalidArguments(String),
 }
 
 impl From<ExtractTxError> for BDKCliError {
