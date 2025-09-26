@@ -15,12 +15,12 @@ use crate::commands::*;
 use crate::error::BDKCliError as Error;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 use crate::persister::Persister;
-#[cfg(feature = "cbf")]
-use crate::utils::BlockchainClient::KyotoClient;
 use crate::utils::*;
 #[cfg(feature = "redb")]
 use bdk_redb::Store as RedbStore;
 use bdk_wallet::bip39::{Language, Mnemonic};
+use bdk_wallet::bitcoin::base64::Engine;
+use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::{
     Address, Amount, FeeRate, Network, Psbt, Sequence, Txid,
     bip32::{DerivationPath, KeySource},
@@ -40,11 +40,21 @@ use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::{KeychainKind, SignOptions, Wallet};
 #[cfg(feature = "compiler")]
 use bdk_wallet::{
+    bitcoin::XOnlyPublicKey,
     descriptor::{Descriptor, Legacy, Miniscript},
     miniscript::{Tap, descriptor::TapTree, policy::Concrete},
 };
 use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
 use serde_json::json;
+#[cfg(feature = "cbf")]
+use {
+    crate::utils::BlockchainClient::KyotoClient,
+    bdk_kyoto::{Info, LightClient},
+    tokio::select,
+};
+
+#[cfg(feature = "electrum")]
+use crate::utils::BlockchainClient::Electrum;
 use std::collections::BTreeMap;
 #[cfg(any(feature = "electrum", feature = "esplora"))]
 use std::collections::HashSet;
@@ -54,16 +64,6 @@ use std::io::Write;
 use std::str::FromStr;
 #[cfg(any(feature = "redb", feature = "compiler"))]
 use std::sync::Arc;
-
-#[cfg(feature = "electrum")]
-use crate::utils::BlockchainClient::Electrum;
-#[cfg(feature = "cbf")]
-use bdk_kyoto::{Info, LightClient};
-#[cfg(feature = "compiler")]
-use bdk_wallet::bitcoin::XOnlyPublicKey;
-use bdk_wallet::bitcoin::base64::prelude::*;
-#[cfg(feature = "cbf")]
-use tokio::select;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -1280,6 +1280,13 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             }
             Ok("".to_string())
         }
+        CliSubCommand::Descriptor {
+            subcommand: descriptor_subcommand,
+        } => {
+            let network = cli_opts.network;
+            let descriptor = handle_descriptor_subcommand(network, descriptor_subcommand, pretty)?;
+            Ok(descriptor)
+        }
     };
     result
 }
@@ -1353,6 +1360,56 @@ fn readline() -> Result<String, Error> {
     Ok(buffer)
 }
 
+pub fn handle_descriptor_subcommand(
+    network: Network,
+    subcommand: DescriptorSubCommand,
+    pretty: bool,
+) -> Result<String, Error> {
+    let result = match subcommand {
+        DescriptorSubCommand::Generate {
+            r#type,
+            multipath,
+            key,
+        } => {
+            let descriptor_type = DescriptorType::from_bip32_num(r#type)
+                .ok_or_else(|| Error::Generic(format!("Unsupported script type: {type}")))?;
+
+            match (multipath, key) {
+                // generate multipath descriptors with a key
+                (true, Some(key)) => {
+                    if is_mnemonic(&key) {
+                        return Err(Error::Generic(
+                            "Mnemonic not supported for multipath descriptors".to_string(),
+                        ));
+                    }
+                    generate_descriptors(descriptor_type, &key, true)
+                }
+                // generate descriptors with a key or mnemonic
+                (false, Some(key)) => {
+                    if is_mnemonic(&key) {
+                        generate_descriptor_from_mnemonic_string(&key, network, descriptor_type)
+                    } else {
+                        generate_descriptors(descriptor_type, &key, false)
+                    }
+                }
+                // Generate new mnemonic and descriptors
+                (false, None) => generate_new_descriptor_with_mnemonic(network, descriptor_type),
+                // Invalid case
+                (true, None) => Err(Error::Generic(
+                    "A key is required for multipath descriptors".to_string(),
+                )),
+            }
+        }
+    }?;
+    format_descriptor_output(&result, pretty)
+}
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
 #[cfg(test)]
 mod test {
     #[cfg(any(
