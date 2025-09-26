@@ -19,6 +19,8 @@ use crate::utils::*;
 #[cfg(feature = "redb")]
 use bdk_redb::Store as RedbStore;
 use bdk_wallet::bip39::{Language, Mnemonic};
+use bdk_wallet::bitcoin::base64::Engine;
+use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::{
     Address, Amount, FeeRate, Network, Psbt, Sequence, Txid,
     bip32::{DerivationPath, KeySource},
@@ -40,8 +42,6 @@ use bdk_wallet::{KeychainKind, SignOptions, Wallet};
 use bdk_wallet::{
     bitcoin::XOnlyPublicKey,
     descriptor::{Descriptor, Legacy, Miniscript},
-    descriptor::{Legacy, Miniscript},
-    miniscript::policy::Concrete,
     miniscript::{Tap, descriptor::TapTree, policy::Concrete},
 };
 use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
@@ -1270,9 +1270,8 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             subcommand: descriptor_subcommand,
         } => {
             let network = cli_opts.network;
-            let descriptor = handle_descriptor_subcommand(network, descriptor_subcommand)?;
-            let json = serde_json::to_string_pretty(&descriptor)?;
-            Ok(json)
+            let descriptor = handle_descriptor_subcommand(network, descriptor_subcommand, pretty)?;
+            Ok(descriptor)
         }
     };
     result
@@ -1350,43 +1349,45 @@ fn readline() -> Result<String, Error> {
 pub fn handle_descriptor_subcommand(
     network: Network,
     subcommand: DescriptorSubCommand,
-) -> Result<Value, Error> {
-    match subcommand {
+    pretty: bool,
+) -> Result<String, Error> {
+    let result = match subcommand {
         DescriptorSubCommand::Generate {
             r#type,
             multipath,
             key,
         } => {
-            let descriptor_type = match r#type {
-                44 => DescriptorType::Bip44,
-                49 => DescriptorType::Bip49,
-                84 => DescriptorType::Bip84,
-                86 => DescriptorType::Bip86,
-                _ => {
-                    return Err(Error::Generic(
-                        "Unsupported script type: {r#type}".to_string(),
-                    ));
-                }
-            };
+            let descriptor_type = DescriptorType::from_bip32_num(r#type)
+                .ok_or_else(|| Error::Generic(format!("Unsupported script type: {type}")))?;
 
-            match (multipath, key.as_ref()) {
-                // generate multipath descriptors
-                (true, Some(k)) => generate_descriptors(&network, descriptor_type, k, true),
-                (false, Some(k)) => {
-                    if is_mnemonic(k) {
-                        // generate descriptors from given mnemonic string
-                        generate_descriptor_from_mnemonic_string(k, network, descriptor_type)
+            match (multipath, key) {
+                // generate multipath descriptors with a key
+                (true, Some(key)) => {
+                    if is_mnemonic(&key) {
+                        return Err(Error::Generic(
+                            "Mnemonic not supported for multipath descriptors".to_string(),
+                        ));
+                    }
+                    generate_descriptors(descriptor_type, &key, true)
+                }
+                // generate descriptors with a key or mnemonic
+                (false, Some(key)) => {
+                    if is_mnemonic(&key) {
+                        generate_descriptor_from_mnemonic_string(&key, network, descriptor_type)
                     } else {
-                        // generate descriptors from key
-                        generate_descriptors(&network, descriptor_type, k, false)
+                        generate_descriptors(descriptor_type, &key, false)
                     }
                 }
-                // generate mnemonic and descriptors
+                // Generate new mnemonic and descriptors
                 (false, None) => generate_new_descriptor_with_mnemonic(network, descriptor_type),
-                _ => Err(Error::Generic("Provide a key or string".to_string())),
+                // Invalid case
+                (true, None) => Err(Error::Generic(
+                    "A key is required for multipath descriptors".to_string(),
+                )),
             }
         }
-    }
+    }?;
+    format_descriptor_output(&result, pretty)
 }
 
 #[cfg(any(

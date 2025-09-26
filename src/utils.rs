@@ -22,8 +22,16 @@ use bdk_kyoto::{
     BuilderExt, Info, LightClient, Receiver, ScanType::Sync, UnboundedReceiver, Warning,
     builder::Builder,
 };
-use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
-use bdk_wallet::miniscript::Legacy;
+use bdk_wallet::{
+    bitcoin::secp256k1::All,
+    keys::{KeyMap, ValidNetworks},
+    miniscript::Legacy,
+};
+use bdk_wallet::{
+    bitcoin::{Address, Network, OutPoint, ScriptBuf},
+    miniscript::descriptor::{DerivPaths, DescriptorMultiXKey},
+};
+use cli_table::{Cell, CellStruct, Style, Table};
 
 #[cfg(any(
     feature = "electrum",
@@ -38,7 +46,6 @@ use bdk_wallet::Wallet;
 use bdk_wallet::{KeychainKind, PersistedWallet, WalletPersister};
 
 use bdk_wallet::bip39::{Language, Mnemonic};
-use bdk_wallet::bitcoin::bip32::Fingerprint;
 use bdk_wallet::bitcoin::{
     bip32::{DerivationPath, Xpriv, Xpub},
     secp256k1::Secp256k1,
@@ -384,124 +391,139 @@ pub fn is_mnemonic(s: &str) -> bool {
     let word_count = s.split_whitespace().count();
     (12..=24).contains(&word_count) && s.chars().all(|c| c.is_alphanumeric() || c.is_whitespace())
 }
-
-pub fn generate_descriptors(
-    network: &Network,
+fn generate_multipath_descriptors(
     descriptor_type: DescriptorType,
     key: &str,
-    multipath_label: bool,
+    derivation_path: &DerivationPath,
 ) -> Result<Value, Error> {
-    type DescriptorConstructor =
-        fn(DescriptorPublicKey) -> Result<Descriptor<DescriptorPublicKey>, Error>;
+    let xpub: Xpub = key.parse()?;
+    let fingerprint = xpub.fingerprint();
 
-    let purpose = match descriptor_type {
-        DescriptorType::Bip44 => 44,
-        DescriptorType::Bip49 => 49,
-        DescriptorType::Bip84 => 84,
-        DescriptorType::Bip86 => 86,
+    let paths = vec![
+        DerivationPath::from_str("m/0")?,
+        DerivationPath::from_str("m/1")?,
+    ];
+    let deriv_paths = DerivPaths::new(paths)
+        .ok_or_else(|| Error::Generic("Empty derivation paths".to_string()))?;
+
+    let desc_multi_xpub = DescriptorMultiXKey {
+        origin: Some((fingerprint, derivation_path.clone())),
+        xkey: xpub,
+        derivation_paths: deriv_paths,
+        wildcard: Wildcard::Unhardened,
     };
 
-    let derivation_base = format!("/{purpose}h/1h/0h");
+    let desc_pub = DescriptorPublicKey::MultiXPub(desc_multi_xpub);
+    let descriptor = descriptor_type.constructor()(desc_pub)?;
 
-    let descriptor_constructor: DescriptorConstructor = match descriptor_type {
-        DescriptorType::Bip44 => |key| Descriptor::new_pkh(key).map_err(Error::from),
-        DescriptorType::Bip49 => |key| Descriptor::new_sh_wpkh(key).map_err(Error::from),
-        DescriptorType::Bip84 => |key| Descriptor::new_wpkh(key).map_err(Error::from),
-        DescriptorType::Bip86 => |key| Descriptor::new_tr(key, None).map_err(Error::from),
-    };
+    Ok(json!({
+        "multipath_descriptor": descriptor.to_string(),
+        "fingerprint": fingerprint.to_string()
+    }))
+}
 
-    let secp = Secp256k1::new();
-    let derivation_path = DerivationPath::from_str(&format!("m{derivation_base}"))?;
+fn generate_private_descriptors(
+    descriptor_type: DescriptorType,
+    key: &str,
+    derivation_path: &DerivationPath,
+    secp: &Secp256k1<All>,
+) -> Result<Value, Error> {
+    let xprv: Xpriv = key.parse()?;
+    let fingerprint = xprv.fingerprint(secp);
 
-    let is_private = key.starts_with("xprv") || key.starts_with("tprv");
-
-    type DescriptorBuilderFn = Box<dyn Fn(u32) -> Result<(String, Option<String>), Error>>;
-
-    let (fingerprint, make_desc): (Fingerprint, DescriptorBuilderFn) = if is_private {
-        let xprv: Xpriv = key.parse()?;
-        let fingerprint = xprv.fingerprint(&secp);
-
-        let closure = move |change: u32| -> Result<(String, Option<String>), Error> {
-            let branch_path = DerivationPath::from_str(&change.to_string())?;
-
-            let desc_xprv = DescriptorXKey {
-                origin: Some((fingerprint, derivation_path.clone())),
-                xkey: xprv,
-                derivation_path: branch_path,
-                wildcard: Wildcard::Unhardened,
-            };
-
-            let desc_secret = DescriptorSecretKey::XPrv(desc_xprv.clone());
-            let (desc_key, keymap, _) = match descriptor_type {
-                DescriptorType::Bip44 => {
-                    IntoDescriptorKey::<Legacy>::into_descriptor_key(desc_secret)?.extract(&secp)?
-                }
-                DescriptorType::Bip84 | DescriptorType::Bip49 => {
-                    IntoDescriptorKey::<Segwitv0>::into_descriptor_key(desc_secret)?
-                        .extract(&secp)?
-                }
-                DescriptorType::Bip86 => {
-                    IntoDescriptorKey::<Tap>::into_descriptor_key(desc_secret)?.extract(&secp)?
-                }
-            };
-
-            let descriptor = descriptor_constructor(desc_key)?;
-            Ok((
-                descriptor.to_string(),
-                Some(descriptor.to_string_with_secret(&keymap)),
-            ))
+    let build_descriptor = |branch: &str| -> Result<(String, Option<String>), Error> {
+        let branch_path = DerivationPath::from_str(branch)?;
+        let desc_xprv = DescriptorXKey {
+            origin: Some((fingerprint, derivation_path.clone())),
+            xkey: xprv,
+            derivation_path: branch_path,
+            wildcard: Wildcard::Unhardened,
         };
+        let desc_secret = DescriptorSecretKey::XPrv(desc_xprv);
 
-        (fingerprint, Box::new(closure))
-    } else {
-        let xpub: Xpub = key.parse()?;
-        let fingerprint = xpub.fingerprint();
+        let (desc_key, keymap, _) = descriptor_type.extract_descriptor_key(desc_secret, secp)?;
+        let descriptor = descriptor_type.constructor()(desc_key)?;
 
-        let closure = move |change: u32| -> Result<(String, Option<String>), Error> {
-            let branch_path = DerivationPath::from_str(&change.to_string())?;
-
-            let desc_xpub = DescriptorXKey {
-                origin: Some((fingerprint, derivation_path.clone())),
-                xkey: xpub,
-                derivation_path: branch_path,
-                wildcard: Wildcard::Unhardened,
-            };
-
-            let desc_key = DescriptorPublicKey::XPub(desc_xpub);
-            let descriptor = descriptor_constructor(desc_key)?;
-            Ok((descriptor.to_string(), None))
-        };
-
-        (fingerprint, Box::new(closure))
+        Ok((
+            descriptor.to_string(),
+            Some(descriptor.to_string_with_secret(&keymap)),
+        ))
     };
 
-    let (external_pub, external_priv) = make_desc(0)?;
-    let (internal_pub, internal_priv) = make_desc(1)?;
+    let (external_pub, external_priv) = build_descriptor("0")?;
+    let (internal_pub, internal_priv) = build_descriptor("1")?;
 
-    let type_label = if multipath_label {
-        format!("{descriptor_type}-multipath")
-    } else {
-        descriptor_type.to_string()
-    };
-
-    let mut result = json!({
-        "type": type_label,
+    Ok(json!({
         "public_descriptors": {
             "external": external_pub,
             "internal": internal_pub
         },
-        "fingerprint": fingerprint.to_string(),
-        "network": network.to_string(),
-    });
+        "private_descriptors": {
+            "external": external_priv.unwrap(),
+            "internal": internal_priv.unwrap()
+        },
+        "fingerprint": fingerprint.to_string()
+    }))
+}
 
-    if let (Some(priv_ext), Some(priv_int)) = (external_priv, internal_priv) {
-        result["private_descriptors"] = json!({
-            "external": priv_ext,
-            "internal": priv_int
-        });
+fn generate_public_descriptors(
+    descriptor_type: DescriptorType,
+    key: &str,
+    derivation_path: &DerivationPath,
+) -> Result<Value, Error> {
+    let xpub: Xpub = key.parse()?;
+    let fingerprint = xpub.fingerprint();
+
+    let build_descriptor = |branch: &str| -> Result<String, Error> {
+        let branch_path = DerivationPath::from_str(branch)?;
+        let desc_xpub = DescriptorXKey {
+            origin: Some((fingerprint, derivation_path.clone())),
+            xkey: xpub,
+            derivation_path: branch_path,
+            wildcard: Wildcard::Unhardened,
+        };
+        let desc_pub = DescriptorPublicKey::XPub(desc_xpub);
+        let descriptor = descriptor_type.constructor()(desc_pub)?;
+        Ok(descriptor.to_string())
+    };
+
+    let external_pub = build_descriptor("0")?;
+    let internal_pub = build_descriptor("1")?;
+
+    Ok(json!({
+        "public_descriptors": {
+            "external": external_pub,
+            "internal": internal_pub
+        },
+        "fingerprint": fingerprint.to_string()
+    }))
+}
+
+pub fn generate_descriptors(
+    descriptor_type: DescriptorType,
+    key: &str,
+    multipath: bool,
+) -> Result<Value, Error> {
+    let secp = Secp256k1::new();
+    let derivation_base = format!("/{0}h/1h/0h", descriptor_type.purpose());
+    let derivation_path = DerivationPath::from_str(&format!("m{derivation_base}"))?;
+
+    let is_private = key.starts_with("xprv") || key.starts_with("tprv");
+
+    if multipath {
+        if is_private {
+            return Err(Error::Generic(
+                "Multipath descriptors are only supported for public keys".to_string(),
+            ));
+        }
+        return generate_multipath_descriptors(descriptor_type, key, &derivation_path);
     }
 
-    Ok(result)
+    if is_private {
+        generate_private_descriptors(descriptor_type, key, &derivation_path, &secp)
+    } else {
+        generate_public_descriptors(descriptor_type, key, &derivation_path)
+    }
 }
 
 pub fn generate_new_descriptor_with_mnemonic(
@@ -514,7 +536,7 @@ pub fn generate_new_descriptor_with_mnemonic(
     let seed = mnemonic.to_seed("");
     let xprv = Xpriv::new_master(network, &seed)?;
 
-    let mut result = generate_descriptors(&network, descriptor_type, &xprv.to_string(), false)?;
+    let mut result = generate_descriptors(descriptor_type, &xprv.to_string(), false)?;
     result["mnemonic"] = json!(mnemonic.to_string());
     Ok(result)
 }
@@ -530,7 +552,7 @@ pub fn generate_descriptor_from_mnemonic_string(
         .into_xprv(network)
         .ok_or_else(|| Error::Generic("No xprv found".to_string()))?;
 
-    let mut result = generate_descriptors(&network, descriptor_type, &xprv.to_string(), false)?;
+    let mut result = generate_descriptors(descriptor_type, &xprv.to_string(), false)?;
     result["mnemonic"] = json!(mnemonic_str);
     Ok(result)
 }
@@ -542,6 +564,60 @@ pub enum DescriptorType {
     Bip49,
     Bip84,
     Bip86,
+}
+
+impl DescriptorType {
+    fn purpose(&self) -> u32 {
+        match self {
+            DescriptorType::Bip44 => 44,
+            DescriptorType::Bip49 => 49,
+            DescriptorType::Bip84 => 84,
+            DescriptorType::Bip86 => 86,
+        }
+    }
+
+    pub fn from_bip32_num(bip32_purpose: u8) -> Option<Self> {
+        match bip32_purpose {
+            44 => Some(DescriptorType::Bip44),
+            49 => Some(DescriptorType::Bip49),
+            84 => Some(DescriptorType::Bip84),
+            86 => Some(DescriptorType::Bip86),
+            _ => None,
+        }
+    }
+
+    fn constructor(
+        &self,
+    ) -> fn(DescriptorPublicKey) -> Result<Descriptor<DescriptorPublicKey>, Error> {
+        match self {
+            DescriptorType::Bip44 => |key| Descriptor::new_pkh(key).map_err(Error::from),
+            DescriptorType::Bip49 => |key| Descriptor::new_sh_wpkh(key).map_err(Error::from),
+            DescriptorType::Bip84 => |key| Descriptor::new_wpkh(key).map_err(Error::from),
+            DescriptorType::Bip86 => |key| Descriptor::new_tr(key, None).map_err(Error::from),
+        }
+    }
+
+    fn extract_descriptor_key(
+        &self,
+        desc_secret: DescriptorSecretKey,
+        secp: &Secp256k1<All>,
+    ) -> Result<(DescriptorPublicKey, KeyMap, ValidNetworks), Error> {
+        Ok(match self {
+            DescriptorType::Bip44 => {
+                let descriptor_key = IntoDescriptorKey::<Legacy>::into_descriptor_key(desc_secret)?;
+                descriptor_key.extract(secp)?
+            }
+            DescriptorType::Bip49 | DescriptorType::Bip84 => {
+                let descriptor_key =
+                    IntoDescriptorKey::<Segwitv0>::into_descriptor_key(desc_secret)?;
+                descriptor_key.extract(secp)?
+            }
+            DescriptorType::Bip86 => {
+                let descriptor_key = IntoDescriptorKey::<Tap>::into_descriptor_key(desc_secret)?;
+                descriptor_key.extract(secp)?
+            }
+        })
+    }
 }
 
 impl Display for DescriptorType {
@@ -561,4 +637,83 @@ pub(crate) fn shorten(displayable: impl Display, start: u8, end: u8) -> String {
     let start_str: &str = &displayable[0..start as usize];
     let end_str: &str = &displayable[displayable.len() - end as usize..];
     format!("{start_str}...{end_str}")
+}
+
+pub fn format_descriptor_output(result: &Value, pretty: bool) -> Result<String, Error> {
+    if !pretty {
+        return Ok(serde_json::to_string_pretty(result)?);
+    }
+
+    let mut rows: Vec<Vec<CellStruct>> = vec![];
+
+    if let Some(desc_type) = result.get("type") {
+        rows.push(vec![
+            "Type".cell().bold(true),
+            desc_type.as_str().unwrap_or("N/A").cell(),
+        ]);
+    }
+
+    if let Some(finger_print) = result.get("fingerprint") {
+        rows.push(vec![
+            "Fingerprint".cell().bold(true),
+            finger_print.as_str().unwrap_or("N/A").cell(),
+        ]);
+    }
+
+    if let Some(network) = result.get("network") {
+        rows.push(vec![
+            "Network".cell().bold(true),
+            network.as_str().unwrap_or("N/A").cell(),
+        ]);
+    }
+    if let Some(multipath_desc) = result.get("multipath_descriptor") {
+        rows.push(vec![
+            "Multipart Descriptor".cell().bold(true),
+            multipath_desc.as_str().unwrap_or("N/A").cell(),
+        ]);
+    }
+    if let Some(pub_descs) = result.get("public_descriptors").and_then(|v| v.as_object()) {
+        if let Some(ext) = pub_descs.get("external") {
+            rows.push(vec![
+                "External Public".cell().bold(true),
+                ext.as_str().unwrap_or("N/A").cell(),
+            ]);
+        }
+        if let Some(int) = pub_descs.get("internal") {
+            rows.push(vec![
+                "Internal Public".cell().bold(true),
+                int.as_str().unwrap_or("N/A").cell(),
+            ]);
+        }
+    }
+    if let Some(priv_descs) = result
+        .get("private_descriptors")
+        .and_then(|v| v.as_object())
+    {
+        if let Some(ext) = priv_descs.get("external") {
+            rows.push(vec![
+                "External Private".cell().bold(true),
+                ext.as_str().unwrap_or("N/A").cell(),
+            ]);
+        }
+        if let Some(int) = priv_descs.get("internal") {
+            rows.push(vec![
+                "Internal Private".cell().bold(true),
+                int.as_str().unwrap_or("N/A").cell(),
+            ]);
+        }
+    }
+    if let Some(mnemonic) = result.get("mnemonic") {
+        rows.push(vec![
+            "Mnemonic".cell().bold(true),
+            mnemonic.as_str().unwrap_or("N/A").cell(),
+        ]);
+    }
+
+    let table = rows
+        .table()
+        .display()
+        .map_err(|e| Error::Generic(e.to_string()))?;
+
+    Ok(format!("{table}"))
 }
