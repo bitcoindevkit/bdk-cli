@@ -742,33 +742,26 @@ pub(crate) async fn handle_online_wallet_subcommand(
     }
 }
 
-/// Handle wallet init subcommand to create or update config.toml
-pub fn handle_init_subcommand(
+/// Handle wallet config subcommand to create or update config.toml
+pub fn handle_config_subcommand(
     datadir: &Path,
     network: Network,
+    wallet: String,
     wallet_opts: &WalletOpts,
     force: bool,
 ) -> Result<String, Error> {
-    let wallet_name = wallet_opts
-        .wallet
-        .as_ref()
-        .ok_or_else(|| Error::Generic("Wallet name is required".to_string()))?;
-
     let mut config = WalletConfig::load(datadir)?.unwrap_or(WalletConfig {
         network,
         wallets: HashMap::new(),
     });
 
-    if config.wallets.contains_key(wallet_name) && !force {
+    if config.wallets.contains_key(&wallet) && !force {
         return Err(Error::Generic(format!(
-            "Wallet '{wallet_name}' already exists in config.toml. Use --force to overwrite."
+            "Wallet '{wallet}' already exists in config.toml. Use --force to overwrite."
         )));
     }
 
-    let ext_descriptor = wallet_opts
-        .ext_descriptor
-        .clone()
-        .ok_or_else(|| Error::Generic("External descriptor is required".to_string()))?;
+    let ext_descriptor = wallet_opts.ext_descriptor.clone();
     let int_descriptor = wallet_opts.int_descriptor.clone();
     #[cfg(any(
         feature = "electrum",
@@ -805,7 +798,7 @@ pub fn handle_init_subcommand(
     };
 
     let wallet_config = WalletConfigInner {
-        wallet: wallet_name.to_string(),
+        wallet: wallet.clone(),
         network: network.to_string(),
         ext_descriptor,
         int_descriptor,
@@ -833,13 +826,11 @@ pub fn handle_init_subcommand(
     };
 
     config.network = network;
-    config
-        .wallets
-        .insert(wallet_name.to_string(), wallet_config);
+    config.wallets.insert(wallet.clone(), wallet_config);
     config.save(datadir)?;
 
     Ok(serde_json::to_string_pretty(&json!({
-        "message": format!("Wallet '{wallet_name}' initialized successfully in {:?}", datadir.join("config.toml"))
+        "message": format!("Wallet '{wallet}' initialized successfully in {:?}", datadir.join("config.toml"))
     }))?)
 }
 
@@ -1057,11 +1048,15 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             feature = "rpc"
         ))]
         CliSubCommand::Wallet {
-            mut wallet_opts,
+            wallet,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
             let home_dir = prepare_home_dir(cli_opts.datadir)?;
-            let database_path = prepare_wallet_db_dir(&home_dir, &mut wallet_opts)?;
+
+            let config = WalletConfig::load(&home_dir)?
+                .ok_or(Error::Generic("No config found".to_string()))?;
+            let wallet_opts = config.get_wallet_opts(&wallet)?;
+            let database_path = prepare_wallet_db_dir(&home_dir, &wallet)?;
 
             #[cfg(any(feature = "sqlite", feature = "redb"))]
             let result = {
@@ -1111,18 +1106,22 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             Ok(result)
         }
         CliSubCommand::Wallet {
-            mut wallet_opts,
+            wallet: wallet_name,
             subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
             let network = cli_opts.network;
             let datadir = cli_opts.datadir.clone();
+            let home_dir = prepare_home_dir(datadir)?;
+            let config = WalletConfig::load(&home_dir)?.ok_or(Error::Generic(format!(
+                "No config found for wallet '{wallet_name}'"
+            )))?;
+            let wallet_opts = config.get_wallet_opts(&wallet_name)?;
             #[cfg(any(feature = "sqlite", feature = "redb"))]
             let result = {
-                let home_dir = prepare_home_dir(datadir)?;
                 let mut persister: Persister = match &wallet_opts.database_type {
                     #[cfg(feature = "sqlite")]
                     DatabaseType::Sqlite => {
-                        let database_path = prepare_wallet_db_dir(&home_dir, &mut wallet_opts)?;
+                        let database_path = prepare_wallet_db_dir(&home_dir, &wallet_name)?;
                         let db_file = database_path.join("wallet.sqlite");
                         let connection = Connection::open(db_file)?;
                         log::debug!("Sqlite database opened successfully");
@@ -1130,15 +1129,10 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     }
                     #[cfg(feature = "redb")]
                     DatabaseType::Redb => {
-                        let wallet_name = &wallet_opts.wallet;
-
                         let db = Arc::new(bdk_redb::redb::Database::create(
                             home_dir.join("wallet.redb"),
                         )?);
-                        let store = RedbStore::new(
-                            db,
-                            wallet_name.as_deref().unwrap_or("wallet").to_string(),
-                        )?;
+                        let store = RedbStore::new(db, wallet_name)?;
                         log::debug!("Redb database opened successfully");
                         Persister::RedbStore(store)
                     }
@@ -1168,12 +1162,12 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             Ok(result)
         }
         CliSubCommand::Wallet {
-            wallet_opts,
-            subcommand: WalletSubCommand::Init { force },
+            wallet,
+            subcommand: WalletSubCommand::Config { force, wallet_opts },
         } => {
             let network = cli_opts.network;
             let home_dir = prepare_home_dir(cli_opts.datadir)?;
-            let result = handle_init_subcommand(&home_dir, network, &wallet_opts, force)?;
+            let result = handle_config_subcommand(&home_dir, network, wallet, &wallet_opts, force)?;
             Ok(result)
         }
         CliSubCommand::Key {
@@ -1191,17 +1185,26 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             Ok(result)
         }
         #[cfg(feature = "repl")]
-        CliSubCommand::Repl { ref wallet_opts } => {
+        CliSubCommand::Repl {
+            wallet: wallet_name,
+            mut wallet_opts,
+        } => {
             let network = cli_opts.network;
+            let home_dir = prepare_home_dir(cli_opts.datadir.clone())?;
+            wallet_opts.wallet = Some(wallet_name.clone());
+
+            let config = WalletConfig::load(&home_dir)?.ok_or(Error::Generic(format!(
+                "No config found for wallet {}",
+                wallet_name.clone()
+            )))?;
+            let loaded_wallet_opts = config.get_wallet_opts(&wallet_name)?;
+
             #[cfg(any(feature = "sqlite", feature = "redb"))]
             let (mut wallet, mut persister) = {
-                let home_dir = prepare_home_dir(cli_opts.datadir.clone())?;
-
-                let mut persister: Persister = match &wallet_opts.database_type {
+                let mut persister: Persister = match &loaded_wallet_opts.database_type {
                     #[cfg(feature = "sqlite")]
                     DatabaseType::Sqlite => {
-                        let database_path =
-                            prepare_wallet_db_dir(&home_dir, &mut wallet_opts.clone())?;
+                        let database_path = prepare_wallet_db_dir(&home_dir, &wallet_name)?;
                         let db_file = database_path.join("wallet.sqlite");
                         let connection = Connection::open(db_file)?;
                         log::debug!("Sqlite database opened successfully");
@@ -1209,25 +1212,21 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     }
                     #[cfg(feature = "redb")]
                     DatabaseType::Redb => {
-                        let wallet_name = &wallet_opts.wallet;
                         let db = Arc::new(bdk_redb::redb::Database::create(
                             home_dir.join("wallet.redb"),
                         )?);
-                        let store = RedbStore::new(
-                            db,
-                            wallet_name.as_deref().unwrap_or("wallet").to_string(),
-                        )?;
+                        let store = RedbStore::new(db, wallet_name.clone())?;
                         log::debug!("Redb database opened successfully");
                         Persister::RedbStore(store)
                     }
                 };
-                let wallet = new_persisted_wallet(network, &mut persister, wallet_opts)?;
+                let wallet = new_persisted_wallet(network, &mut persister, &loaded_wallet_opts)?;
                 (wallet, persister)
             };
             #[cfg(not(any(feature = "sqlite", feature = "redb")))]
-            let mut wallet = new_wallet(network, &wallet_opts)?;
+            let mut wallet = new_wallet(network, &loaded_wallet_opts)?;
             let home_dir = prepare_home_dir(cli_opts.datadir.clone())?;
-            let database_path = prepare_wallet_db_dir(&home_dir, &mut wallet_opts.clone())?;
+            let database_path = prepare_wallet_db_dir(&home_dir, &wallet_name)?;
             loop {
                 let line = readline()?;
                 let line = line.trim();
@@ -1238,7 +1237,8 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 let result = respond(
                     network,
                     &mut wallet,
-                    wallet_opts,
+                    &wallet_name,
+                    &mut wallet_opts.clone(),
                     line,
                     database_path.clone(),
                     &cli_opts,
@@ -1276,7 +1276,8 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
 async fn respond(
     network: Network,
     wallet: &mut Wallet,
-    wallet_opts: &WalletOpts,
+    wallet_name: &String,
+    wallet_opts: &mut WalletOpts,
     line: &str,
     _datadir: std::path::PathBuf,
     cli_opts: &CliOpts,
@@ -1311,10 +1312,16 @@ async fn respond(
             Some(value)
         }
         ReplSubCommand::Wallet {
-            subcommand: WalletSubCommand::Init { force },
+            subcommand: WalletSubCommand::Config { force, wallet_opts },
         } => {
-            let value = handle_init_subcommand(&_datadir, network, wallet_opts, force)
-                .map_err(|e| e.to_string())?;
+            let value = handle_config_subcommand(
+                &_datadir,
+                network,
+                wallet_name.to_string(),
+                &wallet_opts,
+                force,
+            )
+            .map_err(|e| e.to_string())?;
             Some(value)
         }
         ReplSubCommand::Key { subcommand } => {

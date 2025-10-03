@@ -127,7 +127,7 @@ impl WalletConfig {
         Ok(WalletOpts {
             wallet: Some(wallet_config.wallet.clone()),
             verbose: false,
-            ext_descriptor: Some(wallet_config.ext_descriptor.clone()),
+            ext_descriptor: wallet_config.ext_descriptor.clone(),
             int_descriptor: wallet_config.int_descriptor.clone(),
             #[cfg(any(
                 feature = "electrum",
