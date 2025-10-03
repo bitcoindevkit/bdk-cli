@@ -13,14 +13,11 @@
 //! All subcommands are defined in the below enums.
 
 #![allow(clippy::large_enum_variant)]
-use crate::config::WalletConfig;
-use crate::error::BDKCliError as Error;
 use bdk_wallet::bitcoin::{
     Address, Network, OutPoint, ScriptBuf,
     bip32::{DerivationPath, Xpriv},
 };
 use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
-use std::path::Path;
 
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
@@ -72,8 +69,10 @@ pub enum CliSubCommand {
     /// needs backend like `sync` and `broadcast`, compile the binary with specific backend feature
     /// and use the configuration options below to configure for that backend.
     Wallet {
-        #[command(flatten)]
-        wallet_opts: WalletOpts,
+        /// Selects the wallet to use.
+        #[arg(env = "WALLET_NAME", short = 'w', long = "wallet", required = true)]
+        wallet: String,
+
         #[command(subcommand)]
         subcommand: WalletSubCommand,
     },
@@ -106,6 +105,10 @@ pub enum CliSubCommand {
     /// REPL command loop can be used to make recurring callbacks to an already loaded wallet.
     /// This mode is useful for hands on live testing of wallet operations.
     Repl {
+        /// Wallet name for this REPL session
+        #[arg(env = "WALLET_NAME", short = 'w', long = "wallet", required = true)]
+        wallet: String,
+
         #[command(flatten)]
         wallet_opts: WalletOpts,
     },
@@ -129,11 +132,14 @@ pub enum CliSubCommand {
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
 pub enum WalletSubCommand {
-    /// Initialize a wallet configuration and save to `config.toml`.
-    Init {
+    /// Save wallet configuration to `config.toml`.
+    Config {
         /// Overwrite existing wallet configuration if it exists.
-        #[arg(long = "force", default_value_t = false)]
+        #[arg(short = 'f', long = "force", default_value_t = false)]
         force: bool,
+
+        #[command(flatten)]
+        wallet_opts: WalletOpts,
     },
     #[cfg(any(
         feature = "electrum",
@@ -179,14 +185,15 @@ pub enum ClientType {
 #[derive(Debug, Args, Clone, PartialEq, Eq)]
 pub struct WalletOpts {
     /// Selects the wallet to use.
-    #[arg(env = "WALLET_NAME", short = 'w', long = "wallet")]
+    #[arg(skip)]
     pub wallet: Option<String>,
+    // #[arg(env = "WALLET_NAME", short = 'w', long = "wallet", required = true)]
     /// Adds verbosity, returns PSBT in JSON format alongside serialized, displays expanded objects.
     #[arg(env = "VERBOSE", short = 'v', long = "verbose")]
     pub verbose: bool,
     /// Sets the descriptor to use for the external addresses.
-    #[arg(env = "EXT_DESCRIPTOR", short = 'e', long)]
-    pub ext_descriptor: Option<String>,
+    #[arg(env = "EXT_DESCRIPTOR", short = 'e', long, required = true)]
+    pub ext_descriptor: String,
     /// Sets the descriptor to use for internal/change addresses.
     #[arg(env = "INT_DESCRIPTOR", short = 'i', long)]
     pub int_descriptor: Option<String>,
@@ -235,56 +242,6 @@ pub struct WalletOpts {
     #[cfg(feature = "cbf")]
     #[clap(flatten)]
     pub compactfilter_opts: CompactFilterOpts,
-}
-
-impl WalletOpts {
-    /// Merges optional configuration values from config.toml into the current WalletOpts.
-    pub fn load_config(&mut self, wallet_name: &str, datadir: &Path) -> Result<(), Error> {
-        if let Some(config) = WalletConfig::load(datadir)? {
-            if let Ok(config_opts) = config.get_wallet_opts(wallet_name) {
-                self.verbose = self.verbose || config_opts.verbose;
-                #[cfg(feature = "electrum")]
-                {
-                    self.batch_size = if self.batch_size != 10 {
-                        self.batch_size
-                    } else {
-                        config_opts.batch_size
-                    };
-                }
-                #[cfg(feature = "esplora")]
-                {
-                    self.parallel_requests = if self.parallel_requests != 5 {
-                        self.parallel_requests
-                    } else {
-                        config_opts.parallel_requests
-                    };
-                }
-                #[cfg(feature = "rpc")]
-                {
-                    self.basic_auth = if self.basic_auth != ("user".into(), "password".into()) {
-                        self.basic_auth.clone()
-                    } else {
-                        config_opts.basic_auth
-                    };
-                    self.cookie = self.cookie.take().or(config_opts.cookie);
-                }
-                #[cfg(feature = "cbf")]
-                {
-                    if self.compactfilter_opts.conn_count == 2
-                        && config_opts.compactfilter_opts.conn_count != 2
-                    {
-                        self.compactfilter_opts.conn_count =
-                            config_opts.compactfilter_opts.conn_count;
-                    }
-                    if self.compactfilter_opts.skip_blocks.is_none() {
-                        self.compactfilter_opts.skip_blocks =
-                            config_opts.compactfilter_opts.skip_blocks;
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
 }
 
 /// Options to configure a SOCKS5 proxy for a blockchain client connection.
