@@ -9,6 +9,7 @@
 //! Utility Tools
 //!
 //! This module includes all the utility tools used by the App.
+use crate::config::WalletConfig;
 use crate::error::BDKCliError as Error;
 use std::fmt::Display;
 use std::str::FromStr;
@@ -259,13 +260,13 @@ pub(crate) fn new_wallet(network: Network, wallet_opts: &WalletOpts) -> Result<W
     let int_descriptor = wallet_opts.int_descriptor.clone();
 
     match int_descriptor {
-         Some(int_descriptor) => {
+        Some(int_descriptor) => {
             let wallet = Wallet::create(ext_descriptor, int_descriptor)
                 .network(network)
                 .create_wallet_no_persist()?;
             Ok(wallet)
         }
-         None => {
+        None => {
             let wallet = Wallet::create_single(ext_descriptor)
                 .network(network)
                 .create_wallet_no_persist()?;
@@ -343,7 +344,39 @@ pub async fn sync_kyoto_client(wallet: &mut Wallet, client: Box<LightClient>) ->
 
 pub(crate) fn shorten(displayable: impl Display, start: u8, end: u8) -> String {
     let displayable = displayable.to_string();
+
+    if displayable.len() <= (start + end) as usize {
+        return displayable;
+    }
+
     let start_str: &str = &displayable[0..start as usize];
     let end_str: &str = &displayable[displayable.len() - end as usize..];
     format!("{start_str}...{end_str}")
+}
+
+pub fn load_wallet_config(
+    home_dir: &Path,
+    wallet_name: &str,
+) -> Result<(WalletOpts, Network), Error> {
+    let config = WalletConfig::load(home_dir)?.ok_or(Error::Generic(format!(
+        "No config found for wallet {wallet_name}",
+    )))?;
+
+    let wallet_opts = config.get_wallet_opts(wallet_name)?;
+    let wallet_config = config
+        .wallets
+        .get(wallet_name)
+        .ok_or(Error::Generic(format!(
+            "Wallet '{wallet_name}' not found in config"
+        )))?;
+
+    let network = match wallet_config.network.as_str() {
+        "bitcoin" => Ok(Network::Bitcoin),
+        "testnet" => Ok(Network::Testnet),
+        "regtest" => Ok(Network::Regtest),
+        "signet" => Ok(Network::Signet),
+        _ => Err(Error::Generic("Invalid network in config".to_string())),
+    }?;
+
+    Ok((wallet_opts, network))
 }

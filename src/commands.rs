@@ -108,10 +108,9 @@ pub enum CliSubCommand {
         /// Wallet name for this REPL session
         #[arg(env = "WALLET_NAME", short = 'w', long = "wallet", required = true)]
         wallet: String,
-
-        #[command(flatten)]
-        wallet_opts: WalletOpts,
     },
+    /// List all saved wallet configurations.
+    Wallets,
 }
 
 /// Wallet operation subcommands.

@@ -4,8 +4,8 @@ Changelog info is also documented on the [GitHub releases](https://github.com/bi
 page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [Unreleased]
-- Add wallet configs initialization for initialiazing and saving wallet configs
 - Add wallet subcommand `config` to save wallet configs
+- Add `wallets` command to list all wallets saved configs
 
 ## [2.0.0]
 
