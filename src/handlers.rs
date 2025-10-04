@@ -62,6 +62,14 @@ use std::path::Path;
 use std::str::FromStr;
 #[cfg(any(feature = "redb", feature = "compiler"))]
 use std::sync::Arc;
+
+#[cfg(feature = "electrum")]
+use crate::utils::BlockchainClient::Electrum;
+#[cfg(feature = "cbf")]
+use bdk_kyoto::LightClient;
+use bdk_wallet::bitcoin::base64::prelude::*;
+#[cfg(feature = "cbf")]
+use tokio::select;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -854,6 +862,35 @@ pub fn handle_config_subcommand(
     wallet_opts: &WalletOpts,
     force: bool,
 ) -> Result<String, Error> {
+    if network == Network::Bitcoin {
+        eprintln!(
+            "WARNING: You are configuring a wallet for Bitcoin MAINNET.\n\
+             This software is experimental and not recommended for use with real funds.\n\
+             Consider using a testnet for testing purposes. \n"
+        );
+    }
+
+    let ext_descriptor = wallet_opts.ext_descriptor.clone();
+    let int_descriptor = wallet_opts.int_descriptor.clone();
+
+    if ext_descriptor.contains("xprv") || ext_descriptor.contains("tprv") {
+        eprintln!(
+            "WARNING: Your external descriptor contains PRIVATE KEYS.\n\
+             Private keys will be saved in PLAINTEXT in the config file.\n\
+             This is a security risk. Consider using public descriptors instead."
+        );
+    }
+
+    if let Some(ref internal_desc) = int_descriptor {
+        if internal_desc.contains("xprv") || internal_desc.contains("tprv") {
+            eprintln!(
+                "WARNING: Your internal descriptor contains PRIVATE KEYS.\n\
+                 Private keys will be saved in PLAINTEXT in the config file.\n\
+                 This is a security risk. Consider using public descriptors instead."
+            );
+        }
+    }
+
     let mut config = WalletConfig::load(datadir)?.unwrap_or(WalletConfig {
         network,
         wallets: HashMap::new(),
@@ -865,8 +902,6 @@ pub fn handle_config_subcommand(
         )));
     }
 
-    let ext_descriptor = wallet_opts.ext_descriptor.clone();
-    let int_descriptor = wallet_opts.int_descriptor.clone();
     #[cfg(any(
         feature = "electrum",
         feature = "esplora",
@@ -1138,9 +1173,141 @@ pub(crate) fn handle_compile_subcommand(
     }
 }
 
+/// Handle wallets command to show all saved wallet configurations
+pub fn handle_wallets_subcommand(datadir: &Path, pretty: bool) -> Result<String, Error> {
+    let load_config = WalletConfig::load(datadir)?;
+
+    let config = match load_config {
+        Some(c) if !c.wallets.is_empty() => c,
+        _ => {
+            return Ok(if pretty {
+                "No wallet configurations found.".to_string()
+            } else {
+                serde_json::to_string_pretty(&json!({
+                    "wallets": []
+                }))?
+            });
+        }
+    };
+
+    if pretty {
+        let mut rows: Vec<Vec<CellStruct>> = vec![];
+
+        for (name, wallet_config) in config.wallets.iter() {
+            let mut row = vec![name.cell(), wallet_config.network.clone().cell()];
+
+            #[cfg(any(feature = "sqlite", feature = "redb"))]
+            row.push(wallet_config.database_type.clone().cell());
+
+            #[cfg(any(
+                feature = "electrum",
+                feature = "esplora",
+                feature = "rpc",
+                feature = "cbf"
+            ))]
+            {
+                let client_str = wallet_config.client_type.as_deref().unwrap_or("N/A");
+                row.push(client_str.cell());
+            }
+
+            #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+            {
+                let url_str = wallet_config.server_url.as_deref().unwrap_or("N/A");
+                let display_url = if url_str.len() > 20 {
+                    shorten(url_str, 15, 10)
+                } else {
+                    url_str.to_string()
+                };
+                row.push(display_url.cell());
+            }
+
+            let ext_desc_display = if wallet_config.ext_descriptor.len() > 40 {
+                shorten(&wallet_config.ext_descriptor, 20, 15)
+            } else {
+                wallet_config.ext_descriptor.clone()
+            };
+            row.push(ext_desc_display.cell());
+
+            let has_int_desc = if wallet_config.int_descriptor.is_some() {
+                "Yes"
+            } else {
+                "No"
+            };
+            row.push(has_int_desc.cell());
+
+            rows.push(row);
+        }
+
+        let mut title_cells = vec!["Wallet Name".cell().bold(true), "Network".cell().bold(true)];
+
+        #[cfg(any(feature = "sqlite", feature = "redb"))]
+        title_cells.push("Database".cell().bold(true));
+
+        #[cfg(any(
+            feature = "electrum",
+            feature = "esplora",
+            feature = "rpc",
+            feature = "cbf"
+        ))]
+        title_cells.push("Client".cell().bold(true));
+
+        #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+        title_cells.push("Server URL".cell().bold(true));
+
+        title_cells.push("External Desc".cell().bold(true));
+        title_cells.push("Internal Desc".cell().bold(true));
+
+        let table = rows
+            .table()
+            .title(title_cells)
+            .display()
+            .map_err(|e| Error::Generic(e.to_string()))?;
+
+        Ok(format!("{table}"))
+    } else {
+        let wallets_summary: Vec<_> = config
+            .wallets
+            .iter()
+            .map(|(name, wallet_config)| {
+                let mut wallet_json = json!({
+                    "name": name,
+                    "network": wallet_config.network,
+                    "ext_descriptor": wallet_config.ext_descriptor,
+                    "int_descriptor": wallet_config.int_descriptor,
+                });
+
+                #[cfg(any(feature = "sqlite", feature = "redb"))]
+                {
+                    wallet_json["database_type"] = json!(wallet_config.database_type.clone());
+                }
+
+                #[cfg(any(
+                    feature = "electrum",
+                    feature = "esplora",
+                    feature = "rpc",
+                    feature = "cbf"
+                ))]
+                {
+                    wallet_json["client_type"] = json!(wallet_config.client_type.clone());
+                }
+
+                #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+                {
+                    wallet_json["server_url"] = json!(wallet_config.server_url.clone());
+                }
+
+                wallet_json
+            })
+            .collect();
+
+        Ok(serde_json::to_string_pretty(&json!({
+            "wallets": wallets_summary
+        }))?)
+    }
+}
+
 /// The global top level handler.
 pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
-    let network = cli_opts.network;
     let pretty = cli_opts.pretty;
     let subcommand = cli_opts.subcommand.clone();
 
@@ -1157,9 +1324,8 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
         } => {
             let home_dir = prepare_home_dir(cli_opts.datadir)?;
 
-            let config = WalletConfig::load(&home_dir)?
-                .ok_or(Error::Generic("No config found".to_string()))?;
-            let wallet_opts = config.get_wallet_opts(&wallet)?;
+            let (wallet_opts, network) = load_wallet_config(&home_dir, &wallet)?;
+
             let database_path = prepare_wallet_db_dir(&home_dir, &wallet)?;
 
             #[cfg(any(feature = "sqlite", feature = "redb"))]
@@ -1214,13 +1380,10 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             wallet: wallet_name,
             subcommand: WalletSubCommand::OfflineWalletSubCommand(offline_subcommand),
         } => {
-            let network = cli_opts.network;
             let datadir = cli_opts.datadir.clone();
             let home_dir = prepare_home_dir(datadir)?;
-            let config = WalletConfig::load(&home_dir)?.ok_or(Error::Generic(format!(
-                "No config found for wallet '{wallet_name}'"
-            )))?;
-            let wallet_opts = config.get_wallet_opts(&wallet_name)?;
+            let (wallet_opts, network) = load_wallet_config(&home_dir, &wallet_name)?;
+
             #[cfg(any(feature = "sqlite", feature = "redb"))]
             let result = {
                 let mut persister: Persister = match &wallet_opts.database_type {
@@ -1275,9 +1438,15 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             let result = handle_config_subcommand(&home_dir, network, wallet, &wallet_opts, force)?;
             Ok(result)
         }
+        CliSubCommand::Wallets => {
+            let home_dir = prepare_home_dir(cli_opts.datadir)?;
+            let result = handle_wallets_subcommand(&home_dir, pretty)?;
+            Ok(result)
+        }
         CliSubCommand::Key {
             subcommand: key_subcommand,
         } => {
+            let network = cli_opts.network;
             let result = handle_key_subcommand(network, key_subcommand, pretty)?;
             Ok(result)
         }
@@ -1286,27 +1455,20 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             policy,
             script_type,
         } => {
+            let network = cli_opts.network;
             let result = handle_compile_subcommand(network, policy, script_type, pretty)?;
             Ok(result)
         }
         #[cfg(feature = "repl")]
         CliSubCommand::Repl {
             wallet: wallet_name,
-            mut wallet_opts,
         } => {
-            let network = cli_opts.network;
             let home_dir = prepare_home_dir(cli_opts.datadir.clone())?;
-            wallet_opts.wallet = Some(wallet_name.clone());
-
-            let config = WalletConfig::load(&home_dir)?.ok_or(Error::Generic(format!(
-                "No config found for wallet {}",
-                wallet_name.clone()
-            )))?;
-            let loaded_wallet_opts = config.get_wallet_opts(&wallet_name)?;
+            let (wallet_opts, network) = load_wallet_config(&home_dir, &wallet_name)?;
 
             #[cfg(any(feature = "sqlite", feature = "redb"))]
             let (mut wallet, mut persister) = {
-                let mut persister: Persister = match &loaded_wallet_opts.database_type {
+                let mut persister: Persister = match &wallet_opts.database_type {
                     #[cfg(feature = "sqlite")]
                     DatabaseType::Sqlite => {
                         let database_path = prepare_wallet_db_dir(&home_dir, &wallet_name)?;
@@ -1325,7 +1487,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                         Persister::RedbStore(store)
                     }
                 };
-                let wallet = new_persisted_wallet(network, &mut persister, &loaded_wallet_opts)?;
+                let wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
                 (wallet, persister)
             };
             #[cfg(not(any(feature = "sqlite", feature = "redb")))]
