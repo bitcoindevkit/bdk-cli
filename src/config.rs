@@ -90,6 +90,7 @@ impl WalletConfig {
             "testnet" => Network::Testnet,
             "regtest" => Network::Regtest,
             "signet" => Network::Signet,
+            "testnet4" => Network::Testnet4,
             _ => {
                 return Err(Error::Generic("Invalid network".to_string()));
             }
@@ -105,7 +106,6 @@ impl WalletConfig {
                 return Err(Error::Generic("Invalid database type".to_string()));
             }
         };
-
         #[cfg(any(
             feature = "electrum",
             feature = "esplora",
@@ -144,9 +144,9 @@ impl WalletConfig {
                 .clone()
                 .ok_or_else(|| Error::Generic(format!("Server url not found")))?,
             #[cfg(feature = "electrum")]
-            batch_size: 10,
+            batch_size: wallet_config.batch_size.unwrap_or(10),
             #[cfg(feature = "esplora")]
-            parallel_requests: 5,
+            parallel_requests: wallet_config.parallel_requests.unwrap_or(5),
             #[cfg(feature = "rpc")]
             basic_auth: (
                 wallet_config
@@ -161,10 +161,7 @@ impl WalletConfig {
             #[cfg(feature = "rpc")]
             cookie: wallet_config.cookie.clone(),
             #[cfg(feature = "cbf")]
-            compactfilter_opts: crate::commands::CompactFilterOpts {
-                conn_count: 2,
-                skip_blocks: None,
-            },
+            compactfilter_opts: crate::commands::CompactFilterOpts { conn_count: 2 },
         })
     }
 }

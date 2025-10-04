@@ -216,41 +216,43 @@ cargo run --pretty -n signet wallet -w {wallet_name} -d sqlite balance
 ```
 This is available for wallet, key, repl and compile features. When ommitted, outputs default to `JSON`.
 
-## Initializing Wallet Configurations with `init` Subcommand
+## Saving and using wallet configurations
 
-The `wallet init` sub-command simplifies wallet operations by saving configuration parameters to `config.toml` in the data directory (default `~/.bdk-bitcoin/config.toml`). This allows you to run subsequent `bdk-cli wallet` commands without repeatedly specifying configuration details, easing wallet operations.
+The `wallet config` sub-command allows you to save wallet settings to a `config.toml` file in the default directory (`~/.bdk-bitcoin/`) or custom directory specified with the `--datadir` flag. This eliminate the need to repeatedly specify descriptors, client types, and other parameters for each command. Once configured, you can use any wallet command by simply specifying the wallet name. All other parameters are automatically loaded from the saved configuration.
 
-To initialize a wallet configuration, use the following command structure:
+To save a wallet settings:
 
 ```shell
-cargo run --features <list-of-features> -- -n <network> wallet --wallet <wallet_name> --ext-descriptor <ext_descriptor> --int-descriptor <int_descriptor>  --client-type <client_type>  --url <server_url> [--database-type <database_type>] [--rpc-user <rpc_user>]
-  [--rpc-password <rpc_password>] init
+cargo run --features <list-of-features> -- -n <network> wallet --wallet <wallet_name> config [ -f ] --ext-descriptor <ext_descriptor> --int-descriptor <int_descriptor>  --client-type <client_type>  --url <server_url> [--database-type <database_type>] [--rpc-user <rpc_user>]
+  [--rpc-password <rpc_password>] 
 ```
 
 For example, to initialize a wallet named `my_wallet` with `electrum` as the backend on `signet` network:
 
 ```shell
-cargo run --features electrum -- -n signet wallet -w my_wallet -e "tr(tprv8Z.../0/*)#dtdqk3dx" -i "tr(tprv8Z.../1/*)#ulgptya7" -d sqlite -c electrum -u "ssl://mempool.space:60602" init
+cargo run --features electrum -- -n signet wallet -w my_wallet config -e "tr(tprv8Z.../0/*)#dtdqk3dx" -i "tr(tprv8Z.../1/*)#ulgptya7" -d sqlite -c electrum -u "ssl://mempool.space:60602"
 ```
 
-To overwrite an existing wallet configuration, use the  `--force` flag after the `init` sub-command.
+To overwrite an existing wallet configuration, use the  `--force` flag after the `config` sub-command.
 
-You can omit the following arguments to use their default values:
+#### Using a Configured Wallet
 
-`network`: Defaults to `testnet`
+Once configured, use any wallet command with just the wallet name:
 
-`database_type`: Defaults to `sqlite`
-
-#### Using Saved Configuration
-
-After a wallet is initialized, you can then run `bdk-cli` wallet commands without specifying the parameters, referencing only the wallet subcommand.
-
-For example, with the wallet `my_wallet` initialized, generate a new address and sync the wallet as follow:
 
 ```shell
-cargo run wallet -w my_wallet --use-config new_address
+cargo run --features electrum wallet -w my_wallet new_address
 
-cargo run --features electrum wallet -w my_wallet --use-config sync
+cargo run --features electrum wallet -w my_wallet full_scan
 ```
 
 Note that each wallet has its own configuration, allowing multiple wallets with different configurations.
+
+#### View all saved Wallet Configs
+
+To view all saved wallet configurations:
+
+```shell
+cargo run wallets`
+```
+You can also use the `--pretty` flag for a formatted output.

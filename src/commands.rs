@@ -108,9 +108,6 @@ pub enum CliSubCommand {
         /// Wallet name for this REPL session
         #[arg(env = "WALLET_NAME", short = 'w', long = "wallet", required = true)]
         wallet: String,
-
-        #[command(flatten)]
-        wallet_opts: WalletOpts,
     },
     /// Output Descriptors operations.
     ///
@@ -128,6 +125,8 @@ pub enum CliSubCommand {
         /// Optional key: xprv, xpub, or mnemonic phrase
         key: Option<String>,
     },
+    /// List all saved wallet configurations.
+    Wallets,
 }
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
@@ -187,7 +186,6 @@ pub struct WalletOpts {
     /// Selects the wallet to use.
     #[arg(skip)]
     pub wallet: Option<String>,
-    // #[arg(env = "WALLET_NAME", short = 'w', long = "wallet", required = true)]
     /// Adds verbosity, returns PSBT in JSON format alongside serialized, displays expanded objects.
     #[arg(env = "VERBOSE", short = 'v', long = "verbose")]
     pub verbose: bool,
