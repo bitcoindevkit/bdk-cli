@@ -1150,10 +1150,7 @@ pub async fn handle_hwi_subcommand(
                 #[cfg(feature = "rpc")]
                 cookie: None,
                 #[cfg(feature = "cbf")]
-                compactfilter_opts: CompactFilterOpts {
-                    conn_count: 2,
-                    skip_blocks: None,
-                },
+                compactfilter_opts: CompactFilterOpts { conn_count: 2 },
             };
 
             #[cfg(feature = "sqlite")]
