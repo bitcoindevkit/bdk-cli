@@ -132,6 +132,14 @@ pub enum CliSubCommand {
     },
     /// List all saved wallet configurations.
     Wallets,
+    #[cfg(feature = "hwi")]
+    /// Hardware wallet interface operations.
+    Hwi {
+        #[command(flatten)]
+        hwi_opts: HwiOpts,
+        #[clap(subcommand)]
+        subcommand: HwiSubCommand,
+    },
 }
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
