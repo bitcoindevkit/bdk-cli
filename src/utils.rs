@@ -61,9 +61,7 @@ use bdk_wallet::Wallet;
 use bdk_wallet::{PersistedWallet, WalletPersister};
 
 use bdk_wallet::bip39::{Language, Mnemonic};
-use bdk_wallet::bitcoin::{
-    Address, Network, OutPoint, ScriptBuf, bip32::Xpriv, secp256k1::Secp256k1,
-};
+use bdk_wallet::bitcoin::{bip32::Xpriv, secp256k1::Secp256k1};
 use bdk_wallet::descriptor::Segwitv0;
 use bdk_wallet::keys::{GeneratableKey, GeneratedKey, bip39::WordCount};
 use serde_json::{Value, json};
