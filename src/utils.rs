@@ -18,10 +18,8 @@ use std::path::{Path, PathBuf};
 use crate::commands::WalletOpts;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{
-    Info, LightClient, NodeBuilderExt, Receiver,
-    ScanType::{Recovery, Sync},
-    UnboundedReceiver, Warning,
-    builder::NodeBuilder,
+    BuilderExt, Info, LightClient, Receiver, ScanType::Sync, UnboundedReceiver, Warning,
+    builder::Builder,
 };
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 
@@ -195,12 +193,8 @@ pub(crate) fn new_blockchain_client(
 
         #[cfg(feature = "cbf")]
         ClientType::Cbf => {
-            let scan_type = match wallet_opts.compactfilter_opts.skip_blocks {
-                Some(from_height) => Recovery { from_height },
-                None => Sync,
-            };
-
-            let builder = NodeBuilder::new(_wallet.network());
+            let scan_type = Sync;
+            let builder = Builder::new(_wallet.network());
 
             let client = builder
                 .required_peers(wallet_opts.compactfilter_opts.conn_count)
@@ -299,17 +293,11 @@ pub(crate) fn new_wallet(network: Network, wallet_opts: &WalletOpts) -> Result<W
 
 #[cfg(feature = "cbf")]
 pub async fn trace_logger(
-    mut log_subscriber: Receiver<String>,
     mut info_subcriber: Receiver<Info>,
     mut warning_subscriber: UnboundedReceiver<Warning>,
 ) {
     loop {
         tokio::select! {
-            log = log_subscriber.recv() => {
-                if let Some(log) = log {
-                    tracing::info!("{log}")
-                }
-            }
             info = info_subcriber.recv() => {
                 if let Some(info) = info {
                     tracing::info!("{info}")
@@ -329,7 +317,6 @@ pub async fn trace_logger(
 pub async fn sync_kyoto_client(wallet: &mut Wallet, client: Box<LightClient>) -> Result<(), Error> {
     let LightClient {
         requester,
-        log_subscriber,
         info_subscriber,
         warning_subscriber,
         mut update_subscriber,
@@ -341,9 +328,7 @@ pub async fn sync_kyoto_client(wallet: &mut Wallet, client: Box<LightClient>) ->
         .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {e}")))?;
 
     tokio::task::spawn(async move { node.run().await });
-    tokio::task::spawn(async move {
-        trace_logger(log_subscriber, info_subscriber, warning_subscriber).await
-    });
+    tokio::task::spawn(async move { trace_logger(info_subscriber, warning_subscriber).await });
 
     if !requester.is_running() {
         tracing::error!("Kyoto node is not running");
