@@ -58,7 +58,7 @@ use std::sync::Arc;
 #[cfg(feature = "electrum")]
 use crate::utils::BlockchainClient::Electrum;
 #[cfg(feature = "cbf")]
-use bdk_kyoto::{Info, LightClient};
+use bdk_kyoto::LightClient;
 #[cfg(feature = "compiler")]
 use bdk_wallet::bitcoin::XOnlyPublicKey;
 use bdk_wallet::bitcoin::base64::prelude::*;
@@ -809,7 +809,6 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 KyotoClient { client } => {
                     let LightClient {
                         requester,
-                        mut log_subscriber,
                         mut info_subscriber,
                         mut warning_subscriber,
                         update_subscriber: _,
@@ -823,9 +822,9 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     tokio::task::spawn(async move { node.run().await });
                     tokio::task::spawn(async move {
                         select! {
-                            log = log_subscriber.recv() => {
-                                if let Some(log) = log {
-                                    tracing::info!("{log}");
+                            info = info_subscriber.recv() => {
+                                if let Some(info) = info {
+                                    tracing::info!("{info}");
                                 }
                             },
                             warn = warning_subscriber.recv() => {
@@ -836,29 +835,11 @@ pub(crate) async fn handle_online_wallet_subcommand(
                         }
                     });
                     let txid = tx.compute_txid();
-                    requester
-                        .broadcast_random(tx.clone())
-                        .map_err(|e| Error::Generic(format!("{e}")))?;
-                    tokio::time::timeout(tokio::time::Duration::from_secs(30), async move {
-                        while let Some(info) = info_subscriber.recv().await {
-                            match info {
-                                Info::TxGossiped(wtxid) => {
-                                    tracing::info!("Successfully broadcast WTXID: {wtxid}");
-                                    break;
-                                }
-                                Info::ConnectionsMet => {
-                                    tracing::info!("Rebroadcasting to new connections");
-                                    requester.broadcast_random(tx.clone()).unwrap();
-                                }
-                                _ => tracing::info!("{info}"),
-                            }
-                        }
-                    })
-                    .await
-                    .map_err(|_| {
+                    let wtxid = requester.broadcast_random(tx.clone()).await.map_err(|_| {
                         tracing::warn!("Broadcast was unsuccessful");
                         Error::Generic("Transaction broadcast timed out after 30 seconds".into())
                     })?;
+                    tracing::info!("Successfully broadcast WTXID: {wtxid}");
                     txid
                 }
             };

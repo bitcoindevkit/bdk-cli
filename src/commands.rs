@@ -247,10 +247,6 @@ pub struct CompactFilterOpts {
     /// Sets the number of parallel node connections.
     #[clap(name = "CONNECTIONS", long = "cbf-conn-count", default_value = "2", value_parser = value_parser!(u8).range(1..=15))]
     pub conn_count: u8,
-
-    /// Optionally skip initial `skip_blocks` blocks.
-    #[clap(env = "SKIP_BLOCKS", short = 'k', long = "cbf-skip-blocks")]
-    pub skip_blocks: Option<u32>,
 }
 
 /// Wallet subcommands that can be issued without a blockchain backend.
