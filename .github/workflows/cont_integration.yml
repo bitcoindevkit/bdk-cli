@@ -18,6 +18,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        # hwi (async-hwi) depends on libudev-sys
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev libusb-1.0-0-dev
       - name: Generate cache key
         run: echo "${{ matrix.rust }} ${{ matrix.features }}" | tee .cache_key
       - name: Cache
