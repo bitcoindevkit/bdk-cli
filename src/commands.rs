@@ -13,7 +13,6 @@
 //! All subcommands are defined in the below enums.
 
 #![allow(clippy::large_enum_variant)]
-
 use bdk_wallet::bitcoin::{
     Address, Network, OutPoint, ScriptBuf,
     bip32::{DerivationPath, Xpriv},
@@ -70,8 +69,10 @@ pub enum CliSubCommand {
     /// needs backend like `sync` and `broadcast`, compile the binary with specific backend feature
     /// and use the configuration options below to configure for that backend.
     Wallet {
-        #[command(flatten)]
-        wallet_opts: WalletOpts,
+        /// Selects the wallet to use.
+        #[arg(env = "WALLET_NAME", short = 'w', long = "wallet", required = true)]
+        wallet: String,
+
         #[command(subcommand)]
         subcommand: WalletSubCommand,
     },
@@ -104,14 +105,26 @@ pub enum CliSubCommand {
     /// REPL command loop can be used to make recurring callbacks to an already loaded wallet.
     /// This mode is useful for hands on live testing of wallet operations.
     Repl {
-        #[command(flatten)]
-        wallet_opts: WalletOpts,
+        /// Wallet name for this REPL session
+        #[arg(env = "WALLET_NAME", short = 'w', long = "wallet", required = true)]
+        wallet: String,
     },
+    /// List all saved wallet configurations.
+    Wallets,
 }
 
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
 pub enum WalletSubCommand {
+    /// Save wallet configuration to `config.toml`.
+    Config {
+        /// Overwrite existing wallet configuration if it exists.
+        #[arg(short = 'f', long = "force", default_value_t = false)]
+        force: bool,
+
+        #[command(flatten)]
+        wallet_opts: WalletOpts,
+    },
     #[cfg(any(
         feature = "electrum",
         feature = "esplora",
@@ -156,14 +169,15 @@ pub enum ClientType {
 #[derive(Debug, Args, Clone, PartialEq, Eq)]
 pub struct WalletOpts {
     /// Selects the wallet to use.
-    #[arg(env = "WALLET_NAME", short = 'w', long = "wallet")]
+    #[arg(skip)]
     pub wallet: Option<String>,
+    // #[arg(env = "WALLET_NAME", short = 'w', long = "wallet", required = true)]
     /// Adds verbosity, returns PSBT in JSON format alongside serialized, displays expanded objects.
     #[arg(env = "VERBOSE", short = 'v', long = "verbose")]
     pub verbose: bool,
     /// Sets the descriptor to use for the external addresses.
-    #[arg(env = "EXT_DESCRIPTOR", short = 'e', long)]
-    pub ext_descriptor: Option<String>,
+    #[arg(env = "EXT_DESCRIPTOR", short = 'e', long, required = true)]
+    pub ext_descriptor: String,
     /// Sets the descriptor to use for internal/change addresses.
     #[arg(env = "INT_DESCRIPTOR", short = 'i', long)]
     pub int_descriptor: Option<String>,
