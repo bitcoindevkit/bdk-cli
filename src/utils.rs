@@ -127,6 +127,7 @@ pub(crate) enum BlockchainClient {
     Electrum {
         client: Box<bdk_electrum::BdkElectrumClient<bdk_electrum::electrum_client::Client>>,
         batch_size: usize,
+        validate_domain: bool,
     },
     #[cfg(feature = "esplora")]
     Esplora {
@@ -164,6 +165,7 @@ pub(crate) fn new_blockchain_client(
             BlockchainClient::Electrum {
                 client: Box::new(client),
                 batch_size: wallet_opts.batch_size,
+                validate_domain: wallet_opts.validate_domain,
             }
         }
         #[cfg(feature = "esplora")]

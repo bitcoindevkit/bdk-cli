@@ -9,7 +9,7 @@
 //! Command Handlers
 //!
 //! This module describes all the command handling logic used by bdk-cli.
-
+ use crate::debug;
 use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::*;
 use crate::error::BDKCliError as Error;
@@ -619,7 +619,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
             });
             match client {
                 #[cfg(feature = "electrum")]
-                Electrum { client, batch_size } => {
+                Electrum { client, batch_size,validate_domain } => {
                     // Populate the electrum client's transaction cache so it doesn't re-download transaction we
                     // already have.
                     client
@@ -694,15 +694,16 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     let pc = (100 * progress.consumed()) as f32 / progress.total() as f32;
                     eprintln!("[ SCANNING {pc:03.0}% ] {item}");
                 });
+
             match client {
                 #[cfg(feature = "electrum")]
-                Electrum { client, batch_size } => {
+                Electrum { client, batch_size, validate_domain } => {
                     // Populate the electrum client's transaction cache so it doesn't re-download transaction we
                     // already have.
                     client
                         .populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
 
-                    let update = client.sync(request, batch_size, false)?;
+                    let update = client.sync(request, batch_size, validate_domain)?;
                     wallet.apply_update(update)?;
                 }
                 #[cfg(feature = "esplora")]
@@ -788,6 +789,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 Electrum {
                     client,
                     batch_size: _,
+                    validate_domain,
                 } => client
                     .transaction_broadcast(&tx)
                     .map_err(|e| Error::Generic(e.to_string()))?,
