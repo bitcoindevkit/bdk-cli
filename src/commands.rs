@@ -52,7 +52,7 @@ pub struct CliOpts {
     #[arg(env = "DATADIR", short = 'd', long = "datadir")]
     pub datadir: Option<std::path::PathBuf>,
     /// Output results in pretty format (instead of JSON).
-    #[arg(long = "pretty")]
+    #[arg(long = "pretty", global = true)]
     pub pretty: bool,
     /// Top level cli sub-commands.
     #[command(subcommand)]
