@@ -9,7 +9,6 @@
 //! Command Handlers
 //!
 //! This module describes all the command handling logic used by bdk-cli.
- use crate::debug;
 use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::*;
 use crate::error::BDKCliError as Error;
@@ -619,7 +618,11 @@ pub(crate) async fn handle_online_wallet_subcommand(
             });
             match client {
                 #[cfg(feature = "electrum")]
-                Electrum { client, batch_size,validate_domain } => {
+                Electrum {
+                    client,
+                    batch_size,
+                    validate_domain: _,
+                } => {
                     // Populate the electrum client's transaction cache so it doesn't re-download transaction we
                     // already have.
                     client
@@ -686,7 +689,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
             }
             Ok(serde_json::to_string_pretty(&json!({}))?)
         }
-        Sync => {
+        sync => {
             #[cfg(any(feature = "electrum", feature = "esplora"))]
             let request = wallet
                 .start_sync_with_revealed_spks()
@@ -697,13 +700,17 @@ pub(crate) async fn handle_online_wallet_subcommand(
 
             match client {
                 #[cfg(feature = "electrum")]
-                Electrum { client, batch_size, validate_domain } => {
+                Electrum {
+                    client,
+                    batch_size,
+                    validate_domain,
+                } => {
                     // Populate the electrum client's transaction cache so it doesn't re-download transaction we
                     // already have.
                     client
                         .populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
 
-                    let update = client.sync(request, batch_size, validate_domain)?;
+                    let update = client.sync(request, batch_size, false)?;
                     wallet.apply_update(update)?;
                 }
                 #[cfg(feature = "esplora")]

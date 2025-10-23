@@ -12,9 +12,7 @@
 //! All optional args are defined in the structs below.
 //! All subcommands are defined in the below enums.
 
-
-#[allow(clippy::large_enum_variant)]
-
+#![allow(clippy::large_enum_variant)]
 use bdk_wallet::bitcoin::{
     Address, Network, OutPoint, ScriptBuf,
     bip32::{DerivationPath, Xpriv},
@@ -401,7 +399,7 @@ pub enum OnlineWalletSubCommand {
         stop_gap: usize,
     },
     /// Syncs with the chosen blockchain server.
-   Sync {
+    Sync {
         #[command(flatten)]
         wallet_opts: WalletOpts,
     },
