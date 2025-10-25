@@ -9,19 +9,18 @@
 //! Utility Tools
 //!
 //! This module includes all the utility tools used by the App.
-use crate::error::BDKCliError as Error;
-use std::fmt::Display;
-use std::str::FromStr;
-
-use std::path::{Path, PathBuf};
-
 use crate::commands::WalletOpts;
+use crate::error::BDKCliError as Error;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{
     BuilderExt, Info, LightClient, Receiver, ScanType::Sync, UnboundedReceiver, Warning,
     builder::Builder,
 };
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
+use electrum_client::ConfigBuilder;
+use std::fmt::Display;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 #[cfg(any(
     feature = "electrum",
@@ -160,7 +159,8 @@ pub(crate) fn new_blockchain_client(
     let client = match wallet_opts.client_type {
         #[cfg(feature = "electrum")]
         ClientType::Electrum => {
-            let client = bdk_electrum::electrum_client::Client::new(url)
+            let config = ConfigBuilder::new().validate_domain(true).build();
+            let client = bdk_electrum::electrum_client::Client::from_config(url, config)
                 .map(bdk_electrum::BdkElectrumClient::new)?;
             BlockchainClient::Electrum {
                 client: Box::new(client),

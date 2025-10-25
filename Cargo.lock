@@ -190,6 +190,7 @@ dependencies = [
  "clap",
  "cli-table",
  "dirs",
+ "electrum-client",
  "env_logger",
  "log",
  "serde_json",
