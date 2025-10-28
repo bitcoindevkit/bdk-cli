@@ -159,7 +159,9 @@ pub(crate) fn new_blockchain_client(
     let client = match wallet_opts.client_type {
         #[cfg(feature = "electrum")]
         ClientType::Electrum => {
-            let config = ConfigBuilder::new().validate_domain(true).build();
+            let config = ConfigBuilder::new()
+                .validate_domain(wallet_opts.validate_domain)
+                .build();
             let client = bdk_electrum::electrum_client::Client::from_config(url, config)
                 .map(bdk_electrum::BdkElectrumClient::new)?;
             BlockchainClient::Electrum {
