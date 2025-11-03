@@ -9,7 +9,6 @@
 //! Command Handlers
 //!
 //! This module describes all the command handling logic used by bdk-cli.
-
 use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::*;
 use crate::error::BDKCliError as Error;
@@ -686,7 +685,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
             }
             Ok(serde_json::to_string_pretty(&json!({}))?)
         }
-        Sync => {
+        sync => {
             #[cfg(any(feature = "electrum", feature = "esplora"))]
             let request = wallet
                 .start_sync_with_revealed_spks()
@@ -694,6 +693,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     let pc = (100 * progress.consumed()) as f32 / progress.total() as f32;
                     eprintln!("[ SCANNING {pc:03.0}% ] {item}");
                 });
+
             match client {
                 #[cfg(feature = "electrum")]
                 Electrum { client, batch_size } => {
