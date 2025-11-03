@@ -527,7 +527,9 @@ pub fn handle_offline_wallet_subcommand(
             }
 
             if let Some(utxos) = utxos {
-                tx_builder.add_utxos(&utxos[..]).unwrap();
+                tx_builder
+                    .add_utxos(&utxos[..])
+                    .map_err(|_| bdk_wallet::error::CreateTxError::UnknownUtxo)?;
             }
 
             if let Some(unspendable) = unspendable {
