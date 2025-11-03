@@ -57,7 +57,7 @@ use std::sync::Arc;
 #[cfg(feature = "sp")]
 use {
     bdk_sp::{
-        bitcoin::{PrivateKey, PublicKey, ScriptBuf, XOnlyPublicKey},
+        bitcoin::{PrivateKey, PublicKey, ScriptBuf},
         encoding::SilentPaymentCode,
         send::psbt::derive_sp,
     },
@@ -442,7 +442,7 @@ pub fn handle_offline_wallet_subcommand(
                                 .expect("will fix later");
                         }
                         SinglePubKey::XOnly(xonly) => {
-                            let keys: HashMap<XOnlyPublicKey, PrivateKey> =
+                            let keys: HashMap<bdk_sp::bitcoin::XOnlyPublicKey, PrivateKey> =
                                 [(xonly, prv.key)].into();
                             derive_sp(&mut psbt, &keys, &sp_recipients, &secp)
                                 .expect("will fix later");
