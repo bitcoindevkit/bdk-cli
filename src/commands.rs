@@ -110,6 +110,19 @@ pub enum CliSubCommand {
         #[command(flatten)]
         wallet_opts: WalletOpts,
     },
+    /// Silent payment code generation tool.
+    ///
+    /// Allows the encoding of two public keys into a silent payment code.
+    /// Useful to create silent payment transactions using fake silent payment codes.
+    #[cfg(feature = "sp")]
+    SilentPaymentCode {
+        /// The scan public key to use on the silent payment code.
+        #[arg(long = "scan_public_key")]
+        scan: bdk_sp::bitcoin::secp256k1::PublicKey,
+        /// The spend public key to use on the silent payment code.
+        #[arg(long = "spend_public_key")]
+        spend: bdk_sp::bitcoin::secp256k1::PublicKey,
+    }
 }
 
 /// Wallet operation subcommands.

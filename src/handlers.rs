@@ -1049,6 +1049,30 @@ pub(crate) fn is_final(psbt: &Psbt) -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(feature = "sp")]
+pub(crate) fn handle_sp_subcommand(
+    scan_pubkey: bdk_sp::bitcoin::secp256k1::PublicKey,
+    spend_pubkey: bdk_sp::bitcoin::secp256k1::PublicKey,
+    network: Network,
+    pretty: bool,
+) -> Result<String, Error> {
+    let sp_code = SilentPaymentCode::new_v0(scan_pubkey, spend_pubkey, network);
+    if pretty {
+        let table = vec![vec![
+            "sp_code".cell().bold(true),
+            sp_code.to_string().cell(),
+        ]]
+        .table()
+        .display()
+        .map_err(|e| Error::Generic(e.to_string()))?;
+        Ok(format!("{table}"))
+    } else {
+        Ok(serde_json::to_string_pretty(
+            &json!({"sp_code": sp_code.to_string()}),
+        )?)
+    }
+}
+
 /// Handle a key sub-command
 ///
 /// Key sub-commands are described in [`KeySubCommand`].
@@ -1346,6 +1370,14 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             subcommand: key_subcommand,
         } => {
             let result = handle_key_subcommand(network, key_subcommand, pretty)?;
+            Ok(result)
+        }
+        #[cfg(feature = "sp")]
+        CliSubCommand::SilentPaymentCode {
+            scan,
+            spend
+        } => {
+            let result = handle_sp_subcommand(scan, spend, network, pretty)?;
             Ok(result)
         }
         #[cfg(feature = "compiler")]
