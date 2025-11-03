@@ -103,6 +103,15 @@ pub enum BDKCliError {
     #[cfg(feature = "cbf")]
     #[error("BDK-Kyoto update error: {0}")]
     KyotoUpdateError(#[from] bdk_kyoto::UpdateError),
+
+    #[cfg(any(
+        feature = "electrum",
+        feature = "esplora",
+        feature = "rpc",
+        feature = "cbf",
+    ))]
+    #[error("Reqwest error: {0}")]
+    ReqwestError(#[from] reqwest::Error),
 }
 
 impl From<ExtractTxError> for BDKCliError {

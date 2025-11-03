@@ -9,7 +9,6 @@
 //! Command Handlers
 //!
 //! This module describes all the command handling logic used by bdk-cli.
-
 use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::*;
 use crate::error::BDKCliError as Error;
@@ -52,7 +51,14 @@ use std::convert::TryFrom;
 #[cfg(any(feature = "repl", feature = "electrum", feature = "esplora"))]
 use std::io::Write;
 use std::str::FromStr;
-#[cfg(any(feature = "redb", feature = "compiler"))]
+#[cfg(any(
+    feature = "redb",
+    feature = "compiler",
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
 use std::sync::Arc;
 
 #[cfg(feature = "electrum")]
@@ -72,7 +78,9 @@ use tokio::select;
 ))]
 use {
     crate::commands::OnlineWalletSubCommand::*,
+    crate::payjoin::{PayjoinManager, ohttp::RelayManager},
     bdk_wallet::bitcoin::{Transaction, consensus::Decodable, hex::FromHex},
+    std::sync::Mutex,
 };
 #[cfg(feature = "esplora")]
 use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
@@ -783,67 +791,19 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
-            let txid = match client {
-                #[cfg(feature = "electrum")]
-                Electrum {
-                    client,
-                    batch_size: _,
-                } => client
-                    .transaction_broadcast(&tx)
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-                #[cfg(feature = "esplora")]
-                Esplora {
-                    client,
-                    parallel_requests: _,
-                } => client
-                    .broadcast(&tx)
-                    .await
-                    .map(|()| tx.compute_txid())
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-                #[cfg(feature = "rpc")]
-                RpcClient { client } => client
-                    .send_raw_transaction(&tx)
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-
-                #[cfg(feature = "cbf")]
-                KyotoClient { client } => {
-                    let LightClient {
-                        requester,
-                        mut info_subscriber,
-                        mut warning_subscriber,
-                        update_subscriber: _,
-                        node,
-                    } = *client;
-
-                    let subscriber = tracing_subscriber::FmtSubscriber::new();
-                    tracing::subscriber::set_global_default(subscriber)
-                        .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {e}")))?;
-
-                    tokio::task::spawn(async move { node.run().await });
-                    tokio::task::spawn(async move {
-                        select! {
-                            info = info_subscriber.recv() => {
-                                if let Some(info) = info {
-                                    tracing::info!("{info}");
-                                }
-                            },
-                            warn = warning_subscriber.recv() => {
-                                if let Some(warn) = warn {
-                                    tracing::warn!("{warn}");
-                                }
-                            }
-                        }
-                    });
-                    let txid = tx.compute_txid();
-                    let wtxid = requester.broadcast_random(tx.clone()).await.map_err(|_| {
-                        tracing::warn!("Broadcast was unsuccessful");
-                        Error::Generic("Transaction broadcast timed out after 30 seconds".into())
-                    })?;
-                    tracing::info!("Successfully broadcast WTXID: {wtxid}");
-                    txid
-                }
-            };
+            let txid = broadcast_transaction(&client, tx).await?;
             Ok(serde_json::to_string_pretty(&json!({ "txid": txid }))?)
+        }
+        SendPayjoin {
+            uri,
+            fee_rate,
+            ohttp_relay,
+        } => {
+            let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
+            let mut payjoin_manager = PayjoinManager::new(&client, wallet, relay_manager);
+            return payjoin_manager
+                .send_payjoin(uri, fee_rate, ohttp_relay)
+                .await;
         }
     }
 }
@@ -1317,6 +1277,97 @@ async fn respond(
         writeln!(std::io::stdout(), "Exiting...").map_err(|e| e.to_string())?;
         std::io::stdout().flush().map_err(|e| e.to_string())?;
         Ok(true)
+    }
+}
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+/// Broadcasts a given transaction using the blockchain client.
+pub async fn broadcast_transaction(
+    client: &BlockchainClient,
+    tx: Transaction,
+) -> Result<Txid, Error> {
+    match client {
+        #[cfg(feature = "electrum")]
+        Electrum {
+            client,
+            batch_size: _,
+        } => client
+            .transaction_broadcast(&tx)
+            .map_err(|e| Error::Generic(e.to_string())),
+        #[cfg(feature = "esplora")]
+        Esplora {
+            client,
+            parallel_requests: _,
+        } => client
+            .broadcast(&tx)
+            .await
+            .map(|()| tx.compute_txid())
+            .map_err(|e| Error::Generic(e.to_string())),
+        #[cfg(feature = "rpc")]
+        RpcClient { client } => client
+            .send_raw_transaction(&tx)
+            .map_err(|e| Error::Generic(e.to_string())),
+        #[cfg(feature = "cbf")]
+        KyotoClient { client } => {
+            let LightClient {
+                requester,
+                mut log_subscriber,
+                mut info_subscriber,
+                mut warning_subscriber,
+                update_subscriber: _,
+                node,
+            } = *client;
+
+            let subscriber = tracing_subscriber::FmtSubscriber::new();
+            tracing::subscriber::set_global_default(subscriber)
+                .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {}", e)))?;
+
+            tokio::task::spawn(async move { node.run().await });
+            tokio::task::spawn(async move {
+                select! {
+                    log = log_subscriber.recv() => {
+                        if let Some(log) = log {
+                            tracing::info!("{log}");
+                        }
+                    },
+                    warn = warning_subscriber.recv() => {
+                        if let Some(warn) = warn {
+                            tracing::warn!("{warn}");
+                        }
+                    }
+                }
+            });
+            let txid = tx.compute_txid();
+            requester
+                .broadcast_random(tx.clone())
+                .map_err(|e| Error::Generic(format!("{}", e)))?;
+            tokio::time::timeout(tokio::time::Duration::from_secs(30), async move {
+                while let Some(info) = info_subscriber.recv().await {
+                    match info {
+                        Info::TxGossiped(wtxid) => {
+                            tracing::info!("Successfully broadcast WTXID: {wtxid}");
+                            break;
+                        }
+                        Info::ConnectionsMet => {
+                            tracing::info!("Rebroadcasting to new connections");
+                            requester.broadcast_random(tx.clone()).unwrap();
+                        }
+                        _ => tracing::info!("{info}"),
+                    }
+                }
+            })
+            .await
+            .map_err(|_| {
+                tracing::warn!("Broadcast was unsuccessful");
+                Error::Generic("Transaction broadcast timed out after 30 seconds".into())
+            })?;
+            Ok(txid)
+        }
     }
 }
 
