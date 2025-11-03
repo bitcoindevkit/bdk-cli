@@ -1093,9 +1093,8 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     }
                 };
 
-                let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
-                let blockchain_client =
-                    new_blockchain_client(&wallet_opts, &wallet, database_path)?;
+                let mut wallet = new_persisted_wallet(network, &mut persister, wallet_opts)?;
+                let blockchain_client = new_blockchain_client(wallet_opts, &wallet, database_path)?;
 
                 let result = handle_online_wallet_subcommand(
                     &mut wallet,
@@ -1108,10 +1107,10 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             };
             #[cfg(not(any(feature = "sqlite", feature = "redb")))]
             let result = {
-                let wallet = new_wallet(network, &wallet_opts)?;
+                let wallet = new_wallet(network, wallet_opts)?;
                 let blockchain_client =
-                    crate::utils::new_blockchain_client(&wallet_opts, &wallet, database_path)?;
-                let mut wallet = new_wallet(network, &wallet_opts)?;
+                    crate::utils::new_blockchain_client(wallet_opts, &wallet, database_path)?;
+                let mut wallet = new_wallet(network, wallet_opts)?;
                 handle_online_wallet_subcommand(&mut wallet, blockchain_client, online_subcommand)
                     .await?
             };
@@ -1162,10 +1161,10 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             };
             #[cfg(not(any(feature = "sqlite", feature = "redb")))]
             let result = {
-                let mut wallet = new_wallet(network, &wallet_opts)?;
+                let mut wallet = new_wallet(network, wallet_opts)?;
                 handle_offline_wallet_subcommand(
                     &mut wallet,
-                    &wallet_opts,
+                    wallet_opts,
                     &cli_opts,
                     offline_subcommand.clone(),
                 )?
