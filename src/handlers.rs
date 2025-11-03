@@ -47,20 +47,10 @@ use bdk_wallet::{
 use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
 use serde_json::json;
 #[cfg(feature = "cbf")]
-use {
-    crate::utils::BlockchainClient::KyotoClient,
-    bdk_kyoto::{Info, LightClient},
-    tokio::select,
-};
+use {crate::utils::BlockchainClient::KyotoClient, bdk_kyoto::LightClient, tokio::select};
 
 #[cfg(feature = "electrum")]
 use crate::utils::BlockchainClient::Electrum;
-#[cfg(feature = "cbf")]
-use bdk_kyoto::LightClient;
-#[cfg(feature = "compiler")]
-use bdk_wallet::bitcoin::XOnlyPublicKey;
-use bdk_wallet::bitcoin::base64::prelude::*;
-use serde_json::Value;
 use std::collections::BTreeMap;
 #[cfg(any(feature = "electrum", feature = "esplora"))]
 use std::collections::HashSet;
@@ -1352,44 +1342,23 @@ pub fn handle_descriptor_subcommand(
     pretty: bool,
 ) -> Result<String, Error> {
     let result = match subcommand {
-        DescriptorSubCommand::Generate {
-            r#type,
-            multipath,
-            key,
-        } => {
-            let descriptor_type = DescriptorType::from_bip32_num(r#type)
-                .ok_or_else(|| Error::Generic(format!("Unsupported script type: {type}")))?;
-
-            match (multipath, key) {
-                // generate multipath descriptors with a key
-                (true, Some(key)) => {
-                    if is_mnemonic(&key) {
-                        return Err(Error::Generic(
-                            "Mnemonic not supported for multipath descriptors".to_string(),
-                        ));
-                    }
-                    generate_descriptors(descriptor_type, &key, true)
-                }
+        DescriptorSubCommand::Generate { desc_type, key } => {
+            match key {
                 // generate descriptors with a key or mnemonic
-                (false, Some(key)) => {
+                Some(key) => {
                     if is_mnemonic(&key) {
-                        generate_descriptor_from_mnemonic_string(&key, network, descriptor_type)
+                        generate_descriptor_from_mnemonic(&key, network, &desc_type)
                     } else {
-                        generate_descriptors(descriptor_type, &key, false)
+                        generate_descriptors(&desc_type, &key, network)
                     }
                 }
                 // Generate new mnemonic and descriptors
-                (false, None) => generate_new_descriptor_with_mnemonic(network, descriptor_type),
-                // Invalid case
-                (true, None) => Err(Error::Generic(
-                    "A key is required for multipath descriptors".to_string(),
-                )),
+                None => generate_descriptor_with_mnemonic(network, &desc_type),
             }
         }
     }?;
     format_descriptor_output(&result, pretty)
 }
-
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",

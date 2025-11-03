@@ -17,11 +17,7 @@ use bdk_wallet::bitcoin::{
     Address, Network, OutPoint, ScriptBuf,
     bip32::{DerivationPath, Xpriv},
 };
-use clap::{
-    Args, Parser, Subcommand, ValueEnum,
-    builder::{PossibleValuesParser, TypedValueParser},
-    value_parser,
-};
+use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
 
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
@@ -492,14 +488,10 @@ pub enum DescriptorSubCommand {
         #[arg(
             long = "type",
             short = 't',
-            value_parser = PossibleValuesParser::new(["44", "49", "84", "86"])
-                .map(|s| s.parse::<u8>().unwrap()),
-            default_value = "84"
+            value_parser = ["pkh", "wpkh", "sh", "wsh", "tr"],
+            default_value = "wsh"
         )]
-        r#type: u8,
-        /// Enable multipath descriptors
-        #[arg(long = "multipath", short = 'm', default_value_t = false)]
-        multipath: bool,
+        desc_type: String,
         /// Optional key input
         key: Option<String>,
     },
