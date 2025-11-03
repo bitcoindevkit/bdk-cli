@@ -185,10 +185,6 @@ pub struct WalletOpts {
     #[cfg(feature = "electrum")]
     #[arg(env = "ELECTRUM_BATCH_SIZE", short = 'b', long, default_value = "10")]
     pub batch_size: usize,
-    ///Electrum validate domain option.
-    #[cfg(feature = "electrum")]
-    #[arg(env="VALIDATE_DOMAIN",long = "validate-domain", action = clap::ArgAction::Set, default_value_t = true)]
-    pub validate_domain: bool,
     /// Esplora parallel requests.
     #[cfg(feature = "esplora")]
     #[arg(

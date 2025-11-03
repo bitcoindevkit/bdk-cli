@@ -11,13 +11,13 @@
 //! This module includes all the utility tools used by the App.
 use crate::commands::WalletOpts;
 use crate::error::BDKCliError as Error;
+use bdk_electrum::electrum_client::ConfigBuilder;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{
     BuilderExt, Info, LightClient, Receiver, ScanType::Sync, UnboundedReceiver, Warning,
     builder::Builder,
 };
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
-use electrum_client::ConfigBuilder;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -126,7 +126,6 @@ pub(crate) enum BlockchainClient {
     Electrum {
         client: Box<bdk_electrum::BdkElectrumClient<bdk_electrum::electrum_client::Client>>,
         batch_size: usize,
-        validate_domain: bool,
     },
     #[cfg(feature = "esplora")]
     Esplora {
@@ -159,15 +158,12 @@ pub(crate) fn new_blockchain_client(
     let client = match wallet_opts.client_type {
         #[cfg(feature = "electrum")]
         ClientType::Electrum => {
-            let config = ConfigBuilder::new()
-                .validate_domain(wallet_opts.validate_domain)
-                .build();
+            let config = ConfigBuilder::new().build();
             let client = bdk_electrum::electrum_client::Client::from_config(url, config)
                 .map(bdk_electrum::BdkElectrumClient::new)?;
             BlockchainClient::Electrum {
                 client: Box::new(client),
                 batch_size: wallet_opts.batch_size,
-                validate_domain: wallet_opts.validate_domain,
             }
         }
         #[cfg(feature = "esplora")]

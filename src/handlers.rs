@@ -618,11 +618,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
             });
             match client {
                 #[cfg(feature = "electrum")]
-                Electrum {
-                    client,
-                    batch_size,
-                    validate_domain: _,
-                } => {
+                Electrum { client, batch_size } => {
                     // Populate the electrum client's transaction cache so it doesn't re-download transaction we
                     // already have.
                     client
@@ -700,11 +696,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
 
             match client {
                 #[cfg(feature = "electrum")]
-                Electrum {
-                    client,
-                    batch_size,
-                    validate_domain,
-                } => {
+                Electrum { client, batch_size } => {
                     // Populate the electrum client's transaction cache so it doesn't re-download transaction we
                     // already have.
                     client
@@ -796,7 +788,6 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 Electrum {
                     client,
                     batch_size: _,
-                    validate_domain,
                 } => client
                     .transaction_broadcast(&tx)
                     .map_err(|e| Error::Generic(e.to_string()))?,
