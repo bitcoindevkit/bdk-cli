@@ -52,20 +52,22 @@ pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
 }
 
 #[cfg(feature = "sp")]
-pub(crate) fn parse_sp_code_value_pairs(s: &str) -> Result<(SilentPaymentCode, u64), String> {
+pub(crate) fn parse_sp_code_value_pairs(s: &str) -> Result<(SilentPaymentCode, u64), Error> {
     let parts: Vec<&str> = s.split(':').collect();
     if parts.len() != 2 {
-        return Err(format!("Invalid format '{}'. Expected 'key:value'", s));
+        return Err(Error::Generic(format!(
+            "Invalid format '{}'. Expected 'key:value'",
+            s
+        )));
     }
 
     let value_0 = parts[0].trim();
-    let key = SilentPaymentCode::try_from(value_0)
-        .map_err(|_| format!("Invalid silent payment address: {}", value_0))?;
+    let key = SilentPaymentCode::try_from(value_0)?;
 
     let value = parts[1]
         .trim()
         .parse::<u64>()
-        .map_err(|_| format!("Invalid number '{}' for key '{}'", parts[1], key))?;
+        .map_err(|_| Error::Generic(format!("Invalid number '{}' for key '{}'", parts[1], key)))?;
 
     Ok((key, value))
 }
