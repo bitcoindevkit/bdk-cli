@@ -1344,11 +1344,12 @@ pub fn handle_descriptor_subcommand(
     let result = match subcommand {
         DescriptorSubCommand::Generate { desc_type, key } => {
             match key {
-                // generate descriptors with a key or mnemonic
                 Some(key) => {
                     if is_mnemonic(&key) {
+                        // User provided mnemonic
                         generate_descriptor_from_mnemonic(&key, network, &desc_type)
                     } else {
+                        // User provided xprv/xpub
                         generate_descriptors(&desc_type, &key, network)
                     }
                 }
