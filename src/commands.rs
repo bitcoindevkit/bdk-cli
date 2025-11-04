@@ -14,6 +14,9 @@
 
 #![allow(clippy::large_enum_variant)]
 
+#[cfg(feature = "sp")]
+use {crate::utils::parse_sp_code_value_pairs, bdk_sp::encoding::SilentPaymentCode};
+
 use bdk_wallet::bitcoin::{
     Address, Network, OutPoint, ScriptBuf,
     bip32::{DerivationPath, Xpriv},
@@ -107,6 +110,19 @@ pub enum CliSubCommand {
         #[command(flatten)]
         wallet_opts: WalletOpts,
     },
+    /// Silent payment code generation tool.
+    ///
+    /// Allows the encoding of two public keys into a silent payment code.
+    /// Useful to create silent payment transactions using fake silent payment codes.
+    #[cfg(feature = "sp")]
+    SilentPaymentCode {
+        /// The scan public key to use on the silent payment code.
+        #[arg(long = "scan_public_key")]
+        scan: bdk_sp::bitcoin::secp256k1::PublicKey,
+        /// The spend public key to use on the silent payment code.
+        #[arg(long = "spend_public_key")]
+        spend: bdk_sp::bitcoin::secp256k1::PublicKey,
+    }
 }
 
 /// Wallet operation subcommands.
@@ -276,6 +292,62 @@ pub enum OfflineWalletSubCommand {
         /// Enables Replace-By-Fee (BIP125).
         #[arg(long = "enable_rbf", short = 'r', default_value_t = true)]
         enable_rbf: bool,
+        /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
+        #[arg(long = "offline_signer")]
+        offline_signer: bool,
+        /// Selects which utxos *must* be spent.
+        #[arg(env = "MUST_SPEND_TXID:VOUT", long = "utxos", value_parser = parse_outpoint)]
+        utxos: Option<Vec<OutPoint>>,
+        /// Marks a utxo as unspendable.
+        #[arg(env = "CANT_SPEND_TXID:VOUT", long = "unspendable", value_parser = parse_outpoint)]
+        unspendable: Option<Vec<OutPoint>>,
+        /// Fee rate to use in sat/vbyte.
+        #[arg(env = "SATS_VBYTE", short = 'f', long = "fee_rate")]
+        fee_rate: Option<f32>,
+        /// Selects which policy should be used to satisfy the external descriptor.
+        #[arg(env = "EXT_POLICY", long = "external_policy")]
+        external_policy: Option<String>,
+        /// Selects which policy should be used to satisfy the internal descriptor.
+        #[arg(env = "INT_POLICY", long = "internal_policy")]
+        internal_policy: Option<String>,
+        /// Optionally create an OP_RETURN output containing given String in utf8 encoding (max 80 bytes)
+        #[arg(
+            env = "ADD_STRING",
+            long = "add_string",
+            short = 's',
+            conflicts_with = "add_data"
+        )]
+        add_string: Option<String>,
+        /// Optionally create an OP_RETURN output containing given base64 encoded String. (max 80 bytes)
+        #[arg(
+            env = "ADD_DATA",
+            long = "add_data",
+            short = 'o',
+            conflicts_with = "add_string"
+        )]
+        add_data: Option<String>, //base 64 econding
+    },
+    /// Creates a silent payment transaction
+    ///
+    /// This sub-command is **EXPERIMENTAL** and should only be used for testing. Do not use this
+    /// feature to create transactions that spend actual funds on the Bitcoin mainnet.
+
+    // This command DOES NOT return a PSBT. Instead, it directly returns a signed transaction
+    // ready for broadcast, as it is not yet possible to perform a shared derivation of a silent
+    // payment script pubkey in a secure and trustless manner.
+    #[cfg(feature = "sp")]
+    CreateSpTx {
+        /// Adds a recipient to the transaction.
+        // Clap Doesn't support complex vector parsing https://github.com/clap-rs/clap/issues/1704.
+        // Address and amount parsing is done at run time in handler function.
+        #[arg(env = "ADDRESS:SAT", long = "to", required = false, value_parser = parse_recipient)]
+        recipients: Option<Vec<(ScriptBuf, u64)>>,
+        /// Parse silent payment recipients
+        #[arg(long = "to-sp", required = true, value_parser = parse_sp_code_value_pairs)]
+        silent_payment_recipients: Vec<(SilentPaymentCode, u64)>,
+        /// Sends all the funds (or all the selected utxos). Requires only one recipient with value 0.
+        #[arg(long = "send_all", short = 'a')]
+        send_all: bool,
         /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
         #[arg(long = "offline_signer")]
         offline_signer: bool,

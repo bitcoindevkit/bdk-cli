@@ -21,6 +21,9 @@ pub enum BDKCliError {
     #[error("Create transaction error: {0}")]
     CreateTx(#[from] bdk_wallet::error::CreateTxError),
 
+    #[error("Silent payment address decoding error: {0}")]
+    SilentPaymentParseError(#[from] bdk_sp::encoding::ParseError),
+
     #[error("Descriptor error: {0}")]
     DescriptorError(#[from] bdk_wallet::descriptor::error::Error),
 

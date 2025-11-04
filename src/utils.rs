@@ -21,6 +21,8 @@ use bdk_kyoto::{
     BuilderExt, Info, LightClient, Receiver, ScanType::Sync, UnboundedReceiver, Warning,
     builder::Builder,
 };
+#[cfg(feature = "sp")]
+use bdk_sp::encoding::SilentPaymentCode;
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 
 #[cfg(any(
@@ -47,6 +49,27 @@ pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
     let val = u64::from_str(parts[1]).map_err(|e| e.to_string())?;
 
     Ok((addr.script_pubkey(), val))
+}
+
+#[cfg(feature = "sp")]
+pub(crate) fn parse_sp_code_value_pairs(s: &str) -> Result<(SilentPaymentCode, u64), Error> {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() != 2 {
+        return Err(Error::Generic(format!(
+            "Invalid format '{}'. Expected 'key:value'",
+            s
+        )));
+    }
+
+    let value_0 = parts[0].trim();
+    let key = SilentPaymentCode::try_from(value_0)?;
+
+    let value = parts[1]
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| Error::Generic(format!("Invalid number '{}' for key '{}'", parts[1], key)))?;
+
+    Ok((key, value))
 }
 
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
