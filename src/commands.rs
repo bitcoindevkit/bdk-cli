@@ -111,8 +111,16 @@ pub enum CliSubCommand {
     /// Generate output descriptors from either extended key (Xprv/Xpub) or mnemonic phrase.
     /// This feature is intended for development and testing purposes only.
     Descriptor {
-        #[clap(subcommand)]
-        subcommand: DescriptorSubCommand,
+        /// Descriptor type (script type)
+        #[arg(
+            long = "type",
+            short = 't',
+            value_parser = ["pkh", "wpkh", "sh", "wsh", "tr"],
+            default_value = "wsh"
+        )]
+        desc_type: String,
+        /// Optional key: xprv, xpub, or mnemonic phrase
+        key: Option<String>,
     },
 }
 /// Wallet operation subcommands.
@@ -476,14 +484,8 @@ pub enum ReplSubCommand {
         #[command(subcommand)]
         subcommand: KeySubCommand,
     },
-    /// Exit REPL loop.
-    Exit,
-}
-/// Subcommands for Key operations.
-#[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
-pub enum DescriptorSubCommand {
-    /// Generate a descriptor
-    Generate {
+    /// Generate descriptors
+    Descriptor {
         /// Descriptor type (script type).
         #[arg(
             long = "type",
@@ -492,7 +494,9 @@ pub enum DescriptorSubCommand {
             default_value = "wsh"
         )]
         desc_type: String,
-        /// Optional key input
+        /// Optional key: xprv, xpub, or mnemonic phrase
         key: Option<String>,
     },
+    /// Exit REPL loop.
+    Exit,
 }

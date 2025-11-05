@@ -1256,11 +1256,8 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             }
             Ok("".to_string())
         }
-        CliSubCommand::Descriptor {
-            subcommand: descriptor_subcommand,
-        } => {
-            let network = cli_opts.network;
-            let descriptor = handle_descriptor_subcommand(network, descriptor_subcommand, pretty)?;
+        CliSubCommand::Descriptor { desc_type, key } => {
+            let descriptor = handle_descriptor_command(cli_opts.network, desc_type, key, pretty)?;
             Ok(descriptor)
         }
     };
@@ -1310,6 +1307,11 @@ async fn respond(
                 .map_err(|e| e.to_string())?;
             Some(value)
         }
+        ReplSubCommand::Descriptor { desc_type, key } => {
+            let value = handle_descriptor_command(network, desc_type, key, cli_opts.pretty)
+                .map_err(|e| e.to_string())?;
+            Some(value)
+        }
         ReplSubCommand::Exit => None,
     };
     if let Some(value) = response {
@@ -1336,30 +1338,29 @@ fn readline() -> Result<String, Error> {
     Ok(buffer)
 }
 
-pub fn handle_descriptor_subcommand(
+/// Handle the descriptor command
+pub fn handle_descriptor_command(
     network: Network,
-    subcommand: DescriptorSubCommand,
+    desc_type: String,
+    key: Option<String>,
     pretty: bool,
 ) -> Result<String, Error> {
-    let result = match subcommand {
-        DescriptorSubCommand::Generate { desc_type, key } => {
-            match key {
-                Some(key) => {
-                    if is_mnemonic(&key) {
-                        // User provided mnemonic
-                        generate_descriptor_from_mnemonic(&key, network, &desc_type)
-                    } else {
-                        // User provided xprv/xpub
-                        generate_descriptors(&desc_type, &key, network)
-                    }
-                }
-                // Generate new mnemonic and descriptors
-                None => generate_descriptor_with_mnemonic(network, &desc_type),
+    let result = match key {
+        Some(key) => {
+            if is_mnemonic(&key) {
+                // User provided mnemonic
+                generate_descriptor_from_mnemonic(&key, network, &desc_type)
+            } else {
+                // User provided xprv/xpub
+                generate_descriptors(&desc_type, &key, network)
             }
         }
+        // Generate new mnemonic and descriptors
+        None => generate_descriptor_with_mnemonic(network, &desc_type),
     }?;
     format_descriptor_output(&result, pretty)
 }
+
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
