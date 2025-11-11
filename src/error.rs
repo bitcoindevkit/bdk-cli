@@ -5,8 +5,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum BDKCliError {
-    #[error("BIP39 error: {0}")]
-    BIP39Error(#[from] bdk_wallet::bip39::Error),
+    #[error("BIP39 error: {0:?}")]
+    BIP39Error(#[from] Option<bdk_wallet::bip39::Error>),
 
     #[error("BIP32 error: {0}")]
     BIP32Error(#[from] bdk_wallet::bitcoin::bip32::Error),

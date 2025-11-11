@@ -13,7 +13,6 @@
 //! All subcommands are defined in the below enums.
 
 #![allow(clippy::large_enum_variant)]
-
 use bdk_wallet::bitcoin::{
     Address, Network, OutPoint, ScriptBuf,
     bip32::{DerivationPath, Xpriv},
@@ -107,8 +106,23 @@ pub enum CliSubCommand {
         #[command(flatten)]
         wallet_opts: WalletOpts,
     },
+    /// Output Descriptors operations.
+    ///
+    /// Generate output descriptors from either extended key (Xprv/Xpub) or mnemonic phrase.
+    /// This feature is intended for development and testing purposes only.
+    Descriptor {
+        /// Descriptor type (script type)
+        #[arg(
+            long = "type",
+            short = 't',
+            value_parser = ["pkh", "wpkh", "sh", "wsh", "tr"],
+            default_value = "wsh"
+        )]
+        desc_type: String,
+        /// Optional key: xprv, xpub, or mnemonic phrase
+        key: Option<String>,
+    },
 }
-
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
 pub enum WalletSubCommand {
@@ -469,6 +483,19 @@ pub enum ReplSubCommand {
     Key {
         #[command(subcommand)]
         subcommand: KeySubCommand,
+    },
+    /// Generate descriptors
+    Descriptor {
+        /// Descriptor type (script type).
+        #[arg(
+            long = "type",
+            short = 't',
+            value_parser = ["pkh", "wpkh", "sh", "wsh", "tr"],
+            default_value = "wsh"
+        )]
+        desc_type: String,
+        /// Optional key: xprv, xpub, or mnemonic phrase
+        key: Option<String>,
     },
     /// Exit REPL loop.
     Exit,

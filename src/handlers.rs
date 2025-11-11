@@ -15,12 +15,12 @@ use crate::commands::*;
 use crate::error::BDKCliError as Error;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 use crate::persister::Persister;
-#[cfg(feature = "cbf")]
-use crate::utils::BlockchainClient::KyotoClient;
 use crate::utils::*;
 #[cfg(feature = "redb")]
 use bdk_redb::Store as RedbStore;
 use bdk_wallet::bip39::{Language, Mnemonic};
+use bdk_wallet::bitcoin::base64::Engine;
+use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::{
     Address, Amount, FeeRate, Network, Psbt, Sequence, Txid,
     bip32::{DerivationPath, KeySource},
@@ -40,11 +40,17 @@ use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::{KeychainKind, SignOptions, Wallet};
 #[cfg(feature = "compiler")]
 use bdk_wallet::{
+    bitcoin::XOnlyPublicKey,
     descriptor::{Descriptor, Legacy, Miniscript},
     miniscript::{Tap, descriptor::TapTree, policy::Concrete},
 };
 use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
 use serde_json::json;
+#[cfg(feature = "cbf")]
+use {crate::utils::BlockchainClient::KyotoClient, bdk_kyoto::LightClient, tokio::select};
+
+#[cfg(feature = "electrum")]
+use crate::utils::BlockchainClient::Electrum;
 use std::collections::BTreeMap;
 #[cfg(any(feature = "electrum", feature = "esplora"))]
 use std::collections::HashSet;
@@ -54,16 +60,6 @@ use std::io::Write;
 use std::str::FromStr;
 #[cfg(any(feature = "redb", feature = "compiler"))]
 use std::sync::Arc;
-
-#[cfg(feature = "electrum")]
-use crate::utils::BlockchainClient::Electrum;
-#[cfg(feature = "cbf")]
-use bdk_kyoto::LightClient;
-#[cfg(feature = "compiler")]
-use bdk_wallet::bitcoin::XOnlyPublicKey;
-use bdk_wallet::bitcoin::base64::prelude::*;
-#[cfg(feature = "cbf")]
-use tokio::select;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -1260,6 +1256,10 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             }
             Ok("".to_string())
         }
+        CliSubCommand::Descriptor { desc_type, key } => {
+            let descriptor = handle_descriptor_command(cli_opts.network, desc_type, key, pretty)?;
+            Ok(descriptor)
+        }
     };
     result
 }
@@ -1307,6 +1307,11 @@ async fn respond(
                 .map_err(|e| e.to_string())?;
             Some(value)
         }
+        ReplSubCommand::Descriptor { desc_type, key } => {
+            let value = handle_descriptor_command(network, desc_type, key, cli_opts.pretty)
+                .map_err(|e| e.to_string())?;
+            Some(value)
+        }
         ReplSubCommand::Exit => None,
     };
     if let Some(value) = response {
@@ -1333,6 +1338,35 @@ fn readline() -> Result<String, Error> {
     Ok(buffer)
 }
 
+/// Handle the descriptor command
+pub fn handle_descriptor_command(
+    network: Network,
+    desc_type: String,
+    key: Option<String>,
+    pretty: bool,
+) -> Result<String, Error> {
+    let result = match key {
+        Some(key) => {
+            if is_mnemonic(&key) {
+                // User provided mnemonic
+                generate_descriptor_from_mnemonic(&key, network, &desc_type)
+            } else {
+                // User provided xprv/xpub
+                generate_descriptors(&desc_type, &key, network)
+            }
+        }
+        // Generate new mnemonic and descriptors
+        None => generate_descriptor_with_mnemonic(network, &desc_type),
+    }?;
+    format_descriptor_output(&result, pretty)
+}
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
 #[cfg(test)]
 mod test {
     #[cfg(any(
