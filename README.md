@@ -202,3 +202,44 @@ You can optionally return outputs of commands in  human-readable, tabular format
 cargo run --pretty -n signet wallet -w {wallet_name} -d sqlite balance
 ```
 This is available for wallet, key, repl and compile features. When ommitted, outputs default to `JSON`.
+
+## Saving and using wallet configurations
+
+The `wallet config` sub-command allows you to save wallet settings to a `config.toml` file in the default directory (`~/.bdk-bitcoin/`) or custom directory specified with the `--datadir` flag. This eliminate the need to repeatedly specify descriptors, client types, and other parameters for each command. Once configured, you can use any wallet command by simply specifying the wallet name. All other parameters are automatically loaded from the saved configuration.
+
+To save a wallet settings:
+
+```shell
+cargo run --features <list-of-features> -- -n <network> wallet --wallet <wallet_name> config [ -f ] --ext-descriptor <ext_descriptor> --int-descriptor <int_descriptor>  --client-type <client_type>  --url <server_url> [--database-type <database_type>] [--rpc-user <rpc_user>]
+  [--rpc-password <rpc_password>] 
+```
+
+For example, to initialize a wallet named `my_wallet` with `electrum` as the backend on `signet` network:
+
+```shell
+cargo run --features electrum -- -n signet wallet -w my_wallet config -e "tr(tprv8Z.../0/*)#dtdqk3dx" -i "tr(tprv8Z.../1/*)#ulgptya7" -d sqlite -c electrum -u "ssl://mempool.space:60602"
+```
+
+To overwrite an existing wallet configuration, use the  `--force` flag after the `config` sub-command.
+
+#### Using a Configured Wallet
+
+Once configured, use any wallet command with just the wallet name:
+
+
+```shell
+cargo run --features electrum wallet -w my_wallet new_address
+
+cargo run --features electrum wallet -w my_wallet full_scan
+```
+
+Note that each wallet has its own configuration, allowing multiple wallets with different configurations.
+
+#### View all saved Wallet Configs
+
+To view all saved wallet configurations:
+
+```shell
+cargo run wallets`
+```
+You can also use the `--pretty` flag for a formatted output.
