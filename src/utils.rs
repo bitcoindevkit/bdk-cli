@@ -620,3 +620,31 @@ pub fn format_descriptor_output(result: &Value, pretty: bool) -> Result<String, 
 
     Ok(format!("{table}"))
 }
+
+pub fn load_wallet_config(
+    home_dir: &Path,
+    wallet_name: &str,
+) -> Result<(WalletOpts, Network), Error> {
+    let config = WalletConfig::load(home_dir)?.ok_or(Error::Generic(format!(
+        "No config found for wallet {wallet_name}",
+    )))?;
+
+    let wallet_opts = config.get_wallet_opts(wallet_name)?;
+    let wallet_config = config
+        .wallets
+        .get(wallet_name)
+        .ok_or(Error::Generic(format!(
+            "Wallet '{wallet_name}' not found in config"
+        )))?;
+
+    let network = match wallet_config.network.as_str() {
+        "bitcoin" => Ok(Network::Bitcoin),
+        "testnet" => Ok(Network::Testnet),
+        "regtest" => Ok(Network::Regtest),
+        "signet" => Ok(Network::Signet),
+        "testnet4" => Ok(Network::Testnet4),
+        _ => Err(Error::Generic("Invalid network in config".to_string())),
+    }?;
+
+    Ok((wallet_opts, network))
+}

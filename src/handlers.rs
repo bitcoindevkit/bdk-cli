@@ -69,13 +69,6 @@ use std::str::FromStr;
 ))]
 use std::sync::Arc;
 
-#[cfg(feature = "electrum")]
-use crate::utils::BlockchainClient::Electrum;
-#[cfg(feature = "cbf")]
-use bdk_kyoto::LightClient;
-use bdk_wallet::bitcoin::base64::prelude::*;
-#[cfg(feature = "cbf")]
-use tokio::select;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -760,8 +753,8 @@ pub fn handle_config_subcommand(
 ) -> Result<String, Error> {
     if network == Network::Bitcoin {
         eprintln!(
-            "WARNING: You are configuring a wallet for Bitcoin MAINNET.\n\
-             This software is experimental and not recommended for use with real funds.\n\
+            "WARNING: You are configuring a wallet for Bitcoin MAINNET.
+             This software is experimental and not recommended for use with real funds.
              Consider using a testnet for testing purposes. \n"
         );
     }
@@ -771,18 +764,18 @@ pub fn handle_config_subcommand(
 
     if ext_descriptor.contains("xprv") || ext_descriptor.contains("tprv") {
         eprintln!(
-            "WARNING: Your external descriptor contains PRIVATE KEYS.\n\
-             Private keys will be saved in PLAINTEXT in the config file.\n\
-             This is a security risk. Consider using public descriptors instead."
+            "WARNING: Your external descriptor contains PRIVATE KEYS.
+             Private keys will be saved in PLAINTEXT in the config file.
+             This is a security risk. Consider using public descriptors instead.\n"
         );
     }
 
     if let Some(ref internal_desc) = int_descriptor {
         if internal_desc.contains("xprv") || internal_desc.contains("tprv") {
             eprintln!(
-                "WARNING: Your internal descriptor contains PRIVATE KEYS.\n\
-                 Private keys will be saved in PLAINTEXT in the config file.\n\
-                 This is a security risk. Consider using public descriptors instead."
+                "WARNING: Your internal descriptor contains PRIVATE KEYS.
+                 Private keys will be saved in PLAINTEXT in the config file.
+                 This is a security risk. Consider using public descriptors instead.\n"
             );
         }
     }
@@ -1249,8 +1242,9 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     }
                 };
 
-                let mut wallet = new_persisted_wallet(network, &mut persister, wallet_opts)?;
-                let blockchain_client = new_blockchain_client(wallet_opts, &wallet, database_path)?;
+                let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
+                let blockchain_client =
+                    new_blockchain_client(&wallet_opts, &wallet, database_path)?;
 
                 let result = handle_online_wallet_subcommand(
                     &mut wallet,
@@ -1314,10 +1308,10 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             };
             #[cfg(not(any(feature = "sqlite", feature = "redb")))]
             let result = {
-                let mut wallet = new_wallet(network, wallet_opts)?;
+                let mut wallet = new_wallet(network, &wallet_opts)?;
                 handle_offline_wallet_subcommand(
                     &mut wallet,
-                    wallet_opts,
+                    &wallet_opts,
                     &cli_opts,
                     offline_subcommand.clone(),
                 )?
