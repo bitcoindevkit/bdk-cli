@@ -40,17 +40,14 @@ use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::{KeychainKind, SignOptions, Wallet};
 
 #[cfg(feature = "compiler")]
-use {
-    bdk_wallet::{
-        bitcoin::{
-            XOnlyPublicKey,
-            key::{Parity, rand},
-            secp256k1::PublicKey,
-        },
-        descriptor::{Descriptor, Legacy, Miniscript},
-        miniscript::{Tap, descriptor::TapTree, policy::Concrete},
+use bdk_wallet::{
+    bitcoin::{
+        XOnlyPublicKey,
+        key::{Parity, rand},
+        secp256k1::PublicKey,
     },
-    serde::Serialize,
+    descriptor::{Descriptor, Legacy, Miniscript},
+    miniscript::{Tap, descriptor::TapTree, policy::Concrete},
 };
 
 use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
@@ -1011,13 +1008,6 @@ pub(crate) fn handle_compile_subcommand(
     let segwit_policy: Miniscript<String, Segwitv0> = policy.compile()?;
     let taproot_policy: Miniscript<String, Tap> = policy.compile()?;
 
-    #[derive(Serialize)]
-    struct CompileSubcommandOutput {
-        descriptor: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        r: Option<String>,
-    }
-
     let mut r = None;
 
     let descriptor = match script_type.as_str() {
@@ -1048,20 +1038,13 @@ pub(crate) fn handle_compile_subcommand(
                 "Invalid script type. Supported types: sh, wsh, sh-wsh, tr".to_string(),
             ));
         }
-    }?;
-
-    let compile_subcmd_output = CompileSubcommandOutput {
-        descriptor: descriptor.to_string(),
-        r,
-    };
+    }?
+    .to_string();
 
     if pretty {
-        let mut rows = vec![vec![
-            "Descriptor".cell().bold(true),
-            compile_subcmd_output.descriptor.cell(),
-        ]];
+        let mut rows = vec![vec!["Descriptor".cell().bold(true), descriptor.cell()]];
 
-        if let Some(r_value) = &compile_subcmd_output.r {
+        if let Some(r_value) = &r {
             rows.push(vec!["r".cell().bold(true), r_value.cell()]);
         }
 
@@ -1071,7 +1054,11 @@ pub(crate) fn handle_compile_subcommand(
             .map_err(|e| Error::Generic(e.to_string()))?;
         Ok(format!("{table}"))
     } else {
-        Ok(serde_json::to_string_pretty(&compile_subcmd_output)?)
+        let mut output = json!({"descriptor": descriptor});
+        if let Some(r_value) = r {
+            output["r"] = json!(r_value);
+        }
+        Ok(serde_json::to_string_pretty(&output)?)
     }
 }
 
