@@ -10,34 +10,61 @@
 //!
 //! Tests for compile command and subcommands
 
-use std::process::{Command, Output};
+use std::process::Command;
 
-fn run_cmd(cmd: &str) -> Output {
-    Command::new("cargo")
-        .args(format!("run -- {}", cmd).split_whitespace())
-        .output()
-        .unwrap()
+fn run_cmd(cmd: &str) -> Result<String, String> {
+    let full_cmd = format!("run --features compiler -- {}", cmd);
+    let args = shlex::split(&full_cmd).unwrap();
+
+    let output = Command::new("cargo").args(args).output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if output.status.success() {
+        Ok(stdout)
+    } else {
+        Err(stderr)
+    }
+}
+
+#[test]
+fn test_compile_taproot() {
+    let stdout = run_cmd(r#"compile "pk(ABC)" -t tr"#).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+
+    assert!(json.get("descriptor").is_some());
+    assert!(json.get("r").is_some());
+}
+
+#[test]
+fn test_compile_sh() {
+    let stdout = run_cmd(r#"compile "pk(ABC)" -t sh"#).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+
+    assert!(json.get("descriptor").is_some());
+    assert!(json.get("r").is_none());
 }
 
 #[test]
 fn test_invalid_cases() {
     // Test invalid policy syntax
-    let output = run_cmd("compile invalid_policy");
-    assert!(!output.status.success());
+    let stderr = run_cmd(r#"compile "invalid_policy""#).unwrap_err();
+    assert!(stderr.contains("Miniscript error"));
 
     // Test invalid script type
-    let output = run_cmd("compile pk(A) -t invalid_type");
-    assert!(!output.status.success());
+    let stderr = run_cmd(r#"compile "pk(A)" -t invalid_type"#).unwrap_err();
+    assert!(stderr.contains("error: invalid value 'invalid_type' for '--type <SCRIPT_TYPE>'"));
 
     // Test empty policy
-    let output = run_cmd("compile");
-    assert!(!output.status.success());
+    let stderr = run_cmd("compile").unwrap_err();
+    assert!(stderr.contains("error: the following required arguments were not provided"));
+    assert!(stderr.contains("<POLICY>"));
 
     // Test malformed policy with unmatched parentheses
-    let output = run_cmd(r#"compile "pk(A"#);
-    assert!(!output.status.success());
+    let stderr = run_cmd(r#"compile "pk(A""#).unwrap_err();
+    assert!(stderr.contains("Miniscript error: expected )"));
 
     // Test policy with unknown function
-    let output = run_cmd(r#"compile "unknown_func(A)"#);
-    assert!(!output.status.success());
+    let stderr = run_cmd(r#"compile "unknown_func(A)""#).unwrap_err();
+    assert!(stderr.contains("Miniscript error: unexpected «unknown_func»"));
 }
