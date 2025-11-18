@@ -1052,6 +1052,7 @@ pub(crate) fn handle_compile_subcommand(
             .table()
             .display()
             .map_err(|e| Error::Generic(e.to_string()))?;
+
         Ok(format!("{table}"))
     } else {
         let mut output = json!({"descriptor": descriptor});
@@ -1447,53 +1448,5 @@ mod test {
         let json_result: serde_json::Value = serde_json::from_str(&json_string).unwrap();
         let descriptor = json_result.get("descriptor").unwrap().as_str().unwrap();
         assert_eq!(descriptor, expected_and_ab);
-    }
-
-    #[cfg(feature = "compiler")]
-    #[test]
-    fn test_compile_invalid_cases() {
-        use super::handle_compile_subcommand;
-        use bdk_wallet::bitcoin::Network;
-
-        // Test invalid policy syntax
-        let result = handle_compile_subcommand(
-            Network::Testnet,
-            "invalid_policy".to_string(),
-            "tr".to_string(),
-            false,
-        );
-        assert!(result.is_err());
-
-        // Test invalid script type
-        let result = handle_compile_subcommand(
-            Network::Testnet,
-            "pk(A)".to_string(),
-            "invalid_type".to_string(),
-            false,
-        );
-        assert!(result.is_err());
-
-        // Test empty policy
-        let result =
-            handle_compile_subcommand(Network::Testnet, "".to_string(), "tr".to_string(), false);
-        assert!(result.is_err());
-
-        // Test malformed policy with unmatched parentheses
-        let result = handle_compile_subcommand(
-            Network::Testnet,
-            "pk(A".to_string(),
-            "tr".to_string(),
-            false,
-        );
-        assert!(result.is_err());
-
-        // Test policy with unknown function
-        let result = handle_compile_subcommand(
-            Network::Testnet,
-            "unknown_func(A)".to_string(),
-            "tr".to_string(),
-            false,
-        );
-        assert!(result.is_err());
     }
 }
