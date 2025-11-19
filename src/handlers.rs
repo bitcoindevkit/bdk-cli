@@ -9,7 +9,6 @@
 //! Command Handlers
 //!
 //! This module describes all the command handling logic used by bdk-cli.
-
 use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::*;
 use crate::error::BDKCliError as Error;
@@ -714,6 +713,18 @@ pub(crate) async fn handle_online_wallet_subcommand(
             };
             let txid = broadcast_transaction(client, tx).await?;
             Ok(serde_json::to_string_pretty(&json!({ "txid": txid }))?)
+        }
+        ReceivePayjoin {
+            amount,
+            directory,
+            ohttp_relay,
+            max_fee_rate,
+        } => {
+            let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
+            let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);
+            return payjoin_manager
+                .receive_payjoin(amount, directory, max_fee_rate, ohttp_relay, client)
+                .await;
         }
         SendPayjoin {
             uri,
