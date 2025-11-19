@@ -58,7 +58,14 @@ use std::convert::TryFrom;
 #[cfg(any(feature = "repl", feature = "electrum", feature = "esplora"))]
 use std::io::Write;
 use std::str::FromStr;
-#[cfg(any(feature = "redb", feature = "compiler"))]
+#[cfg(any(
+    feature = "redb",
+    feature = "compiler",
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
 use std::sync::Arc;
 #[cfg(any(
     feature = "electrum",
@@ -68,7 +75,9 @@ use std::sync::Arc;
 ))]
 use {
     crate::commands::OnlineWalletSubCommand::*,
+    crate::payjoin::{PayjoinManager, ohttp::RelayManager},
     bdk_wallet::bitcoin::{Transaction, consensus::Decodable, hex::FromHex},
+    std::sync::Mutex,
 };
 #[cfg(feature = "esplora")]
 use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
@@ -705,6 +714,17 @@ pub(crate) async fn handle_online_wallet_subcommand(
             };
             let txid = broadcast_transaction(client, tx).await?;
             Ok(serde_json::to_string_pretty(&json!({ "txid": txid }))?)
+        }
+        SendPayjoin {
+            uri,
+            ohttp_relay,
+            fee_rate,
+        } => {
+            let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
+            let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);
+            return payjoin_manager
+                .send_payjoin(uri, fee_rate, ohttp_relay, client)
+                .await;
         }
     }
 }
