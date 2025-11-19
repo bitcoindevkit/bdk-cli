@@ -703,66 +703,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
-            let txid = match client {
-                #[cfg(feature = "electrum")]
-                Electrum {
-                    client,
-                    batch_size: _,
-                } => client
-                    .transaction_broadcast(&tx)
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-                #[cfg(feature = "esplora")]
-                Esplora {
-                    client,
-                    parallel_requests: _,
-                } => client
-                    .broadcast(&tx)
-                    .await
-                    .map(|()| tx.compute_txid())
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-                #[cfg(feature = "rpc")]
-                RpcClient { client } => client
-                    .send_raw_transaction(&tx)
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-
-                #[cfg(feature = "cbf")]
-                KyotoClient { client } => {
-                    let LightClient {
-                        requester,
-                        mut info_subscriber,
-                        mut warning_subscriber,
-                        update_subscriber: _,
-                        node,
-                    } = *client;
-
-                    let subscriber = tracing_subscriber::FmtSubscriber::new();
-                    tracing::subscriber::set_global_default(subscriber)
-                        .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {e}")))?;
-
-                    tokio::task::spawn(async move { node.run().await });
-                    tokio::task::spawn(async move {
-                        select! {
-                            info = info_subscriber.recv() => {
-                                if let Some(info) = info {
-                                    tracing::info!("{info}");
-                                }
-                            },
-                            warn = warning_subscriber.recv() => {
-                                if let Some(warn) = warn {
-                                    tracing::warn!("{warn}");
-                                }
-                            }
-                        }
-                    });
-                    let txid = tx.compute_txid();
-                    let wtxid = requester.broadcast_random(tx.clone()).await.map_err(|_| {
-                        tracing::warn!("Broadcast was unsuccessful");
-                        Error::Generic("Transaction broadcast timed out after 30 seconds".into())
-                    })?;
-                    tracing::info!("Successfully broadcast WTXID: {wtxid}");
-                    txid
-                }
-            };
+            let txid = broadcast_transaction(client, tx).await?;
             Ok(serde_json::to_string_pretty(&json!({ "txid": txid }))?)
         }
     }
@@ -1337,6 +1278,79 @@ pub async fn sync_wallet(client: BlockchainClient, wallet: &mut Wallet) -> Resul
         KyotoClient { client } => sync_kyoto_client(wallet, client)
             .await
             .map_err(|e| Error::Generic(e.to_string())),
+    }
+}
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+/// Broadcasts a given transaction using the blockchain client.
+pub async fn broadcast_transaction(
+    client: BlockchainClient,
+    tx: Transaction,
+) -> Result<Txid, Error> {
+    match client {
+        #[cfg(feature = "electrum")]
+        Electrum {
+            client,
+            batch_size: _,
+        } => client
+            .transaction_broadcast(&tx)
+            .map_err(|e| Error::Generic(e.to_string())),
+        #[cfg(feature = "esplora")]
+        Esplora {
+            client,
+            parallel_requests: _,
+        } => client
+            .broadcast(&tx)
+            .await
+            .map(|()| tx.compute_txid())
+            .map_err(|e| Error::Generic(e.to_string())),
+        #[cfg(feature = "rpc")]
+        RpcClient { client } => client
+            .send_raw_transaction(&tx)
+            .map_err(|e| Error::Generic(e.to_string())),
+
+        #[cfg(feature = "cbf")]
+        KyotoClient { client } => {
+            let LightClient {
+                requester,
+                mut info_subscriber,
+                mut warning_subscriber,
+                update_subscriber: _,
+                node,
+            } = *client;
+
+            let subscriber = tracing_subscriber::FmtSubscriber::new();
+            tracing::subscriber::set_global_default(subscriber)
+                .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {e}")))?;
+
+            tokio::task::spawn(async move { node.run().await });
+            tokio::task::spawn(async move {
+                select! {
+                    info = info_subscriber.recv() => {
+                        if let Some(info) = info {
+                            tracing::info!("{info}");
+                        }
+                    },
+                    warn = warning_subscriber.recv() => {
+                        if let Some(warn) = warn {
+                            tracing::warn!("{warn}");
+                        }
+                    }
+                }
+            });
+            let txid = tx.compute_txid();
+            let wtxid = requester.broadcast_random(tx.clone()).await.map_err(|_| {
+                tracing::warn!("Broadcast was unsuccessful");
+                Error::Generic("Transaction broadcast timed out after 30 seconds".into())
+            })?;
+            tracing::info!("Successfully broadcast WTXID: {wtxid}");
+            Ok(txid)
+        }
     }
 }
 
