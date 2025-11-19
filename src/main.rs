@@ -13,6 +13,13 @@
 mod commands;
 mod error;
 mod handlers;
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+mod payjoin;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 mod persister;
 mod utils;
