@@ -159,7 +159,15 @@ pub(crate) enum BlockchainClient {
     },
 
     #[cfg(feature = "cbf")]
-    KyotoClient { client: Box<LightClient> },
+    KyotoClient { client: KyotoClientHandle },
+}
+
+/// Handle for the Kyoto client after the node has been started.
+/// Contains only the components needed for sync and broadcast operations.
+#[cfg(feature = "cbf")]
+pub struct KyotoClientHandle {
+    pub requester: bdk_kyoto::Requester,
+    pub update_subscriber: tokio::sync::Mutex<bdk_kyoto::UpdateSubscriber>,
 }
 
 #[cfg(any(
@@ -216,13 +224,32 @@ pub(crate) fn new_blockchain_client(
             let scan_type = Sync;
             let builder = Builder::new(_wallet.network());
 
-            let client = builder
+            let light_client = builder
                 .required_peers(wallet_opts.compactfilter_opts.conn_count)
                 .data_dir(&_datadir)
                 .build_with_wallet(_wallet, scan_type)?;
 
+            let LightClient {
+                requester,
+                info_subscriber,
+                warning_subscriber,
+                update_subscriber,
+                node,
+            } = light_client;
+
+            let subscriber = tracing_subscriber::FmtSubscriber::new();
+            let _ = tracing::subscriber::set_global_default(subscriber);
+
+            tokio::task::spawn(async move { node.run().await });
+            tokio::task::spawn(
+                async move { trace_logger(info_subscriber, warning_subscriber).await },
+            );
+
             BlockchainClient::KyotoClient {
-                client: Box::new(client),
+                client: KyotoClientHandle {
+                    requester,
+                    update_subscriber: tokio::sync::Mutex::new(update_subscriber),
+                },
             }
         }
     };
@@ -334,29 +361,17 @@ pub async fn trace_logger(
 
 // Handle Kyoto Client sync
 #[cfg(feature = "cbf")]
-pub async fn sync_kyoto_client(wallet: &mut Wallet, client: Box<LightClient>) -> Result<(), Error> {
-    let LightClient {
-        requester,
-        info_subscriber,
-        warning_subscriber,
-        mut update_subscriber,
-        node,
-    } = *client;
-
-    let subscriber = tracing_subscriber::FmtSubscriber::new();
-    tracing::subscriber::set_global_default(subscriber)
-        .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {e}")))?;
-
-    tokio::task::spawn(async move { node.run().await });
-    tokio::task::spawn(async move { trace_logger(info_subscriber, warning_subscriber).await });
-
-    if !requester.is_running() {
+pub async fn sync_kyoto_client(
+    wallet: &mut Wallet,
+    handle: &KyotoClientHandle,
+) -> Result<(), Error> {
+    if !handle.requester.is_running() {
         tracing::error!("Kyoto node is not running");
         return Err(Error::Generic("Kyoto node failed to start".to_string()));
     }
     tracing::info!("Kyoto node is running");
 
-    let update = update_subscriber.update().await?;
+    let update = handle.update_subscriber.lock().await.update().await?;
     tracing::info!("Received update: applying to wallet");
     wallet
         .apply_update(update)
