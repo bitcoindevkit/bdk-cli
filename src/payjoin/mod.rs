@@ -51,7 +51,7 @@ impl<'a> PayjoinManager<'a> {
         directory: String,
         max_fee_rate: Option<u64>,
         ohttp_relays: Vec<String>,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<String, Error> {
         let address = self
             .wallet
@@ -119,7 +119,7 @@ impl<'a> PayjoinManager<'a> {
         uri: String,
         fee_rate: u64,
         ohttp_relays: Vec<String>,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<String, Error> {
         let uri = payjoin::Uri::try_from(uri)
             .map_err(|e| Error::Generic(format!("Failed parsing to Payjoin URI: {}", e)))?;
@@ -237,7 +237,7 @@ impl<'a> PayjoinManager<'a> {
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
         relay: impl payjoin::IntoUrl,
         max_fee_rate: FeeRate,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         match session {
             ReceiveSession::Initialized(proposal) => {
@@ -306,7 +306,7 @@ impl<'a> PayjoinManager<'a> {
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
         relay: impl payjoin::IntoUrl,
         max_fee_rate: FeeRate,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         let mut current_receiver_typestate = receiver;
         let next_receiver_typestate = loop {
@@ -353,7 +353,7 @@ impl<'a> PayjoinManager<'a> {
         receiver: Receiver<UncheckedOriginalPayload>,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
         max_fee_rate: FeeRate,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         let next_receiver_typestate = receiver
             .assume_interactive_receiver()
@@ -386,7 +386,7 @@ impl<'a> PayjoinManager<'a> {
         receiver: Receiver<MaybeInputsOwned>,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
         max_fee_rate: FeeRate,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         let next_receiver_typestate = receiver
             .check_inputs_not_owned(&mut |input| {
@@ -411,7 +411,7 @@ impl<'a> PayjoinManager<'a> {
         receiver: Receiver<MaybeInputsSeen>,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
         max_fee_rate: FeeRate,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         // This is not supported as there is no persistence of previous Payjoin attempts in BDK CLI
         // yet. If there is support either in the BDK persister or Payjoin persister, this can be
@@ -437,7 +437,7 @@ impl<'a> PayjoinManager<'a> {
         receiver: Receiver<OutputsUnknown>,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
         max_fee_rate: FeeRate,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         let next_receiver_typestate = receiver.identify_receiver_outputs(&mut |output_script| {
             Ok(self.wallet.is_mine(output_script.to_owned()))
@@ -459,7 +459,7 @@ impl<'a> PayjoinManager<'a> {
         receiver: Receiver<WantsOutputs>,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
         max_fee_rate: FeeRate,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         // This is a typestate to modify existing receiver-owned outputs in case the receiver wants
         // to do that. This is a very simple implementation of Payjoin so we are just going
@@ -483,7 +483,7 @@ impl<'a> PayjoinManager<'a> {
         receiver: Receiver<WantsInputs>,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
         max_fee_rate: FeeRate,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         let candidate_inputs: Vec<InputPair> = self
             .wallet
@@ -533,7 +533,7 @@ impl<'a> PayjoinManager<'a> {
         receiver: Receiver<WantsFeeRange>,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
         max_fee_rate: FeeRate,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         let next_receiver_typestate = receiver.apply_fee_range(None, Some(max_fee_rate)).save(persister).map_err(|e| {
             Error::Generic(format!("Error occurred when saving after applying the receiver fee range to the transaction: {e}"))
@@ -546,7 +546,7 @@ impl<'a> PayjoinManager<'a> {
         &mut self,
         receiver: Receiver<ProvisionalProposal>,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         let next_receiver_typestate = receiver
             .finalize_proposal(|psbt| {
@@ -580,7 +580,7 @@ impl<'a> PayjoinManager<'a> {
         &mut self,
         receiver: Receiver<PayjoinProposal>,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         let (req, ctx) = receiver.create_post_request(
             self.relay_manager
@@ -619,7 +619,7 @@ impl<'a> PayjoinManager<'a> {
         &mut self,
         receiver: Receiver<Monitor>,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         let wait_time_for_sync = 3;
         let poll_internal = tokio::time::Duration::from_secs(wait_time_for_sync);
@@ -734,7 +734,7 @@ impl<'a> PayjoinManager<'a> {
         session: SendSession,
         persister: &impl SessionPersister<SessionEvent = SenderSessionEvent>,
         relay: impl payjoin::IntoUrl,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<Txid, Error> {
         match session {
             SendSession::WithReplyKey(context) => {
@@ -757,7 +757,7 @@ impl<'a> PayjoinManager<'a> {
         sender: Sender<WithReplyKey>,
         relay: impl payjoin::IntoUrl,
         persister: &impl SessionPersister<SessionEvent = SenderSessionEvent>,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<Txid, Error> {
         let (req, ctx) = sender.create_v2_post_request(relay.as_str()).map_err(|e| {
             Error::Generic(format!(
@@ -780,7 +780,7 @@ impl<'a> PayjoinManager<'a> {
         sender: Sender<PollingForProposal>,
         relay: impl payjoin::IntoUrl,
         persister: &impl SessionPersister<SessionEvent = SenderSessionEvent>,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<Txid, Error> {
         let mut sender = sender.clone();
         loop {
@@ -815,7 +815,7 @@ impl<'a> PayjoinManager<'a> {
     async fn process_payjoin_proposal(
         &self,
         mut psbt: Psbt,
-        blockchain_client: BlockchainClient,
+        blockchain_client: &BlockchainClient,
     ) -> Result<Txid, Error> {
         if !self.wallet.sign(&mut psbt, SignOptions::default())? {
             return Err(Error::Generic(
