@@ -61,6 +61,7 @@ pub struct CliOpts {
 /// Top level cli sub-commands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
 #[command(rename_all = "snake")]
+
 pub enum CliSubCommand {
     /// Wallet operations.
     ///
@@ -68,6 +69,7 @@ pub enum CliSubCommand {
     /// Most commands can be used without connecting to any backend. To use commands that
     /// needs backend like `sync` and `broadcast`, compile the binary with specific backend feature
     /// and use the configuration options below to configure for that backend.
+    #[command(alias = "W")]
     Wallet {
         #[command(flatten)]
         wallet_opts: WalletOpts,
@@ -81,13 +83,14 @@ pub enum CliSubCommand {
     ///
     /// These sub-commands are **EXPERIMENTAL** and should only be used for testing. Do not use this
     /// feature to create keys that secure actual funds on the Bitcoin mainnet.
+    #[command(alias = "K")]
     Key {
         #[clap(subcommand)]
         subcommand: KeySubCommand,
     },
     /// Compile a miniscript policy to an output descriptor.
     #[cfg(feature = "compiler")]
-    #[clap(long_about = "Miniscript policy compiler")]
+    #[command(alias = "C", long_about = "Miniscript policy compiler")]
     Compile {
         /// Sets the spending policy to compile.
         #[arg(env = "POLICY", required = true, index = 1)]
@@ -98,6 +101,7 @@ pub enum CliSubCommand {
         script_type: String,
     },
     #[cfg(feature = "repl")]
+    #[command(alias = "R")]
     /// REPL command loop mode.
     ///
     /// REPL command loop can be used to make recurring callbacks to an already loaded wallet.
@@ -110,6 +114,7 @@ pub enum CliSubCommand {
     ///
     /// Generate output descriptors from either extended key (Xprv/Xpub) or mnemonic phrase.
     /// This feature is intended for development and testing purposes only.
+    #[command(alias = "D")]
     Descriptor {
         /// Descriptor type (script type)
         #[arg(
