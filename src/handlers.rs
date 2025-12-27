@@ -43,7 +43,7 @@ use bdk_wallet::{
     bitcoin::{
         XOnlyPublicKey,
         key::{Parity, rand},
-        secp256k1::PublicKey,
+        secp256k1::{PublicKey, Scalar, SecretKey},
     },
     descriptor::{Descriptor, Legacy, Miniscript},
     miniscript::{Tap, descriptor::TapTree, policy::Concrete},
@@ -915,15 +915,14 @@ pub(crate) fn handle_compile_subcommand(
             // This improves privacy by preventing observers from determining if key path spending is disabled.
             // See BIP-341: https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#constructing-and-spending-taproot-outputs
 
-            // Generate random scalar r and compute rG (r times the generator point G)
             let secp = Secp256k1::new();
-            let (r_secret, r_point) = secp.generate_keypair(&mut rand::thread_rng());
+            let r_secret = SecretKey::new(&mut rand::thread_rng());
             r = Some(r_secret.display_secret().to_string());
 
             let nums_key = XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)?;
             let nums_point = PublicKey::from_x_only_public_key(nums_key, Parity::Even);
 
-            let internal_key_point = nums_point.combine(&r_point)?;
+            let internal_key_point = nums_point.add_exp_tweak(&secp, &Scalar::from(r_secret))?;
             let (xonly_internal_key, _) = internal_key_point.x_only_public_key();
 
             let tree = TapTree::Leaf(Arc::new(taproot_policy));
