@@ -273,8 +273,10 @@ pub struct CompactFilterOpts {
 #[command(rename_all = "snake")]
 pub enum OfflineWalletSubCommand {
     /// Get a new external address.
+    #[command(alias = "new_addr")]
     NewAddress,
     /// Get the first unused external address.
+    #[command(alias = "unused_addr")]
     UnusedAddress,
     /// Lists the available spendable UTXOs.
     Unspent,
@@ -283,6 +285,7 @@ pub enum OfflineWalletSubCommand {
     /// Returns the current wallet balance.
     Balance,
     /// Creates a new unsigned transaction.
+    #[command(alias = "create")]
     CreateTx {
         /// Adds a recipient to the transaction.
         // Clap Doesn't support complex vector parsing https://github.com/clap-rs/clap/issues/1704.
@@ -331,6 +334,7 @@ pub enum OfflineWalletSubCommand {
         add_data: Option<String>, //base 64 econding
     },
     /// Bumps the fees of an RBF transaction.
+    #[command(alias = "bump")]
     BumpFee {
         /// TXID of the transaction to update.
         #[arg(env = "TXID", long = "txid")]
@@ -359,6 +363,7 @@ pub enum OfflineWalletSubCommand {
     /// Returns the available spending policies for the descriptor.
     Policies,
     /// Returns the public version of the wallet's descriptor(s).
+    #[command(alias = "pub_desc")]
     PublicDescriptor,
     /// Signs and tries to finalize a PSBT.
     Sign {

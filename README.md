@@ -85,6 +85,30 @@ directly from [crates.io](https://crates.io/crates/bdk-cli) with a command as be
 ```sh
 cargo install bdk-cli --features electrum
 ```
+## Command Aliases
+
+bdk-cli provides short aliases for commonly used commands to improve CLI ergonomics.
+
+### Top-level command aliases
+
+| Command     | Alias |
+|------------|-------|
+| wallet     | W |
+| key        | K |
+| compile    | C |
+| repl       | R |
+| descriptor | D |
+
+### Wallet subcommand aliases
+
+| Command             | Alias |
+|---------------------|-------|
+| new_address         | new_addr |
+| unused_address      | unused_addr |
+| create_tx           | create |
+| bump_fee            | bump |
+| public_descriptor   | pub_desc |
+
 
 ### bdk-cli bin usage examples
 
