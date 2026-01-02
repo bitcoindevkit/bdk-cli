@@ -933,8 +933,7 @@ pub(crate) fn handle_compile_subcommand(
                 "Invalid script type. Supported types: sh, wsh, sh-wsh, tr".to_string(),
             ));
         }
-    }?
-    .to_string();
+    }?;
 
     if pretty {
         let mut rows = vec![vec!["Descriptor".cell().bold(true), descriptor.cell()]];
