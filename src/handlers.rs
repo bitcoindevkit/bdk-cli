@@ -999,10 +999,9 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             };
             #[cfg(not(any(feature = "sqlite", feature = "redb")))]
             let result = {
-                let wallet = new_wallet(network, wallet_opts)?;
+                let mut wallet = new_wallet(network, wallet_opts)?;
                 let blockchain_client =
                     crate::utils::new_blockchain_client(wallet_opts, &wallet, database_path)?;
-                let mut wallet = new_wallet(network, wallet_opts)?;
                 handle_online_wallet_subcommand(&mut wallet, blockchain_client, online_subcommand)
                     .await?
             };
