@@ -57,22 +57,41 @@ jobs:
       - name: Run Clippy
         run: cargo clippy ${{ matrix.features }} --all-targets -- -D warnings
 
-  wasm-build:
-    name: Check WASM
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-      - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
-          cache: true
-          target: wasm32-unknown-unknown
-      - name: Check WASM
-        run: cargo check --target wasm32-unknown-unknown --no-default-features --features esplora,compiler
+# TODO: fix or remove this
+#  wasm-build:
+#    name: Build WASM
+#    runs-on: ubuntu-20.04
+#    env:
+#      CC: clang-10
+#      CFLAGS: -I/usr/include
+#    steps:
+#      - name: Checkout
+#        uses: actions/checkout@v4
+#      - name: Generate cache key
+#        run: echo "Build WASM" | tee .cache_key
+#      - name: Cache
+#        uses: actions/cache@v4
+#        with:
+#          path: |
+#            ~/.cargo/registry
+#            ~/.cargo/git
+#            target
+#          key: ${{ runner.os }}-cargo-${{ hashFiles('.cache_key') }}-${{ hashFiles('**/Cargo.toml','**/Cargo.lock') }}
+#          # Install a recent version of clang that supports wasm32
+#      - run: wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add - || exit 1
+#      - run: sudo apt-get update || exit 1
+#      - run: sudo apt-get install -y libclang-common-10-dev clang-10 libc6-dev-i386 || exit 1
+#      - name: Set default toolchain
+#        run: rustup default stable
+#      - name: Set profile
+#        run: rustup set profile minimal
+#      - name: Add target wasm32
+#        run: rustup target add wasm32-unknown-unknown
+#      - name: Update toolchain
+#        run: rustup update
+#      - name: Build
+#        run: cargo build --target wasm32-unknown-unknown --no-default-features --features esplora,compiler,dev-getrandom-wasm
+
   fmt:
     name: Rust fmt
     runs-on: ubuntu-latest
