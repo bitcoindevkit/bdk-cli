@@ -18,6 +18,7 @@ use bdk_wallet::bitcoin::{
     bip32::{DerivationPath, Xpriv},
 };
 use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
+use clap_complete::Shell;
 
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
@@ -127,7 +128,39 @@ pub enum CliSubCommand {
     },
     /// List all saved wallet configurations.
     Wallets,
+    /// Generate tab-completion scripts for your shell.
+    ///
+    /// Outputs a shell-specific completion script to stdout.
+    /// To enable completions you need to redirect this output into the appropriate location for your shell.
+    ///
+    /// Bash:
+    ///   bdk-cli completions bash > ~/.local/share/bash-completion/completions/bdk-cli
+    ///
+    /// Zsh:
+    ///   bdk-cli completions zsh > ~/.zfunc/_bdk-cli
+    ///   # Make sure ~/.zfunc is in your fpath (add to .zshrc):
+    ///   #   fpath=(~/.zfunc $fpath)
+    ///   #   autoload -Uz compinit && compinit
+    ///
+    /// Fish:
+    ///   bdk-cli completions fish > ~/.config/fish/completions/bdk-cli.fish
+    ///
+    /// PowerShell:
+    ///   bdk-cli completions powershell >> $PROFILE
+    ///
+    /// Elvish:
+    ///   bdk-cli completions elvish >> ~/.elvish/rc.elv
+    ///
+    /// After installing the completion script, restart your shell or source
+    /// the configuration file for the changes to take effect.
+    #[command(verbatim_doc_comment)]
+    Completions {
+        /// Target shell syntax
+        #[arg(value_enum)]
+        shell: Shell,
+    },
 }
+
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
 pub enum WalletSubCommand {

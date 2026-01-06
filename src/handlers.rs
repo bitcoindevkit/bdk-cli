@@ -44,6 +44,7 @@ use bdk_wallet::{
     descriptor::{Descriptor, Legacy, Miniscript},
     miniscript::{Tap, descriptor::TapTree, policy::Concrete},
 };
+use clap::CommandFactory;
 use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
 use serde_json::json;
 #[cfg(feature = "cbf")]
@@ -1421,6 +1422,16 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
         CliSubCommand::Descriptor { desc_type, key } => {
             let descriptor = handle_descriptor_command(cli_opts.network, desc_type, key, pretty)?;
             Ok(descriptor)
+        }
+        CliSubCommand::Completions { shell } => {
+            clap_complete::generate(
+                shell,
+                &mut CliOpts::command(),
+                "bdk-cli",
+                &mut std::io::stdout(),
+            );
+
+            Ok("".to_string())
         }
     };
     result
