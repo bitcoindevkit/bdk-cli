@@ -75,7 +75,7 @@ impl<'a> PayjoinManager<'a> {
         let persister = payjoin::persist::NoopSessionPersister::<ReceiverSessionEvent>::default();
 
         let checked_max_fee_rate = max_fee_rate
-            .map(|rate| FeeRate::from_sat_per_kwu(rate))
+            .map(FeeRate::from_sat_per_kwu)
             .unwrap_or(FeeRate::BROADCAST_MIN);
 
         let receiver = payjoin::receive::v2::ReceiverBuilder::new(
@@ -275,7 +275,7 @@ impl<'a> PayjoinManager<'a> {
                     .await
             }
             ReceiveSession::HasReplyableError(error) => self.handle_error(error, persister).await,
-            ReceiveSession::Closed(_) => return Err(Error::Generic("Session closed".to_string())),
+            ReceiveSession::Closed(_) => Err(Error::Generic("Session closed".to_string())),
         }
     }
 
@@ -305,8 +305,7 @@ impl<'a> PayjoinManager<'a> {
                 }
                 Err(e) => {
                     return Err(Error::Generic(format!(
-                        "Error occurred when polling for Payjoin proposal from the directory: {}",
-                        e.to_string()
+                        "Error occurred when polling for Payjoin proposal from the directory: {e}"
                     )));
                 }
             }
