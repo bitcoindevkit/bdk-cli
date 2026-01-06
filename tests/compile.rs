@@ -16,7 +16,15 @@ fn run_cmd(cmd: &str) -> Result<String, String> {
     let full_cmd = format!("run --features compiler -- {}", cmd);
     let args = shlex::split(&full_cmd).unwrap();
 
-    let output = Command::new("cargo").args(args).output().unwrap();
+    let output = Command::new("cargo")
+        .args(args)
+        .env_remove("NETWORK")
+        .env_remove("DATADIR")
+        .env_remove("POLICY")
+        .env_remove("TYPE")
+        .output()
+        .unwrap();
+
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
