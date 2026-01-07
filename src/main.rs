@@ -25,6 +25,9 @@ mod payjoin;
 mod persister;
 mod utils;
 
+#[cfg(feature = "dns_payment")]
+mod dns_payment_instructions;
+
 use bdk_wallet::bitcoin::Network;
 use log::{debug, error, warn};
 
