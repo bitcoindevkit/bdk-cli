@@ -70,6 +70,17 @@ pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
     Ok((addr.script_pubkey(), val))
 }
 
+#[cfg(feature = "dns_payment")]
+/// Parse dns recipients in the form "test@me.com:10000" from cli input
+pub(crate) fn parse_dns_recipient(s: &str) -> Result<(String, u64), String> {
+    let parts: Vec<_> = s.split(':').collect();
+    if parts.len() != 2 {
+        return Err("Invalid format".to_string());
+    }
+    let sending_amount = u64::from_str(parts[1]).map_err(|e| e.to_string())?;
+    Ok((parts[0].to_string(), sending_amount))
+}
+
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 /// Parse the proxy (Socket:Port) argument from the cli input.
 pub(crate) fn parse_proxy_auth(s: &str) -> Result<(String, String), Error> {
