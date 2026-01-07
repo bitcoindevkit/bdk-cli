@@ -11,6 +11,7 @@
 //! This module describes all the command handling logic used by bdk-cli.
 use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::*;
+use crate::dns_payment_instructions::resolve_dns_recipient;
 use crate::error::BDKCliError as Error;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 use crate::persister::Persister;
@@ -94,7 +95,7 @@ const NUMS_UNSPENDABLE_KEY_HEX: &str =
 /// Execute an offline wallet sub-command
 ///
 /// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
-pub fn handle_offline_wallet_subcommand(
+pub async fn handle_offline_wallet_subcommand(
     wallet: &mut Wallet,
     wallet_opts: &WalletOpts,
     cli_opts: &CliOpts,
@@ -326,6 +327,19 @@ pub fn handle_offline_wallet_subcommand(
                     &json!({"satoshi": wallet.balance()}),
                 )?)
             }
+        }
+
+        ResolveDnsRecipient { hrn, amount } => {
+            let resolved = resolve_dns_recipient(&hrn, Amount::from_sat(amount), Network::Bitcoin)
+                .await
+                .map_err(|e| Error::Generic(format!("{:?}", e)))?;
+
+            Ok(serde_json::to_string_pretty(&json!({
+                    "hrn": hrn,
+                    "recipient": resolved.address,
+                    "min_amount": resolved.min_amount.unwrap_or_default(),
+                    "max_amount": resolved.max_amount.unwrap_or_default(),
+            }))?)
         }
 
         CreateTx {
@@ -1046,7 +1060,8 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     wallet_opts,
                     &cli_opts,
                     offline_subcommand.clone(),
-                )?;
+                )
+                .await?;
                 wallet.persist(&mut persister)?;
                 result
             };
@@ -1194,6 +1209,7 @@ async fn respond(
         } => {
             let value =
                 handle_offline_wallet_subcommand(wallet, wallet_opts, cli_opts, offline_subcommand)
+                    .await
                     .map_err(|e| e.to_string())?;
             Some(value)
         }
