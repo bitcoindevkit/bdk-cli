@@ -11,6 +11,7 @@
 //! This module describes all the command handling logic used by bdk-cli.
 use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::*;
+use crate::dns_payment_instructions::resolve_dns_recipient;
 use crate::error::BDKCliError as Error;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 use crate::persister::Persister;
@@ -18,6 +19,7 @@ use crate::utils::*;
 #[cfg(feature = "redb")]
 use bdk_redb::Store as RedbStore;
 use bdk_wallet::bip39::{Language, Mnemonic};
+use bdk_wallet::bitcoin::ScriptBuf;
 use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::{
@@ -94,7 +96,7 @@ const NUMS_UNSPENDABLE_KEY_HEX: &str =
 /// Execute an offline wallet sub-command
 ///
 /// Offline wallet sub-commands are described in [`OfflineWalletSubCommand`].
-pub fn handle_offline_wallet_subcommand(
+pub async fn handle_offline_wallet_subcommand(
     wallet: &mut Wallet,
     wallet_opts: &WalletOpts,
     cli_opts: &CliOpts,
@@ -328,8 +330,22 @@ pub fn handle_offline_wallet_subcommand(
             }
         }
 
+        ResolveDnsRecipient { hrn, amount } => {
+            let resolved = resolve_dns_recipient(&hrn, Amount::from_sat(amount), wallet.network())
+                .await
+                .map_err(|e| Error::Generic(format!("{:?}", e)))?;
+
+            Ok(serde_json::to_string_pretty(&json!({
+                    "hrn": hrn,
+                    "recipient": resolved.address,
+                    "min_amount": resolved.min_amount.unwrap_or_default(),
+                    "max_amount": resolved.max_amount.unwrap_or_default(),
+            }))?)
+        }
+
         CreateTx {
             recipients,
+            dns_recipients,
             send_all,
             enable_rbf,
             offline_signer,
@@ -346,10 +362,34 @@ pub fn handle_offline_wallet_subcommand(
             if send_all {
                 tx_builder.drain_wallet().drain_to(recipients[0].0.clone());
             } else {
-                let recipients = recipients
+                let mut recipients: Vec<(ScriptBuf, Amount)> = recipients
                     .into_iter()
                     .map(|(script, amount)| (script, Amount::from_sat(amount)))
                     .collect();
+
+                if let Some(recip) = dns_recipients {
+                    let parsed_recip = parse_dns_recipients(&recip)
+                        .await
+                        .map_err(|pe| Error::Generic(format!("Resolution failed: {pe}")))?;
+
+                    // Validates if the amount the user wants to send is in the range of what the payment instructions returned
+                    parsed_recip.iter().try_for_each(|(_, r)| {
+                        let amount = r.amount.to_sat();
+                        if r.min_amount.map_or(false, |min| amount < min.to_sat()) {
+                            return Err(Error::Generic("Amount lesser than min".to_string()));
+                        }
+                        if r.max_amount.map_or(false, |max| amount > max.to_sat()) {
+                            return Err(Error::Generic("Amount greater than max".to_string()));
+                        }
+                        Ok(())
+                    })?;
+
+                    let mut vec_recip = parsed_recip
+                        .iter()
+                        .map(|recip| (recip.1.address.script_pubkey(), recip.1.amount))
+                        .collect::<Vec<_>>();
+                    recipients.append(&mut vec_recip);
+                }
                 tx_builder.set_recipients(recipients);
             }
 
@@ -1046,7 +1086,8 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     wallet_opts,
                     &cli_opts,
                     offline_subcommand.clone(),
-                )?;
+                )
+                .await?;
                 wallet.persist(&mut persister)?;
                 result
             };
@@ -1194,6 +1235,7 @@ async fn respond(
         } => {
             let value =
                 handle_offline_wallet_subcommand(wallet, wallet_opts, cli_opts, offline_subcommand)
+                    .await
                     .map_err(|e| e.to_string())?;
             Some(value)
         }

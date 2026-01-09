@@ -277,6 +277,13 @@ pub enum OfflineWalletSubCommand {
     Transactions,
     /// Returns the current wallet balance.
     Balance,
+    /// Resolves the given DNS payment instructions
+    ResolveDnsRecipient {
+        /// Human Readable Name to resolve
+        hrn: String,
+        /// The amount you're willing to send to the HRN
+        amount: u64,
+    },
     /// Creates a new unsigned transaction.
     CreateTx {
         /// Adds a recipient to the transaction.
@@ -284,6 +291,9 @@ pub enum OfflineWalletSubCommand {
         // Address and amount parsing is done at run time in handler function.
         #[arg(env = "ADDRESS:SAT", long = "to", required = true, value_parser = parse_recipient)]
         recipients: Vec<(ScriptBuf, u64)>,
+        /// Adds DNS recipients to the transaction
+        #[arg(long = "to_dns")]
+        dns_recipients: Option<String>,
         /// Sends all the funds (or all the selected utxos). Requires only one recipient with value 0.
         #[arg(long = "send_all", short = 'a')]
         send_all: bool,
