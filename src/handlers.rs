@@ -9,7 +9,6 @@
 //! Command Handlers
 //!
 //! This module describes all the command handling logic used by bdk-cli.
-
 use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::*;
 use crate::error::BDKCliError as Error;
@@ -58,7 +57,14 @@ use std::convert::TryFrom;
 #[cfg(any(feature = "repl", feature = "electrum", feature = "esplora"))]
 use std::io::Write;
 use std::str::FromStr;
-#[cfg(any(feature = "redb", feature = "compiler"))]
+#[cfg(any(
+    feature = "redb",
+    feature = "compiler",
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
 use std::sync::Arc;
 #[cfg(any(
     feature = "electrum",
@@ -68,7 +74,9 @@ use std::sync::Arc;
 ))]
 use {
     crate::commands::OnlineWalletSubCommand::*,
+    crate::payjoin::{PayjoinManager, ohttp::RelayManager},
     bdk_wallet::bitcoin::{Transaction, consensus::Decodable, hex::FromHex},
+    std::sync::Mutex,
 };
 #[cfg(feature = "esplora")]
 use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
@@ -683,83 +691,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
             Ok(serde_json::to_string_pretty(&json!({}))?)
         }
         Sync => {
-            #[cfg(any(feature = "electrum", feature = "esplora"))]
-            let request = wallet
-                .start_sync_with_revealed_spks()
-                .inspect(|item, progress| {
-                    let pc = (100 * progress.consumed()) as f32 / progress.total() as f32;
-                    eprintln!("[ SCANNING {pc:03.0}% ] {item}");
-                });
-            match client {
-                #[cfg(feature = "electrum")]
-                Electrum { client, batch_size } => {
-                    // Populate the electrum client's transaction cache so it doesn't re-download transaction we
-                    // already have.
-                    client
-                        .populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
-
-                    let update = client.sync(request, batch_size, false)?;
-                    wallet.apply_update(update)?;
-                }
-                #[cfg(feature = "esplora")]
-                Esplora {
-                    client,
-                    parallel_requests,
-                } => {
-                    let update = client
-                        .sync(request, parallel_requests)
-                        .await
-                        .map_err(|e| *e)?;
-                    wallet.apply_update(update)?;
-                }
-                #[cfg(feature = "rpc")]
-                RpcClient { client } => {
-                    let blockchain_info = client.get_blockchain_info()?;
-                    let wallet_cp = wallet.latest_checkpoint();
-
-                    // reload the last 200 blocks in case of a reorg
-                    let emitter_height = wallet_cp.height().saturating_sub(200);
-                    let mut emitter = Emitter::new(
-                        &*client,
-                        wallet_cp,
-                        emitter_height,
-                        wallet
-                            .tx_graph()
-                            .list_canonical_txs(
-                                wallet.local_chain(),
-                                wallet.local_chain().tip().block_id(),
-                                CanonicalizationParams::default(),
-                            )
-                            .filter(|tx| tx.chain_position.is_unconfirmed()),
-                    );
-
-                    while let Some(block_event) = emitter.next_block()? {
-                        if block_event.block_height() % 10_000 == 0 {
-                            let percent_done = f64::from(block_event.block_height())
-                                / f64::from(blockchain_info.headers as u32)
-                                * 100f64;
-                            println!(
-                                "Applying block at height: {}, {:.2}% done.",
-                                block_event.block_height(),
-                                percent_done
-                            );
-                        }
-
-                        wallet.apply_block_connected_to(
-                            &block_event.block,
-                            block_event.block_height(),
-                            block_event.connected_to(),
-                        )?;
-                    }
-
-                    let mempool_txs = emitter.mempool()?;
-                    wallet.apply_unconfirmed_txs(mempool_txs.update);
-                }
-                #[cfg(feature = "cbf")]
-                KyotoClient { client } => {
-                    sync_kyoto_client(wallet, client).await?;
-                }
-            }
+            sync_wallet(client, wallet).await?;
             Ok(serde_json::to_string_pretty(&json!({}))?)
         }
         Broadcast { psbt, tx } => {
@@ -779,67 +711,31 @@ pub(crate) async fn handle_online_wallet_subcommand(
                 (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
                 (None, None) => panic!("Missing `psbt` and `tx` option"),
             };
-            let txid = match client {
-                #[cfg(feature = "electrum")]
-                Electrum {
-                    client,
-                    batch_size: _,
-                } => client
-                    .transaction_broadcast(&tx)
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-                #[cfg(feature = "esplora")]
-                Esplora {
-                    client,
-                    parallel_requests: _,
-                } => client
-                    .broadcast(&tx)
-                    .await
-                    .map(|()| tx.compute_txid())
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-                #[cfg(feature = "rpc")]
-                RpcClient { client } => client
-                    .send_raw_transaction(&tx)
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-
-                #[cfg(feature = "cbf")]
-                KyotoClient { client } => {
-                    let LightClient {
-                        requester,
-                        mut info_subscriber,
-                        mut warning_subscriber,
-                        update_subscriber: _,
-                        node,
-                    } = *client;
-
-                    let subscriber = tracing_subscriber::FmtSubscriber::new();
-                    tracing::subscriber::set_global_default(subscriber)
-                        .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {e}")))?;
-
-                    tokio::task::spawn(async move { node.run().await });
-                    tokio::task::spawn(async move {
-                        select! {
-                            info = info_subscriber.recv() => {
-                                if let Some(info) = info {
-                                    tracing::info!("{info}");
-                                }
-                            },
-                            warn = warning_subscriber.recv() => {
-                                if let Some(warn) = warn {
-                                    tracing::warn!("{warn}");
-                                }
-                            }
-                        }
-                    });
-                    let txid = tx.compute_txid();
-                    let wtxid = requester.broadcast_random(tx.clone()).await.map_err(|_| {
-                        tracing::warn!("Broadcast was unsuccessful");
-                        Error::Generic("Transaction broadcast timed out after 30 seconds".into())
-                    })?;
-                    tracing::info!("Successfully broadcast WTXID: {wtxid}");
-                    txid
-                }
-            };
+            let txid = broadcast_transaction(client, tx).await?;
             Ok(serde_json::to_string_pretty(&json!({ "txid": txid }))?)
+        }
+        ReceivePayjoin {
+            amount,
+            directory,
+            ohttp_relay,
+            max_fee_rate,
+        } => {
+            let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
+            let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);
+            return payjoin_manager
+                .receive_payjoin(amount, directory, max_fee_rate, ohttp_relay, client)
+                .await;
+        }
+        SendPayjoin {
+            uri,
+            ohttp_relay,
+            fee_rate,
+        } => {
+            let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
+            let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);
+            return payjoin_manager
+                .send_payjoin(uri, fee_rate, ohttp_relay, client)
+                .await;
         }
     }
 }
@@ -1103,10 +999,9 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             };
             #[cfg(not(any(feature = "sqlite", feature = "redb")))]
             let result = {
-                let wallet = new_wallet(network, wallet_opts)?;
+                let mut wallet = new_wallet(network, wallet_opts)?;
                 let blockchain_client =
                     crate::utils::new_blockchain_client(wallet_opts, &wallet, database_path)?;
-                let mut wallet = new_wallet(network, wallet_opts)?;
                 handle_online_wallet_subcommand(&mut wallet, blockchain_client, online_subcommand)
                     .await?
             };
@@ -1322,6 +1217,170 @@ async fn respond(
         writeln!(std::io::stdout(), "Exiting...").map_err(|e| e.to_string())?;
         std::io::stdout().flush().map_err(|e| e.to_string())?;
         Ok(true)
+    }
+}
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+/// Syncs a given wallet using the blockchain client.
+pub async fn sync_wallet(client: BlockchainClient, wallet: &mut Wallet) -> Result<(), Error> {
+    #[cfg(any(feature = "electrum", feature = "esplora"))]
+    let request = wallet
+        .start_sync_with_revealed_spks()
+        .inspect(|item, progress| {
+            let pc = (100 * progress.consumed()) as f32 / progress.total() as f32;
+            eprintln!("[ SCANNING {pc:03.0}% ] {item}");
+        });
+    match client {
+        #[cfg(feature = "electrum")]
+        Electrum { client, batch_size } => {
+            // Populate the electrum client's transaction cache so it doesn't re-download transaction we
+            // already have.
+            client.populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
+
+            let update = client.sync(request, batch_size, false)?;
+            wallet
+                .apply_update(update)
+                .map_err(|e| Error::Generic(e.to_string()))
+        }
+        #[cfg(feature = "esplora")]
+        Esplora {
+            client,
+            parallel_requests,
+        } => {
+            let update = client
+                .sync(request, parallel_requests)
+                .await
+                .map_err(|e| *e)?;
+            wallet
+                .apply_update(update)
+                .map_err(|e| Error::Generic(e.to_string()))
+        }
+        #[cfg(feature = "rpc")]
+        RpcClient { client } => {
+            let blockchain_info = client.get_blockchain_info()?;
+            let wallet_cp = wallet.latest_checkpoint();
+
+            // reload the last 200 blocks in case of a reorg
+            let emitter_height = wallet_cp.height().saturating_sub(200);
+            let mut emitter = Emitter::new(
+                &*client,
+                wallet_cp,
+                emitter_height,
+                wallet
+                    .tx_graph()
+                    .list_canonical_txs(
+                        wallet.local_chain(),
+                        wallet.local_chain().tip().block_id(),
+                        CanonicalizationParams::default(),
+                    )
+                    .filter(|tx| tx.chain_position.is_unconfirmed()),
+            );
+
+            while let Some(block_event) = emitter.next_block()? {
+                if block_event.block_height() % 10_000 == 0 {
+                    let percent_done = f64::from(block_event.block_height())
+                        / f64::from(blockchain_info.headers as u32)
+                        * 100f64;
+                    println!(
+                        "Applying block at height: {}, {:.2}% done.",
+                        block_event.block_height(),
+                        percent_done
+                    );
+                }
+
+                wallet.apply_block_connected_to(
+                    &block_event.block,
+                    block_event.block_height(),
+                    block_event.connected_to(),
+                )?;
+            }
+
+            let mempool_txs = emitter.mempool()?;
+            wallet.apply_unconfirmed_txs(mempool_txs.update);
+            Ok(())
+        }
+        #[cfg(feature = "cbf")]
+        KyotoClient { client } => sync_kyoto_client(wallet, client)
+            .await
+            .map_err(|e| Error::Generic(e.to_string())),
+    }
+}
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+/// Broadcasts a given transaction using the blockchain client.
+pub async fn broadcast_transaction(
+    client: BlockchainClient,
+    tx: Transaction,
+) -> Result<Txid, Error> {
+    match client {
+        #[cfg(feature = "electrum")]
+        Electrum {
+            client,
+            batch_size: _,
+        } => client
+            .transaction_broadcast(&tx)
+            .map_err(|e| Error::Generic(e.to_string())),
+        #[cfg(feature = "esplora")]
+        Esplora {
+            client,
+            parallel_requests: _,
+        } => client
+            .broadcast(&tx)
+            .await
+            .map(|()| tx.compute_txid())
+            .map_err(|e| Error::Generic(e.to_string())),
+        #[cfg(feature = "rpc")]
+        RpcClient { client } => client
+            .send_raw_transaction(&tx)
+            .map_err(|e| Error::Generic(e.to_string())),
+
+        #[cfg(feature = "cbf")]
+        KyotoClient { client } => {
+            let LightClient {
+                requester,
+                mut info_subscriber,
+                mut warning_subscriber,
+                update_subscriber: _,
+                node,
+            } = *client;
+
+            let subscriber = tracing_subscriber::FmtSubscriber::new();
+            tracing::subscriber::set_global_default(subscriber)
+                .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {e}")))?;
+
+            tokio::task::spawn(async move { node.run().await });
+            tokio::task::spawn(async move {
+                select! {
+                    info = info_subscriber.recv() => {
+                        if let Some(info) = info {
+                            tracing::info!("{info}");
+                        }
+                    },
+                    warn = warning_subscriber.recv() => {
+                        if let Some(warn) = warn {
+                            tracing::warn!("{warn}");
+                        }
+                    }
+                }
+            });
+            let txid = tx.compute_txid();
+            let wtxid = requester.broadcast_random(tx.clone()).await.map_err(|_| {
+                tracing::warn!("Broadcast was unsuccessful");
+                Error::Generic("Transaction broadcast timed out after 30 seconds".into())
+            })?;
+            tracing::info!("Successfully broadcast WTXID: {wtxid}");
+            Ok(txid)
+        }
     }
 }
 
