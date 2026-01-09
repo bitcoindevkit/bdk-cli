@@ -9,7 +9,10 @@
 //! Utility Tools
 //!
 //! This module includes all the utility tools used by the App.
-use crate::error::BDKCliError as Error;
+use crate::{
+    dns_payment_instructions::{Payment, resolve_dns_recipient},
+    error::BDKCliError as Error,
+};
 use std::{
     fmt::Display,
     path::{Path, PathBuf},
@@ -25,7 +28,10 @@ use bdk_kyoto::{
 };
 use bdk_wallet::{
     KeychainKind,
-    bitcoin::bip32::{DerivationPath, Xpub},
+    bitcoin::{
+        Amount,
+        bip32::{DerivationPath, Xpub},
+    },
     keys::DescriptorPublicKey,
     miniscript::{
         Descriptor, Miniscript, Terminal,
@@ -67,6 +73,26 @@ pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
     let val = u64::from_str(parts[1]).map_err(|e| e.to_string())?;
 
     Ok((addr.script_pubkey(), val))
+}
+
+/// Parse dns recipients in the form "test@me.com:10000,test2@from.com:40000" from cli input
+pub(crate) async fn parse_dns_recipients(s: &str) -> Result<Vec<(Amount, Payment)>, String> {
+    let parts: Vec<_> = s.split(',').collect();
+    let mut res = vec![];
+
+    for addr_amount in parts {
+        let split: Vec<_> = addr_amount.split(':').collect();
+        if split.len() != 2 {
+            return Err("Invalid format".to_string());
+        }
+        let sending_amount = Amount::from_sat(u64::from_str(split[1]).map_err(|e| e.to_string())?);
+
+        let resolved = resolve_dns_recipient(split[0], sending_amount, Network::Bitcoin)
+            .await
+            .map_err(|p| format!("Parse Error occured: {:?}", p).to_string())?;
+        res.push((sending_amount, resolved));
+    }
+    Ok(res)
 }
 
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]

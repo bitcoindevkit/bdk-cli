@@ -19,6 +19,7 @@ use crate::utils::*;
 #[cfg(feature = "redb")]
 use bdk_redb::Store as RedbStore;
 use bdk_wallet::bip39::{Language, Mnemonic};
+use bdk_wallet::bitcoin::ScriptBuf;
 use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::{
@@ -330,7 +331,7 @@ pub async fn handle_offline_wallet_subcommand(
         }
 
         ResolveDnsRecipient { hrn, amount } => {
-            let resolved = resolve_dns_recipient(&hrn, Amount::from_sat(amount), Network::Bitcoin)
+            let resolved = resolve_dns_recipient(&hrn, Amount::from_sat(amount), wallet.network())
                 .await
                 .map_err(|e| Error::Generic(format!("{:?}", e)))?;
 
@@ -344,6 +345,7 @@ pub async fn handle_offline_wallet_subcommand(
 
         CreateTx {
             recipients,
+            dns_recipients,
             send_all,
             enable_rbf,
             offline_signer,
@@ -360,10 +362,34 @@ pub async fn handle_offline_wallet_subcommand(
             if send_all {
                 tx_builder.drain_wallet().drain_to(recipients[0].0.clone());
             } else {
-                let recipients = recipients
+                let mut recipients: Vec<(ScriptBuf, Amount)> = recipients
                     .into_iter()
                     .map(|(script, amount)| (script, Amount::from_sat(amount)))
                     .collect();
+
+                if let Some(recip) = dns_recipients {
+                    let parsed_recip = parse_dns_recipients(&recip)
+                        .await
+                        .map_err(|pe| Error::Generic(format!("Resolution failed: {pe}")))?;
+
+                    // Validates if the amount the user wants to send is in the range of what the payment instructions returned
+                    parsed_recip.iter().try_for_each(|(_, r)| {
+                        let amount = r.amount.to_sat();
+                        if r.min_amount.map_or(false, |min| amount < min.to_sat()) {
+                            return Err(Error::Generic("Amount lesser than min".to_string()));
+                        }
+                        if r.max_amount.map_or(false, |max| amount > max.to_sat()) {
+                            return Err(Error::Generic("Amount greater than max".to_string()));
+                        }
+                        Ok(())
+                    })?;
+
+                    let mut vec_recip = parsed_recip
+                        .iter()
+                        .map(|recip| (recip.1.address.script_pubkey(), recip.1.amount))
+                        .collect::<Vec<_>>();
+                    recipients.append(&mut vec_recip);
+                }
                 tx_builder.set_recipients(recipients);
             }
 

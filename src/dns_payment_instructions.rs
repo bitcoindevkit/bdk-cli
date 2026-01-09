@@ -47,7 +47,7 @@ fn process_fixed_instructions(
     };
 
     // We need this conversion since Amount from instructions is different from Amount from bitcoin
-    let onchain_amount = Amount::from_sat(onchain_amount.sats_rounding_up());
+    let onchain_amount = Amount::from_sat(onchain_amount.milli_sats());
 
     Ok(Payment {
         address: addr.clone(),

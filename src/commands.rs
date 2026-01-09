@@ -291,6 +291,9 @@ pub enum OfflineWalletSubCommand {
         // Address and amount parsing is done at run time in handler function.
         #[arg(env = "ADDRESS:SAT", long = "to", required = true, value_parser = parse_recipient)]
         recipients: Vec<(ScriptBuf, u64)>,
+        /// Adds DNS recipients to the transaction
+        #[arg(long = "to_dns")]
+        dns_recipients: Option<String>,
         /// Sends all the funds (or all the selected utxos). Requires only one recipient with value 0.
         #[arg(long = "send_all", short = 'a')]
         send_all: bool,
