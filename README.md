@@ -23,36 +23,36 @@
   </h4>
 </div>
 
-
 ## About
 
 **EXPERIMENTAL**
-This crate has been updated to use `bdk_wallet` 1.x. Only use  for testing on test networks.
+This crate has been updated to use `bdk_wallet` 1.x. Only use for testing on test networks.
 
 This project provides a command-line Bitcoin wallet application using the latest [BDK Wallet APIs](https://docs.rs/bdk_wallet/1.0.0/bdk_wallet/index.html) and chain sources ([RPC](https://docs.rs/bdk_bitcoind_rpc/0.18.0/bdk_bitcoind_rpc/index.html), [Electrum](https://docs.rs/bdk_electrum/0.21.0/bdk_electrum/index.html), [Esplora](https://docs.rs/bdk_esplora/0.21.0/bdk_esplora/), [Kyoto](https://docs.rs/bdk_kyoto/0.9.0/bdk_kyoto/)). This might look tiny and innocent, but by harnessing the power of BDK it provides a powerful generic descriptor based command line wallet tool.
 And yes, it can do Taproot!!
 
 This crate can be used for the following purposes:
- - Instantly create a miniscript based wallet and connect to your backend of choice (Electrum, Esplora, Core RPC, Kyoto etc) and quickly play around with your own complex bitcoin scripting workflow. With one or many wallets, connected with one or many backends.
- - The `tests/integration.rs` module is used to document high level complex workflows between BDK and different Bitcoin infrastructure systems, like Core, Electrum and Lightning(soon TM).
- - (Planned) Expose the basic command handler via `wasm` to integrate `bdk-cli` functionality natively into the web platform. See also the [playground](https://bitcoindevkit.org/bdk-cli/playground/) page.
+
+- Instantly create a miniscript based wallet and connect to your backend of choice (Electrum, Esplora, Core RPC, Kyoto etc) and quickly play around with your own complex bitcoin scripting workflow. With one or many wallets, connected with one or many backends.
+- The `tests/integration.rs` module is used to document high level complex workflows between BDK and different Bitcoin infrastructure systems, like Core, Electrum and Lightning(soon TM).
+- (Planned) Expose the basic command handler via `wasm` to integrate `bdk-cli` functionality natively into the web platform. See also the [playground](https://bitcoindevkit.org/bdk-cli/playground/) page.
 
 If you are considering using BDK in your own wallet project bdk-cli is a nice playground to get started with. It allows easy testnet and regtest wallet operations, to try out what's possible with descriptors, miniscript, and BDK APIs. For more information on BDK refer to the [website](https://bitcoindevkit.org/) and the [rust docs](https://docs.rs/bdk_wallet/1.0.0/bdk_wallet/index.html)
 
 bdk-cli can be compiled with different features to suit your experimental needs.
-  - Database Options
-     - `sqlite` : Sets the wallet database to a `sqlite3` db.
-  - Blockchain Client Options
-     - `esplora` : Connects the wallet to an esplora server.
-     - `electrum` : Connects the wallet to an electrum server.
-     - `kyoto`: Connects the wallet to a kyoto client and server.
-     - `rpc`: Connects the wallet to Bitcoind server.
-  - Extra Utility Tools
-     - `repl` : use bdk-cli as a [REPL](https://codewith.mu/en/tutorials/1.0/repl) shell (useful for quick manual testing of wallet operations).
-     - `compiler` : opens up bdk-cli policy compiler commands.
-    
-The `default` feature set is `repl` and `sqlite`. With the `default` features, `bdk-cli` can be used as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
 
+- Database Options
+  - `sqlite` : Sets the wallet database to a `sqlite3` db.
+- Blockchain Client Options
+  - `esplora` : Connects the wallet to an esplora server.
+  - `electrum` : Connects the wallet to an electrum server.
+  - `kyoto`: Connects the wallet to a kyoto client and server.
+  - `rpc`: Connects the wallet to Bitcoind server.
+- Extra Utility Tools
+  - `repl` : use bdk-cli as a [REPL](https://codewith.mu/en/tutorials/1.0/repl) shell (useful for quick manual testing of wallet operations).
+  - `compiler` : opens up bdk-cli policy compiler commands.
+
+The `default` feature set is `repl` and `sqlite`. With the `default` features, `bdk-cli` can be used as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
 
 ## Install bdk-cli
 
@@ -66,8 +66,8 @@ cargo install --path . --features electrum
 bdk-cli help # to verify it worked
 ```
 
-If no blockchain client feature is enabled online wallet commands `sync` and `broadcast` will be 
-disabled. To enable these commands a blockchain client feature such as `electrum` or another 
+If no blockchain client feature is enabled online wallet commands `sync` and `broadcast` will be
+disabled. To enable these commands a blockchain client feature such as `electrum` or another
 blockchain client feature must be enabled. Below is an example of how to run the `bdk-cli` binary with
 the `electrum` blockchain client feature.
 
@@ -79,8 +79,10 @@ Available blockchain client features are:
 `electrum`, `esplora`, `kyoto`, `rpc`.
 
 ### From crates.io
-You can install the binary for the latest tag of `bdk-cli` with online wallet features 
+
+You can install the binary for the latest tag of `bdk-cli` with online wallet features
 directly from [crates.io](https://crates.io/crates/bdk-cli) with a command as below:
+
 ```sh
 cargo install bdk-cli --features electrum
 ```
@@ -114,12 +116,12 @@ cargo run -- key generate
 
 ## Justfile
 
-We have added the `just` command runner to help you with common commands (during development) and running regtest `bitcoind` if you are using the `rpc` feature. 
+We have added the `just` command runner to help you with common commands (during development) and running regtest `bitcoind` if you are using the `rpc` feature.
 Visit the [just](https://just.systems/man/en/packages.html) page for setup instructions.
 
 The below are some of the commands included:
 
-``` shell
+```shell
 just # list all available recipes
 just test # test the project
 just build # build the project
@@ -127,17 +129,19 @@ just build # build the project
 
 ### Using `Justfile` to run `bitcoind` as a Client
 
-If you are testing `bdk-cli` in regtest mode and wants to use your `bitcoind` node as a blockchain client, the `Justfile` can help you to quickly do so. Below are the steps to use your `bitcoind` node in *regtest* mode with `bdk-cli`:
+If you are testing `bdk-cli` in regtest mode and wants to use your `bitcoind` node as a blockchain client, the `Justfile` can help you to quickly do so. Below are the steps to use your `bitcoind` node in _regtest_ mode with `bdk-cli`:
 
 Note: You can modify the `Justfile` to reflect your nodes' configuration values. These values are the default values used in `bdk-cli`
- > * default wallet: The set default wallet name is `regtest_default_wallet`
- > * default data directory: The set default data directory is `~/.bdk-bitcoin`
- > * RPC username: The set RPC username is `user`
- > * RPC password: The set RPC password is `password`
+
+> - default wallet: The set default wallet name is `regtest_default_wallet`
+> - default data directory: The set default data directory is `~/.bdk-bitcoin`
+> - RPC username: The set RPC username is `user`
+> - RPC password: The set RPC password is `password`
 
 #### Steps
 
 1. Start bitcoind
+
    ```shell
    just start
    ```
@@ -147,8 +151,10 @@ Note: You can modify the `Justfile` to reflect your nodes' configuration values.
    ```shell
    just create
    ```
+
    or
-   ```shell 
+
+   ```shell
    just load
    ```
 
@@ -157,18 +163,21 @@ Note: You can modify the `Justfile` to reflect your nodes' configuration values.
    ```shell
    just address
    ```
-   
+
 4. Mine 101 blocks on regtest to bitcoind wallet address
+
    ```shell
    just generate 101 $(just address)
    ```
 
 5. Check the bitcoind wallet balance
+
    ```shell
    just balance
    ```
 
 6. Setup your `bdk-cli` wallet config and connect it to your regtest node to perform a `sync`
+
    ```shell
    export NETWORK=regtest
    export EXT_DESCRIPTOR='wpkh(tprv8ZgxMBicQKsPdMzWj9KHvoExKJDqfZFuT5D8o9XVZ3wfyUcnPNPJKncq5df8kpDWnMxoKbGrpS44VawHG17ZSwTkdhEtVRzSYXd14vDYXKw/0/*)'
@@ -178,12 +187,14 @@ Note: You can modify the `Justfile` to reflect your nodes' configuration values.
    ```
 
 7. Generate an address from your `bdk-cli` wallet and fund it with 10 bitcoins from your bitcoind node's wallet
+
    ```shell
    export address=$(cargo run --features rpc -- wallet -u "127.0.0.1:18443" -c rpc -a user:password new_address | jq '.address')
    just send 10 $address
    ```
 
 8. Mine 6 more blocks to the bitcoind wallet
+
    ```shell
    just generate 6 $(just address)
    ```
@@ -196,9 +207,16 @@ Note: You can modify the `Justfile` to reflect your nodes' configuration values.
 
 ## Formatting Responses using `--pretty` flag
 
-You can optionally return outputs of commands in  human-readable, tabular format instead of `JSON`. To enable this option, simply add the `--pretty` flag as a top level flag. For instance, you wallet's balance in a pretty format, you can run:
+You can optionally return outputs of commands in human-readable, tabular format instead of `JSON`. To enable this option, simply add the `--pretty` flag as a top level flag. For instance, you wallet's balance in a pretty format, you can run:
 
 ```shell
 cargo run --pretty -n signet wallet -w {wallet_name} -d sqlite balance
 ```
+
+or using the short `-j` for pretty
+
+```shell
+cargo run -j -n signet wallet -w {wallet_name} -d sqlite balance
+```
+
 This is available for wallet, key, repl and compile features. When ommitted, outputs default to `JSON`.
