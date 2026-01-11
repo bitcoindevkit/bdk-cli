@@ -905,6 +905,7 @@ pub(crate) fn handle_compile_subcommand(
     let taproot_policy: Miniscript<String, Tap> = policy.compile()?;
 
     let mut r = None;
+    let mut shorten_descriptor = None;
 
     let descriptor = match script_type.as_str() {
         "sh" => Descriptor::new_sh(legacy_policy),
@@ -926,6 +927,12 @@ pub(crate) fn handle_compile_subcommand(
             let (xonly_internal_key, _) = internal_key_point.x_only_public_key();
 
             let tree = TapTree::Leaf(Arc::new(taproot_policy));
+
+            shorten_descriptor = Some(Descriptor::new_tr(
+                shorten(xonly_internal_key, 4, 4),
+                Some(tree.clone()),
+            )?);
+
             Descriptor::new_tr(xonly_internal_key.to_string(), Some(tree))
         }
         _ => {
@@ -936,10 +943,12 @@ pub(crate) fn handle_compile_subcommand(
     }?;
 
     if pretty {
+        let descriptor = shorten_descriptor.unwrap_or(descriptor);
+
         let mut rows = vec![vec!["Descriptor".cell().bold(true), descriptor.cell()]];
 
         if let Some(r_value) = &r {
-            rows.push(vec!["r".cell().bold(true), r_value.cell()]);
+            rows.push(vec!["r".cell().bold(true), shorten(r_value, 4, 4).cell()]);
         }
 
         let table = rows
