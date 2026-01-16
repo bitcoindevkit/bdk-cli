@@ -11,6 +11,7 @@
 #![warn(missing_docs)]
 
 mod commands;
+mod config;
 mod error;
 mod handlers;
 #[cfg(any(
