@@ -781,7 +781,6 @@ pub fn handle_config_subcommand(
     }
 
     let mut config = WalletConfig::load(datadir)?.unwrap_or(WalletConfig {
-        network,
         wallets: HashMap::new(),
     });
 
@@ -853,7 +852,6 @@ pub fn handle_config_subcommand(
         cookie: wallet_opts.cookie.clone(),
     };
 
-    config.network = network;
     config.wallets.insert(wallet.clone(), wallet_config);
     config.save(datadir)?;
 
