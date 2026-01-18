@@ -37,12 +37,18 @@ use bdk_wallet::miniscript::miniscript;
 #[cfg(feature = "sqlite")]
 use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::{KeychainKind, SignOptions, Wallet};
+
 #[cfg(feature = "compiler")]
 use bdk_wallet::{
-    bitcoin::XOnlyPublicKey,
+    bitcoin::{
+        XOnlyPublicKey,
+        key::{Parity, rand},
+        secp256k1::{PublicKey, Scalar, SecretKey},
+    },
     descriptor::{Descriptor, Legacy, Miniscript},
     miniscript::{Tap, descriptor::TapTree, policy::Concrete},
 };
+
 use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
 use serde_json::json;
 #[cfg(feature = "cbf")]
@@ -893,30 +899,41 @@ pub(crate) fn handle_compile_subcommand(
     pretty: bool,
 ) -> Result<String, Error> {
     let policy = Concrete::<String>::from_str(policy.as_str())?;
-    let legacy_policy: Miniscript<String, Legacy> = policy
-        .compile()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-    let segwit_policy: Miniscript<String, Segwitv0> = policy
-        .compile()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-    let taproot_policy: Miniscript<String, Tap> = policy
-        .compile()
-        .map_err(|e| Error::Generic(e.to_string()))?;
+
+    let legacy_policy: Miniscript<String, Legacy> = policy.compile()?;
+    let segwit_policy: Miniscript<String, Segwitv0> = policy.compile()?;
+    let taproot_policy: Miniscript<String, Tap> = policy.compile()?;
+
+    let mut r = None;
+    let mut shorten_descriptor = None;
 
     let descriptor = match script_type.as_str() {
         "sh" => Descriptor::new_sh(legacy_policy),
         "wsh" => Descriptor::new_wsh(segwit_policy),
         "sh-wsh" => Descriptor::new_sh_wsh(segwit_policy),
         "tr" => {
-            // For tr descriptors, we use a well-known unspendable key (NUMS point).
-            // This ensures the key path is effectively disabled and only script path can be used.
-            // See https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#constructing-and-spending-taproot-outputs
+            // For tr descriptors, we use a randomized unspendable key (H + rG).
+            // This improves privacy by preventing observers from determining if key path spending is disabled.
+            // See BIP-341: https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#constructing-and-spending-taproot-outputs
 
-            let xonly_public_key = XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)
-                .map_err(|e| Error::Generic(format!("Invalid NUMS key: {e}")))?;
+            let secp = Secp256k1::new();
+            let r_secret = SecretKey::new(&mut rand::thread_rng());
+            r = Some(r_secret.display_secret().to_string());
+
+            let nums_key = XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)?;
+            let nums_point = PublicKey::from_x_only_public_key(nums_key, Parity::Even);
+
+            let internal_key_point = nums_point.add_exp_tweak(&secp, &Scalar::from(r_secret))?;
+            let (xonly_internal_key, _) = internal_key_point.x_only_public_key();
 
             let tree = TapTree::Leaf(Arc::new(taproot_policy));
-            Descriptor::new_tr(xonly_public_key.to_string(), Some(tree))
+
+            shorten_descriptor = Some(Descriptor::new_tr(
+                shorten(xonly_internal_key, 4, 4),
+                Some(tree.clone()),
+            )?);
+
+            Descriptor::new_tr(xonly_internal_key.to_string(), Some(tree))
         }
         _ => {
             return Err(Error::Generic(
@@ -924,19 +941,28 @@ pub(crate) fn handle_compile_subcommand(
             ));
         }
     }?;
+
     if pretty {
-        let table = vec![vec![
-            "Descriptor".cell().bold(true),
-            descriptor.to_string().cell(),
-        ]]
-        .table()
-        .display()
-        .map_err(|e| Error::Generic(e.to_string()))?;
+        let descriptor = shorten_descriptor.unwrap_or(descriptor);
+
+        let mut rows = vec![vec!["Descriptor".cell().bold(true), descriptor.cell()]];
+
+        if let Some(r_value) = &r {
+            rows.push(vec!["r".cell().bold(true), shorten(r_value, 4, 4).cell()]);
+        }
+
+        let table = rows
+            .table()
+            .display()
+            .map_err(|e| Error::Generic(e.to_string()))?;
+
         Ok(format!("{table}"))
     } else {
-        Ok(serde_json::to_string_pretty(
-            &json!({"descriptor": descriptor.to_string()}),
-        )?)
+        let mut output = json!({"descriptor": descriptor});
+        if let Some(r_value) = r {
+            output["r"] = json!(r_value);
+        }
+        Ok(serde_json::to_string_pretty(&output)?)
     }
 }
 

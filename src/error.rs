@@ -45,6 +45,9 @@ pub enum BDKCliError {
     #[error("Miniscript error: {0}")]
     MiniscriptError(#[from] bdk_wallet::miniscript::Error),
 
+    #[error("Miniscript compiler error: {0}")]
+    MiniscriptCompilerError(#[from] bdk_wallet::miniscript::policy::compiler::CompilerError),
+
     #[error("ParseError: {0}")]
     ParseError(#[from] bdk_wallet::bitcoin::address::ParseError),
 
@@ -77,6 +80,10 @@ pub enum BDKCliError {
 
     #[error("Signer error: {0}")]
     SignerError(#[from] bdk_wallet::signer::SignerError),
+
+    #[cfg(feature = "compiler")]
+    #[error("Secp256k1 error: {0}")]
+    Secp256k1Error(#[from] bdk_wallet::bitcoin::secp256k1::Error),
 
     #[cfg(feature = "electrum")]
     #[error("Electrum error: {0}")]
