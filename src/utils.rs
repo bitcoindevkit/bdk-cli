@@ -56,6 +56,9 @@ use bdk_wallet::descriptor::Segwitv0;
 use bdk_wallet::keys::{GeneratableKey, GeneratedKey, bip39::WordCount};
 use serde_json::{Value, json};
 
+#[cfg(feature = "bip322")]
+use bdk_bip322::SignatureFormat;
+
 /// Parse the recipient (Address,Amount) argument from cli input.
 pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
     let parts: Vec<_> = s.split(':').collect();
@@ -93,6 +96,21 @@ pub(crate) fn parse_outpoint(s: &str) -> Result<OutPoint, Error> {
 pub(crate) fn parse_address(address_str: &str) -> Result<Address, Error> {
     let unchecked_address = Address::from_str(address_str)?;
     Ok(unchecked_address.assume_checked())
+}
+
+/// Function to parse the signature format from a string
+#[cfg(feature = "bip322")]
+pub(crate) fn parse_signature_format(format_str: &str) -> Result<SignatureFormat, Error> {
+    match format_str.to_lowercase().as_str() {
+        "legacy" => Ok(SignatureFormat::Legacy),
+        "simple" => Ok(SignatureFormat::Simple),
+        "full" => Ok(SignatureFormat::Full),
+        "fullproofoffunds" => Ok(SignatureFormat::FullProofOfFunds),
+        _ => Err(Error::Generic(
+            "Invalid signature format. Use 'legacy', 'simple', 'full', or 'fullproofoffunds'"
+                .to_string(),
+        )),
+    }
 }
 
 /// Prepare bdk-cli home directory

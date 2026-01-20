@@ -119,3 +119,10 @@ impl From<ExtractTxError> for BDKCliError {
         BDKCliError::PsbtExtractTxError(Box::new(value))
     }
 }
+
+#[cfg(feature = "bip322")]
+impl From<bdk_bip322::error::Error> for BDKCliError {
+    fn from(e: bdk_bip322::error::Error) -> Self {
+        BDKCliError::Generic(e.to_string())
+    }
+}
