@@ -82,12 +82,7 @@ impl<'a> PayjoinManager<'a> {
             address.address,
             directory,
             ohttp_keys.ohttp_keys,
-        )
-        .map_err(|e| {
-            Error::Generic(format!(
-                "Failed to initialize a Payjoin ReceiverBuilder: {e}"
-            ))
-        })?
+        )?
         .with_amount(payjoin::bitcoin::Amount::from_sat(amount))
         .with_max_fee_rate(checked_max_fee_rate)
         .build()
@@ -143,11 +138,7 @@ impl<'a> PayjoinManager<'a> {
                 .add_recipient(uri.address.script_pubkey(), sats)
                 .fee_rate(fee_rate);
 
-            tx_builder.finish().map_err(|e| {
-                Error::Generic(format!(
-                    "Error occurred when building original Payjoin transaction: {e}"
-                ))
-            })?
+            tx_builder.finish()?
         };
         if !self
             .wallet
@@ -161,20 +152,11 @@ impl<'a> PayjoinManager<'a> {
         let txid = match uri.extras.pj_param() {
             payjoin::PjParam::V1(_) => {
                 let (req, ctx) = payjoin::send::v1::SenderBuilder::new(original_psbt.clone(), uri)
-                    .build_recommended(fee_rate)
-                    .map_err(|e| {
-                        Error::Generic(format!("Failed to build a Payjoin v1 sender: {e}"))
-                    })?
+                    .build_recommended(fee_rate)?
                     .create_v1_post_request();
 
-                let response = self
-                    .send_payjoin_post_request(req)
-                    .await
-                    .map_err(|e| Error::Generic(format!("Failed to send request: {e}")))?;
-
-                let psbt = ctx
-                    .process_response(&response.bytes().await?)
-                    .map_err(|e| Error::Generic(format!("Failed to send a Payjoin v1: {e}")))?;
+                let response = self.send_payjoin_post_request(req).await?;
+                let psbt = ctx.process_response(&response.bytes().await?)?;
 
                 self.process_payjoin_proposal(psbt, blockchain_client)
                     .await?
@@ -199,10 +181,7 @@ impl<'a> PayjoinManager<'a> {
                     payjoin::persist::NoopSessionPersister::<SenderSessionEvent>::default();
 
                 let sender = payjoin::send::v2::SenderBuilder::new(original_psbt.clone(), uri)
-                    .build_recommended(fee_rate)
-                    .map_err(|e| {
-                        Error::Generic(format!("Failed to build a Payjoin v2 sender: {e}"))
-                    })?
+                    .build_recommended(fee_rate)?
                     .save(&persister)
                     .map_err(|e| {
                         Error::Generic(format!(
@@ -310,14 +289,7 @@ impl<'a> PayjoinManager<'a> {
     ) -> Result<(), Error> {
         let mut current_receiver_typestate = receiver;
         let next_receiver_typestate = loop {
-            let (req, context) = current_receiver_typestate
-                .create_poll_request(relay.as_str())
-                .map_err(|e| {
-                    Error::Generic(format!(
-                        "Failed to create a poll request to read from the Payjoin directory: {e}"
-                    ))
-                })?;
-            println!("Polling receive request...");
+            let (req, context) = current_receiver_typestate.create_poll_request(relay.as_str())?;
             let response = self.send_payjoin_post_request(req).await?;
             let state_transition = current_receiver_typestate
                 .process_response(response.bytes().await?.to_vec().as_slice(), context)
@@ -503,18 +475,10 @@ impl<'a> PayjoinManager<'a> {
                     .expect("Failed to create InputPair when contributing outputs to the proposal")
             })
             .collect();
-        let selected_input = receiver
-            .try_preserving_privacy(candidate_inputs)
-            .map_err(|e| {
-                Error::Generic(format!(
-                    "Error occurred when trying to pick an unspent UTXO for input contribution: {e}"
-                ))
-            })?;
+        let selected_input = receiver.try_preserving_privacy(candidate_inputs)?;
 
-        let next_receiver_typestate = receiver.contribute_inputs(vec![selected_input])
-            .map_err(|e| {
-                Error::Generic(format!("Error occurred when contributing the selected input to the proposal: {e}"))
-            })?.commit_inputs().save(persister)
+        let next_receiver_typestate = receiver.contribute_inputs(vec![selected_input])?
+            .commit_inputs().save(persister)
             .map_err(|e| {
                 Error::Generic(format!("Error occurred when saving after committing to the inputs after receiver contribution: {e}"))
             })?;
@@ -777,11 +741,7 @@ impl<'a> PayjoinManager<'a> {
         persister: &impl SessionPersister<SessionEvent = SenderSessionEvent>,
         blockchain_client: &BlockchainClient,
     ) -> Result<Txid, Error> {
-        let (req, ctx) = sender.create_v2_post_request(relay.as_str()).map_err(|e| {
-            Error::Generic(format!(
-                "Failed to create a post request for a Payjoin send: {e}"
-            ))
-        })?;
+        let (req, ctx) = sender.create_v2_post_request(relay.as_str())?;
         let response = self.send_payjoin_post_request(req).await?;
         let sender = sender
             .process_response(&response.bytes().await?, ctx)
@@ -802,11 +762,7 @@ impl<'a> PayjoinManager<'a> {
     ) -> Result<Txid, Error> {
         let mut sender = sender.clone();
         loop {
-            let (req, ctx) = sender.create_poll_request(relay.as_str()).map_err(|e| {
-                Error::Generic(format!(
-                    "Failed to create a poll request during a Payjoin send: {e}"
-                ))
-            })?;
+            let (req, ctx) = sender.create_poll_request(relay.as_str())?;
             let response = self.send_payjoin_post_request(req).await?;
             let processed_response = sender
                 .process_response(&response.bytes().await?, ctx)
