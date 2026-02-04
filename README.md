@@ -73,7 +73,10 @@ blockchain client feature must be enabled. Below is an example of how to run the
 the `electrum` blockchain client feature.
 
 ```shell
-RUST_LOG=debug cargo run --features electrum -- --network testnet4 wallet --wallet testnetwallet --ext-descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" --client-type electrum --database-type sqlite --url "ssl://mempool.space:40002" sync
+RUST_LOG=debug cargo run --features electrum -- --network testnet4 wallet --wallet testnetwallet config --ext-descriptor "wpkh(tprv8ZgxMBicQKsPda2kR5xbHy1eVDWReS8CjQ9LaPL3UDubtA7ns1UcRbyaLMYy44YzBoBTgLCSKpMRXk1LcC5Wxm1r77QDsSJBqwejfftW3mY/84'/1'/0'/0/*)#t3xrg3ld" --client-type electrum --database-type sqlite --url "ssl://mempool.space:40002"
+
+RUST_LOG=debug cargo run --features electrum -- wallet -w testnetwallet full_scan
+RUST_LOG=debug cargo run --features electrum -- wallet -w testnetwallet balance 
 ```
 
 Available blockchain client features are:
@@ -98,13 +101,15 @@ cargo run
 To sync a wallet to the default electrum server:
 
 ```shell
-cargo run --features electrum -- --network testnet4 wallet --wallet sample_wallet --ext-descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" --database-type sqlite --client-type electrum --url "ssl://mempool.space:40002" sync
+cargo run --features electrum -- --network testnet4 wallet --wallet sample_wallet config --ext-descriptor "wpkh(tprv8ZgxMBicQKsPda2kR5xbHy1eVDWReS8CjQ9LaPL3UDubtA7ns1UcRbyaLMYy44YzBoBTgLCSKpMRXk1LcC5Wxm1r77QDsSJBqwejfftW3mY/84'/1'/0'/0/*)#t3xrg3ld" --database-type sqlite --client-type electrum --url "ssl://mempool.space:40002"
+cargo run --features electrum -- wallet --wallet sample_wallet full_scan
+cargo run --features electrum -- wallet --wallet sample_wallet balance
 ```
 
 To get a wallet balance with customized logging:
 
 ```shell
-RUST_LOG=debug,rusqlite=info,rustls=info cargo run -- wallet --external-descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" balance
+RUST_LOG=debug,rusqlite=info,rustls=info cargo run --features electrum -- wallet --wallet sample_wallet balance
 ```
 
 To generate a new extended master key, suitable for use in a descriptor:
@@ -116,13 +121,23 @@ cargo run -- key generate
 To start a Payjoin session as the receiver with regtest RPC and example OHTTP relays:
 
 ```
-cargo run --features rpc -- wallet --wallet sample_wallet --url="127.0.0.1:18443" --ext-descriptor "wpkh(tprv8ZgxMBicQKsPd2PoUEcGNDHPZmVWgtPYERAwMG6qHheX6LN4oaazp3qZU7mykiaAZga1ZB2SJJR6Mriyq8MocMs7QTe7toaabSwTWu5fRFz/84h/1h/0h/0/*)#8guqp7rn" receive_payjoin --amount 21120000 --max_fee_rate 1000 --directory "https://payjo.in" --ohttp_relay "https://pj.bobspacebkk.com" --ohttp_relay "https://pj.benalleng.com"
+cargo run --features rpc -- --network regtest wallet --wallet payjoin_wallet1 config --ext-descriptor "wpkh(tprv8ZgxMBicQKsPd2PoUEcGNDHPZmVWgtPYERAwMG6qHheX6LN4oaazp3qZU7mykiaAZga1ZB2SJJR6Mriyq8MocMs7QTe7toaabSwTWu5fRFz/84h/1h/0h/0/*)#8guqp7rn" --client-type rpc --database-type sqlite --url "127.0.0.1:18443" 
+
+cargo run --features rpc -- wallet --wallet payjoin_wallet1 sync
+cargo run --features rpc -- wallet --wallet payjoin_wallet1 balance
+
+cargo run --features rpc -- wallet --wallet payjoin_wallet1 receive_payjoin --amount 400000 --max_fee_rate 1000 --directory "https://payjo.in" --ohttp_relay "https://pj.bobspacebkk.com" --ohttp_relay "https://pj.benalleng.com"
 ```
 
 To send a Payjoin with regtest RPC and example OHTTP relays:
 
 ```
-cargo run --features rpc -- wallet --wallet sample_wallet --url="127.0.0.1:18443" --ext-descriptor "wpkh(tprv8ZgxMBicQKsPd2PoUEcGNDHPZmVWgtPYERAwMG6qHheX6LN4oaazp3qZU7mykiaAZga1ZB2SJJR6Mriyq8MocMs7QTe7toaabSwTWu5fRFz/84h/1h/0h/0/*)#8guqp7rn" send_payjoin --ohttp_relay "https://pj.bobspacebkk.com" --ohttp_relay "https://pj.benalleng.com" --fee_rate 1 --uri "<URI>"
+cargo run --features rpc -- --network regtest wallet --wallet payjoin_wallet2 config --ext-descriptor "wpkh(tprv8ZgxMBicQKsPfBxswkATvZRQ9kDdRbJPtHYZaZCARL2myxcK7DqsqPhRo2G2rRVHFPbowq63BE6S4k2pUMYeF2fUMTT63Q7zhoXtKsM1FaS/84'/1'/0'/0/*)#qf5gnqrf" --client-type rpc --database-type sqlite --url "127.0.0.1:18443" 
+
+cargo run --features rpc -- wallet --wallet payjoin_wallet2 sync
+cargo run --features rpc -- wallet --wallet payjoin_wallet2 balance
+
+cargo run --features rpc -- wallet --wallet payjoin_wallet2 send_payjoin --ohttp_relay "https://pj.bobspacebkk.com" --ohttp_relay "https://pj.benalleng.com" --fee_rate 1 --uri "<URI>"
 ```
 
 ## Justfile
@@ -183,16 +198,13 @@ Note: You can modify the `Justfile` to reflect your nodes' configuration values.
 
 6. Setup your `bdk-cli` wallet config and connect it to your regtest node to perform a `sync`
    ```shell
-   export NETWORK=regtest
-   export EXT_DESCRIPTOR='wpkh(tprv8ZgxMBicQKsPdMzWj9KHvoExKJDqfZFuT5D8o9XVZ3wfyUcnPNPJKncq5df8kpDWnMxoKbGrpS44VawHG17ZSwTkdhEtVRzSYXd14vDYXKw/0/*)'
-   export INT_DESCRIPTOR='wpkh(tprv8ZgxMBicQKsPdMzWj9KHvoExKJDqfZFuT5D8o9XVZ3wfyUcnPNPJKncq5df8kpDWnMxoKbGrpS44VawHG17ZSwTkdhEtVRzSYXd14vDYXKw/1/*)'
-   export DATABASE_TYPE=sqlite
-   cargo run --features rpc -- wallet -u "127.0.0.1:18443" -c rpc -a user:password sync
+   cargo run --features rpc -- -n regtest wallet -w regtest1 config -e "wpkh(tprv8ZgxMBicQKsPdMzWj9KHvoExKJDqfZFuT5D8o9XVZ3wfyUcnPNPJKncq5df8kpDWnMxoKbGrpS44VawHG17ZSwTkdhEtVRzSYXd14vDYXKw/0/*)" -i "wpkh(tprv8ZgxMBicQKsPdMzWj9KHvoExKJDqfZFuT5D8o9XVZ3wfyUcnPNPJKncq5df8kpDWnMxoKbGrpS44VawHG17ZSwTkdhEtVRzSYXd14vDYXKw/1/*)" -u "127.0.0.1:18443" -c rpc -d sqlite -a user:password 
+   cargo run --features rpc -- wallet -w regtest1 sync
    ```
 
 7. Generate an address from your `bdk-cli` wallet and fund it with 10 bitcoins from your bitcoind node's wallet
    ```shell
-   export address=$(cargo run --features rpc -- wallet -u "127.0.0.1:18443" -c rpc -a user:password new_address | jq '.address')
+   export address=$(cargo run --features rpc -- wallet -w regtest1 new_address | jq '.address')
    just send 10 $address
    ```
 
@@ -203,8 +215,8 @@ Note: You can modify the `Justfile` to reflect your nodes' configuration values.
 
 9. You can `sync` your `bdk-cli` wallet now and the balance should reflect the regtest bitcoin you received
    ```shell
-   cargo run --features rpc -- wallet -u "127.0.0.1:18443" -c rpc -a user:password sync
-   cargo run --features rpc -- wallet -u "127.0.0.1:18443" -c rpc -a user:password balance
+   cargo run --features rpc -- wallet -w regtest1 sync
+   cargo run --features rpc -- wallet -w regtest1 balance
    ```
 
 ## Formatting Responses using `--pretty` flag
@@ -212,6 +224,47 @@ Note: You can modify the `Justfile` to reflect your nodes' configuration values.
 You can optionally return outputs of commands in  human-readable, tabular format instead of `JSON`. To enable this option, simply add the `--pretty` flag as a top level flag. For instance, you wallet's balance in a pretty format, you can run:
 
 ```shell
-cargo run --pretty -n signet wallet -w {wallet_name} -d sqlite balance
+cargo run -- --pretty -n signet wallet -w {wallet_name} balance
 ```
 This is available for wallet, key, repl and compile features. When ommitted, outputs default to `JSON`.
+
+## Saving and using wallet configurations
+
+The `wallet config` sub-command allows you to save wallet settings to a `config.toml` file in the default directory (`~/.bdk-bitcoin/`) or custom directory specified with the `--datadir` flag. This eliminate the need to repeatedly specify descriptors, client types, and other parameters for each command. Once configured, you can use any wallet command by simply specifying the wallet name. All other parameters are automatically loaded from the saved configuration.
+
+To save a wallet settings:
+
+```shell
+cargo run --features <list-of-features> -- -n <network> wallet --wallet <wallet_name> config [ -f ] --ext-descriptor <ext_descriptor> --int-descriptor <int_descriptor>  --client-type <client_type>  --url <server_url> [--database-type <database_type>] [--rpc-user <rpc_user>]
+  [--rpc-password <rpc_password>] 
+```
+
+For example, to initialize a wallet named `my_wallet` with `electrum` as the backend on `signet` network:
+
+```shell
+cargo run --features electrum -- -n signet wallet -w my_wallet config -e "tr(tprv8Z.../0/*)#dtdqk3dx" -i "tr(tprv8Z.../1/*)#ulgptya7" -d sqlite -c electrum -u "ssl://mempool.space:60602"
+```
+
+To overwrite an existing wallet configuration, use the  `--force` flag after the `config` sub-command.
+
+#### Using a Configured Wallet
+
+Once configured, use any wallet command with just the wallet name:
+
+
+```shell
+cargo run --features electrum wallet -w my_wallet new_address
+
+cargo run --features electrum wallet -w my_wallet full_scan
+```
+
+Note that each wallet has its own configuration, allowing multiple wallets with different configurations.
+
+#### View all saved Wallet Configs
+
+To view all saved wallet configurations:
+
+```shell
+cargo run wallets`
+```
+You can also use the `--pretty` flag for a formatted output.

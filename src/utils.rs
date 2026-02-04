@@ -9,6 +9,7 @@
 //! Utility Tools
 //!
 //! This module includes all the utility tools used by the App.
+use crate::config::WalletConfig;
 use crate::error::BDKCliError as Error;
 use std::{
     fmt::Display,
@@ -121,13 +122,11 @@ pub(crate) fn prepare_home_dir(home_path: Option<PathBuf>) -> Result<PathBuf, Er
 /// Prepare wallet database directory.
 #[allow(dead_code)]
 pub(crate) fn prepare_wallet_db_dir(
-    wallet_name: &Option<String>,
     home_path: &Path,
+    wallet_name: &str,
 ) -> Result<std::path::PathBuf, Error> {
     let mut dir = home_path.to_owned();
-    if let Some(wallet_name) = wallet_name {
-        dir.push(wallet_name);
-    }
+    dir.push(wallet_name);
 
     if !dir.exists() {
         std::fs::create_dir(&dir).map_err(|e| Error::Generic(e.to_string()))?;
@@ -175,7 +174,7 @@ pub(crate) fn new_blockchain_client(
     _datadir: PathBuf,
 ) -> Result<BlockchainClient, Error> {
     #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
-    let url = wallet_opts.url.as_str();
+    let url = &wallet_opts.url;
     let client = match wallet_opts.client_type {
         #[cfg(feature = "electrum")]
         ClientType::Electrum => {
@@ -188,7 +187,7 @@ pub(crate) fn new_blockchain_client(
         }
         #[cfg(feature = "esplora")]
         ClientType::Esplora => {
-            let client = bdk_esplora::esplora_client::Builder::new(url).build_async()?;
+            let client = bdk_esplora::esplora_client::Builder::new(&url).build_async()?;
             BlockchainClient::Esplora {
                 client: Box::new(client),
                 parallel_requests: wallet_opts.parallel_requests,
@@ -243,17 +242,14 @@ where
     let int_descriptor = wallet_opts.int_descriptor.clone();
 
     let mut wallet_load_params = Wallet::load();
-    if ext_descriptor.is_some() {
-        wallet_load_params =
-            wallet_load_params.descriptor(KeychainKind::External, ext_descriptor.clone());
-    }
+    wallet_load_params =
+        wallet_load_params.descriptor(KeychainKind::External, Some(ext_descriptor.clone()));
+
     if int_descriptor.is_some() {
         wallet_load_params =
             wallet_load_params.descriptor(KeychainKind::Internal, int_descriptor.clone());
     }
-    if ext_descriptor.is_some() || int_descriptor.is_some() {
-        wallet_load_params = wallet_load_params.extract_keys();
-    }
+    wallet_load_params = wallet_load_params.extract_keys();
 
     let wallet_opt = wallet_load_params
         .check_network(network)
@@ -262,25 +258,16 @@ where
 
     let wallet = match wallet_opt {
         Some(wallet) => wallet,
-        None => match (ext_descriptor, int_descriptor) {
-            (Some(ext_descriptor), Some(int_descriptor)) => {
-                let wallet = Wallet::create(ext_descriptor, int_descriptor)
-                    .network(network)
-                    .create_wallet(persister)
-                    .map_err(|e| Error::Generic(e.to_string()))?;
-                Ok(wallet)
-            }
-            (Some(ext_descriptor), None) => {
-                let wallet = Wallet::create_single(ext_descriptor)
-                    .network(network)
-                    .create_wallet(persister)
-                    .map_err(|e| Error::Generic(e.to_string()))?;
-                Ok(wallet)
-            }
-            _ => Err(Error::Generic(
-                "An external descriptor is required.".to_string(),
-            )),
-        }?,
+        None => match int_descriptor {
+            Some(int_descriptor) => Wallet::create(ext_descriptor, int_descriptor)
+                .network(network)
+                .create_wallet(persister)
+                .map_err(|e| Error::Generic(e.to_string()))?,
+            None => Wallet::create_single(ext_descriptor)
+                .network(network)
+                .create_wallet(persister)
+                .map_err(|e| Error::Generic(e.to_string()))?,
+        },
     };
 
     Ok(wallet)
@@ -292,22 +279,19 @@ pub(crate) fn new_wallet(network: Network, wallet_opts: &WalletOpts) -> Result<W
     let ext_descriptor = wallet_opts.ext_descriptor.clone();
     let int_descriptor = wallet_opts.int_descriptor.clone();
 
-    match (ext_descriptor, int_descriptor) {
-        (Some(ext_descriptor), Some(int_descriptor)) => {
+    match int_descriptor {
+        Some(int_descriptor) => {
             let wallet = Wallet::create(ext_descriptor, int_descriptor)
                 .network(network)
                 .create_wallet_no_persist()?;
             Ok(wallet)
         }
-        (Some(ext_descriptor), None) => {
+        None => {
             let wallet = Wallet::create_single(ext_descriptor)
                 .network(network)
                 .create_wallet_no_persist()?;
             Ok(wallet)
         }
-        _ => Err(Error::Generic(
-            "An external descriptor is required.".to_string(),
-        )),
     }
 }
 
@@ -380,6 +364,11 @@ pub async fn sync_kyoto_client(wallet: &mut Wallet, client: Box<LightClient>) ->
 
 pub(crate) fn shorten(displayable: impl Display, start: u8, end: u8) -> String {
     let displayable = displayable.to_string();
+
+    if displayable.len() <= (start + end) as usize {
+        return displayable;
+    }
+
     let start_str: &str = &displayable[0..start as usize];
     let end_str: &str = &displayable[displayable.len() - end as usize..];
     format!("{start_str}...{end_str}")
@@ -630,4 +619,32 @@ pub fn format_descriptor_output(result: &Value, pretty: bool) -> Result<String, 
         .map_err(|e| Error::Generic(e.to_string()))?;
 
     Ok(format!("{table}"))
+}
+
+pub fn load_wallet_config(
+    home_dir: &Path,
+    wallet_name: &str,
+) -> Result<(WalletOpts, Network), Error> {
+    let config = WalletConfig::load(home_dir)?.ok_or(Error::Generic(format!(
+        "No config found for wallet {wallet_name}",
+    )))?;
+
+    let wallet_opts = config.get_wallet_opts(wallet_name)?;
+    let wallet_config = config
+        .wallets
+        .get(wallet_name)
+        .ok_or(Error::Generic(format!(
+            "Wallet '{wallet_name}' not found in config"
+        )))?;
+
+    let network = match wallet_config.network.as_str() {
+        "bitcoin" => Ok(Network::Bitcoin),
+        "testnet" => Ok(Network::Testnet),
+        "regtest" => Ok(Network::Regtest),
+        "signet" => Ok(Network::Signet),
+        "testnet4" => Ok(Network::Testnet4),
+        _ => Err(Error::Generic("Invalid network in config".to_string())),
+    }?;
+
+    Ok((wallet_opts, network))
 }
