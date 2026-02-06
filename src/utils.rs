@@ -241,6 +241,11 @@ where
     let ext_descriptor = wallet_opts.ext_descriptor.clone();
     let int_descriptor = wallet_opts.int_descriptor.clone();
 
+    let is_multipath = ext_descriptor.contains('<') && ext_descriptor.contains(';');
+    if is_multipath && int_descriptor.is_some() {
+        return Err(Error::AmbiguousDescriptors);
+    }
+
     let mut wallet_load_params = Wallet::load();
     wallet_load_params =
         wallet_load_params.descriptor(KeychainKind::External, Some(ext_descriptor.clone()));
@@ -258,16 +263,20 @@ where
 
     let wallet = match wallet_opt {
         Some(wallet) => wallet,
-        None => match int_descriptor {
-            Some(int_descriptor) => Wallet::create(ext_descriptor, int_descriptor)
+        None => {
+            let builder = if let Some(int_descriptor) = int_descriptor {
+                Wallet::create(ext_descriptor, int_descriptor)
+            } else if ext_descriptor.contains('<') && ext_descriptor.contains(';') {
+                Wallet::create_from_two_path_descriptor(ext_descriptor)
+            } else {
+                Wallet::create_single(ext_descriptor)
+            };
+
+            builder
                 .network(network)
                 .create_wallet(persister)
-                .map_err(|e| Error::Generic(e.to_string()))?,
-            None => Wallet::create_single(ext_descriptor)
-                .network(network)
-                .create_wallet(persister)
-                .map_err(|e| Error::Generic(e.to_string()))?,
-        },
+                .map_err(|e| Error::Generic(e.to_string()))?
+        }
     };
 
     Ok(wallet)
@@ -279,20 +288,21 @@ pub(crate) fn new_wallet(network: Network, wallet_opts: &WalletOpts) -> Result<W
     let ext_descriptor = wallet_opts.ext_descriptor.clone();
     let int_descriptor = wallet_opts.int_descriptor.clone();
 
-    match int_descriptor {
-        Some(int_descriptor) => {
-            let wallet = Wallet::create(ext_descriptor, int_descriptor)
-                .network(network)
-                .create_wallet_no_persist()?;
-            Ok(wallet)
-        }
-        None => {
-            let wallet = Wallet::create_single(ext_descriptor)
-                .network(network)
-                .create_wallet_no_persist()?;
-            Ok(wallet)
-        }
+    let is_multipath = ext_descriptor.contains('<') && ext_descriptor.contains(';');
+    if is_multipath && int_descriptor.is_some() {
+        return Err(Error::AmbiguousDescriptors);
     }
+
+    let builder = if let Some(int_descriptor) = int_descriptor {
+        Wallet::create(ext_descriptor, int_descriptor)
+    } else if ext_descriptor.contains('<') && ext_descriptor.contains(';') {
+        Wallet::create_from_two_path_descriptor(ext_descriptor)
+    } else {
+        Wallet::create_single(ext_descriptor)
+    };
+
+    let wallet = builder.network(network).create_wallet_no_persist()?;
+    Ok(wallet)
 }
 
 #[cfg(feature = "cbf")]
