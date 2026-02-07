@@ -480,25 +480,32 @@ pub fn handle_offline_wallet_subcommand(
             let internal = wallet.public_descriptor(KeychainKind::Internal).to_string();
 
             if cli_opts.pretty {
-                let table = vec![
+                let rows = if external == internal {
+                    vec![vec![
+                        "Multipath Descriptor".cell().bold(true),
+                        external.cell(),
+                    ]]
+                } else {
                     vec![
-                        "External Descriptor".cell().bold(true),
-                        external.to_string().cell(),
-                    ],
-                    vec![
-                        "Internal Descriptor".cell().bold(true),
-                        internal.to_string().cell(),
-                    ],
-                ]
-                .table()
-                .display()
-                .map_err(|e| Error::Generic(e.to_string()))?;
+                        vec!["External Descriptor".cell().bold(true), external.cell()],
+                        vec!["Internal Descriptor".cell().bold(true), internal.cell()],
+                    ]
+                };
+                let table = rows
+                    .table()
+                    .display()
+                    .map_err(|e| Error::Generic(e.to_string()))?;
                 Ok(format!("{table}"))
             } else {
-                Ok(serde_json::to_string_pretty(&json!({
-                    "external": external.to_string(),
-                    "internal": internal.to_string(),
-                }))?)
+                let desc = if external == internal {
+                    json!({"multipath_descriptor": external.to_string()})
+                } else {
+                    json!({
+                        "external": external.to_string(),
+                        "internal": internal.to_string(),
+                    })
+                };
+                Ok(serde_json::to_string_pretty(&desc)?)
             }
         }
         Sign {
