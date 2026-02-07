@@ -241,10 +241,9 @@ where
     let ext_descriptor = wallet_opts.ext_descriptor.clone();
     let int_descriptor = wallet_opts.int_descriptor.clone();
 
-    let is_multipath = ext_descriptor.contains('<') && ext_descriptor.contains(';');
-    if is_multipath && int_descriptor.is_some() {
+    if is_multipath_desc(&ext_descriptor) && int_descriptor.is_some() {
         return Err(Error::AmbiguousDescriptors);
-    }
+    };
 
     let mut wallet_load_params = Wallet::load();
     wallet_load_params =
@@ -266,7 +265,7 @@ where
         None => {
             let builder = if let Some(int_descriptor) = int_descriptor {
                 Wallet::create(ext_descriptor, int_descriptor)
-            } else if ext_descriptor.contains('<') && ext_descriptor.contains(';') {
+            } else if is_multipath_desc(&ext_descriptor) {
                 Wallet::create_from_two_path_descriptor(ext_descriptor)
             } else {
                 Wallet::create_single(ext_descriptor)
@@ -288,14 +287,13 @@ pub(crate) fn new_wallet(network: Network, wallet_opts: &WalletOpts) -> Result<W
     let ext_descriptor = wallet_opts.ext_descriptor.clone();
     let int_descriptor = wallet_opts.int_descriptor.clone();
 
-    let is_multipath = ext_descriptor.contains('<') && ext_descriptor.contains(';');
-    if is_multipath && int_descriptor.is_some() {
+    if is_multipath_desc(&ext_descriptor) && int_descriptor.is_some() {
         return Err(Error::AmbiguousDescriptors);
     }
 
     let builder = if let Some(int_descriptor) = int_descriptor {
         Wallet::create(ext_descriptor, int_descriptor)
-    } else if ext_descriptor.contains('<') && ext_descriptor.contains(';') {
+    } else if is_multipath_desc(&ext_descriptor) {
         Wallet::create_from_two_path_descriptor(ext_descriptor)
     } else {
         Wallet::create_single(ext_descriptor)
@@ -657,4 +655,113 @@ pub fn load_wallet_config(
     }?;
 
     Ok((wallet_opts, network))
+}
+
+/// Helper to check if a descriptor string contains a BIP389 multipath expression.
+fn is_multipath_desc(desc_str: &str) -> bool {
+    let desc_str = desc_str.split('#').next().unwrap_or(desc_str).trim();
+
+    desc_str.contains('<') && desc_str.contains(';') && desc_str.contains('>')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::WalletOpts;
+    use bdk_wallet::{bitcoin::Network, rusqlite::Connection};
+
+    #[test]
+    fn test_is_multipath_descriptor() {
+        let multipath_desc = "wpkh([9a6a2580/84'/1'/0']tpubDDnGNapGEY6AZAdQbfRJgMg9fvz8pUBrLwvyvUqEgcUfgzM6zc2eVK4vY9x9L5FJWdX8WumXuLEDV5zDZnTfbn87vLe9XceCFwTu9so9Kks/<0;1>/*)";
+        let desc = "wpkh([07234a14/84'/1'/0']tpubDCSgT6PaVLQH9h2TAxKryhvkEurUBcYRJc9dhTcMDyahhWiMWfEWvQQX89yaw7w7XU8bcVujoALfxq59VkFATri3Cxm5mkp9kfHfRFDckEh/0/*)#429nsxmg";
+        let multi_path = is_multipath_desc(multipath_desc);
+        let result = is_multipath_desc(desc);
+        assert!(multi_path);
+        assert!(!result);
+    }
+
+    #[cfg(any(feature = "sqlite", feature = "redb"))]
+    #[test]
+    fn test_multipath_detection_and_initialization() {
+        let mut db = Connection::open_in_memory().expect("should open in memory db");
+        let wallet_config = crate::config::WalletConfigInner {
+            wallet: "test_wallet".to_string(),
+            network: "testnet4".to_string(),
+            ext_descriptor: "wpkh([9a6a2580/84'/1'/0']tpubDDnGNapGEY6AZAdQbfRJgMg9fvz8pUBrLwvyvUqEgcUfgzM6zc2eVK4vY9x9L5FJWdX8WumXuLEDV5zDZnTfbn87vLe9XceCFwTu9so9Kks/<0;1>/*)".to_string(),
+            int_descriptor: None,
+            #[cfg(any(feature = "sqlite", feature = "redb"))]
+            database_type: "sqlite".to_string(),
+            #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc", feature = "cbf"))]
+            client_type: Some("esplora".to_string()),
+            #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+            server_url: Some(" https://blockstream.info/testnet4/api".to_string()),
+            #[cfg(feature = "electrum")]
+            batch_size: None,
+            #[cfg(feature = "esplora")]
+            parallel_requests: None,
+            #[cfg(feature = "rpc")]
+            rpc_user: None,
+            #[cfg(feature = "rpc")]
+            rpc_password: None,
+            #[cfg(feature = "rpc")]
+            cookie: None,
+        };
+
+        let opts: WalletOpts = (&wallet_config)
+            .try_into()
+            .expect("Conversion should succeed");
+
+        let result = new_persisted_wallet(Network::Testnet, &mut db, &opts);
+        assert!(result.is_ok(), "Multipath initialization should succeed");
+
+        let wallet = result.unwrap();
+        let ext_desc = wallet.public_descriptor(KeychainKind::External).to_string();
+        let int_desc = wallet.public_descriptor(KeychainKind::Internal).to_string();
+
+        assert!(ext_desc.contains("/0/*"), "External should use index 0");
+        assert!(int_desc.contains("/1/*"), "Internal should use index 1");
+
+        assert!(ext_desc.contains("9a6a2580"));
+        assert!(int_desc.contains("9a6a2580"));
+    }
+
+    #[cfg(any(feature = "sqlite", feature = "redb"))]
+    #[test]
+    fn test_error_on_ambiguous_descriptors() {
+        let network = Network::Testnet;
+        let mut db = Connection::open_in_memory().expect("should open in memory db");
+        let wallet_config = crate::config::WalletConfigInner {
+            wallet: "test_wallet".to_string(),
+            network: "testnet4".to_string(),
+            ext_descriptor: "wpkh([9a6a2580/84'/1'/0']tpubDDnGNapGEY6AZAdQbfRJgMg9fvz8pUBrLwvyvUqEgcUfgzM6zc2eVK4vY9x9L5FJWdX8WumXuLEDV5zDZnTfbn87vLe9XceCFwTu9so9Kks/<0;1>/*)".to_string(),
+            int_descriptor: Some("wpkh([07234a14/84'/1'/0']tpubDCSgT6PaVLQH9h2TAxKryhvkEurUBcYRJc9dhTcMDyahhWiMWfEWvQQX89yaw7w7XU8bcVujoALfxq59VkFATri3Cxm5mkp9kfHfRFDckEh/1/*)#y7qjdnts".to_string()),
+            #[cfg(any(feature = "sqlite", feature = "redb"))]
+            database_type: "sqlite".to_string(),
+            #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc", feature = "cbf"))]
+            client_type: Some("esplora".to_string()),
+            #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+            server_url: Some(" https://blockstream.info/testnet4/api".to_string()),
+            #[cfg(feature = "electrum")]
+            batch_size: None,
+            #[cfg(feature = "esplora")]
+            parallel_requests: None,
+            #[cfg(feature = "rpc")]
+            rpc_user: None,
+            #[cfg(feature = "rpc")]
+            rpc_password: None,
+            #[cfg(feature = "rpc")]
+            cookie: None,
+        };
+
+        let opts: WalletOpts = (&wallet_config)
+            .try_into()
+            .expect("Conversion should succeed");
+
+        let result = new_persisted_wallet(network, &mut db, &opts);
+
+        match result {
+            Err(Error::AmbiguousDescriptors) => (),
+            _ => panic!("Should have returned AmbiguousDescriptors error"),
+        }
+    }
 }
