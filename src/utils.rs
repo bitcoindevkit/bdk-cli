@@ -187,7 +187,7 @@ pub(crate) fn new_blockchain_client(
         }
         #[cfg(feature = "esplora")]
         ClientType::Esplora => {
-            let client = bdk_esplora::esplora_client::Builder::new(&url).build_async()?;
+            let client = bdk_esplora::esplora_client::Builder::new(url).build_async()?;
             BlockchainClient::Esplora {
                 client: Box::new(client),
                 parallel_requests: wallet_opts.parallel_requests,
