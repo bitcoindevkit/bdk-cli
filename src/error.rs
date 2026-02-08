@@ -63,7 +63,7 @@ pub enum BDKCliError {
 
     #[cfg(feature = "redb")]
     #[error("Redb StoreError: {0}")]
-    RedbStoreError(#[from] bdk_redb::error::StoreError),
+    RedbStoreError(Box<bdk_redb::error::StoreError>),
 
     #[cfg(feature = "redb")]
     #[error("Redb dabtabase error: {0}")]
@@ -117,5 +117,12 @@ pub enum BDKCliError {
 impl From<ExtractTxError> for BDKCliError {
     fn from(value: ExtractTxError) -> Self {
         BDKCliError::PsbtExtractTxError(Box::new(value))
+    }
+}
+
+#[cfg(feature = "redb")]
+impl From<bdk_redb::error::StoreError> for BDKCliError {
+    fn from(err: bdk_redb::error::StoreError) -> Self {
+        BDKCliError::RedbStoreError(Box::new(err))
     }
 }
