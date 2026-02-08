@@ -158,7 +158,7 @@ pub(crate) enum BlockchainClient {
     },
 
     #[cfg(feature = "cbf")]
-    KyotoClient { client: KyotoClientHandle },
+    KyotoClient { client: Box<KyotoClientHandle> },
 }
 
 /// Handle for the Kyoto client after the node has been started.
@@ -195,7 +195,7 @@ pub(crate) fn new_blockchain_client(
         }
         #[cfg(feature = "esplora")]
         ClientType::Esplora => {
-            let client = bdk_esplora::esplora_client::Builder::new(&url).build_async()?;
+            let client = bdk_esplora::esplora_client::Builder::new(url).build_async()?;
             BlockchainClient::Esplora {
                 client: Box::new(client),
                 parallel_requests: wallet_opts.parallel_requests,
@@ -245,10 +245,10 @@ pub(crate) fn new_blockchain_client(
             );
 
             BlockchainClient::KyotoClient {
-                client: KyotoClientHandle {
+                client: Box::new(KyotoClientHandle {
                     requester,
                     update_subscriber: tokio::sync::Mutex::new(update_subscriber),
-                },
+                }),
             }
         }
     };
