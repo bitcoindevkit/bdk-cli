@@ -130,26 +130,49 @@ pub enum CliSubCommand {
     Wallets,
     /// Generate tab-completion scripts for your shell.
     ///
-    /// Outputs a shell-specific completion script to stdout.
-    /// To enable completions you need to redirect this output into the appropriate location for your shell.
+    /// The completion script is output on stdout, allowing you to redirect
+    /// it to a file of your choosing. Where you place the file will depend
+    /// on your shell and operating system.
+    ///
+    /// Here are common setups for supported shells:
     ///
     /// Bash:
-    ///   bdk-cli completions bash > ~/.local/share/bash-completion/completions/bdk-cli
+    ///
+    ///     Completion files are commonly stored in
+    ///     `~/.local/share/bash-completion/completions` for user-specific commands.
+    ///     Run the commands:
+    ///
+    ///         $ mkdir -p ~/.local/share/bash-completion/completions
+    ///         $ bdk-cli completions bash > ~/.local/share/bash-completion/completions/bdk-cli
     ///
     /// Zsh:
-    ///   bdk-cli completions zsh > ~/.zfunc/_bdk-cli
-    ///   # Make sure ~/.zfunc is in your fpath (add to .zshrc):
-    ///   #   fpath=(~/.zfunc $fpath)
-    ///   #   autoload -Uz compinit && compinit
+    ///
+    ///     Completion files are commonly stored in a directory listed in your `fpath`.
+    ///     Run the commands:
+    ///
+    ///         $ mkdir -p ~/.zfunc
+    ///         $ bdk-cli completions zsh > ~/.zfunc/_bdk-cli
+    ///
+    ///     Make sure `~/.zfunc` is in your fpath by adding to your `.zshrc`:
+    ///
+    ///         fpath=(~/.zfunc $fpath)
+    ///         autoload -Uz compinit && compinit
     ///
     /// Fish:
-    ///   bdk-cli completions fish > ~/.config/fish/completions/bdk-cli.fish
+    ///
+    ///     Completion files are commonly stored in
+    ///     `~/.config/fish/completions`. Run the commands:
+    ///
+    ///         $ mkdir -p ~/.config/fish/completions
+    ///         $ bdk-cli completions fish > ~/.config/fish/completions/bdk-cli.fish
     ///
     /// PowerShell:
-    ///   bdk-cli completions powershell >> $PROFILE
+    ///
+    ///         $ bdk-cli completions powershell >> $PROFILE
     ///
     /// Elvish:
-    ///   bdk-cli completions elvish >> ~/.elvish/rc.elv
+    ///
+    ///         $ bdk-cli completions elvish >> ~/.elvish/rc.elv
     ///
     /// After installing the completion script, restart your shell or source
     /// the configuration file for the changes to take effect.
