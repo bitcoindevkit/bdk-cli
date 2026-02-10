@@ -228,6 +228,14 @@ cargo run -- --pretty -n signet wallet -w {wallet_name} balance
 ```
 This is available for wallet, key, repl and compile features. When ommitted, outputs default to `JSON`.
 
+## Shell Completions
+
+`bdk-cli` supports generating shell completions for Bash, Zsh, Fish, Elvish, and PowerShell. For setup instructions, run:
+
+```shell
+bdk-cli completions --help
+```
+
 ## Saving and using wallet configurations
 
 The `wallet config` sub-command allows you to save wallet settings to a `config.toml` file in the default directory (`~/.bdk-bitcoin/`) or custom directory specified with the `--datadir` flag. This eliminate the need to repeatedly specify descriptors, client types, and other parameters for each command. Once configured, you can use any wallet command by simply specifying the wallet name. All other parameters are automatically loaded from the saved configuration.
