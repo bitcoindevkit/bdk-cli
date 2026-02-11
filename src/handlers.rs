@@ -888,8 +888,9 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     client
                         .populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
 
-                    let update = client.full_scan(request, _stop_gap, *batch_size, false)?;
-                    wallet.apply_update(update)?;
+                    let update = client.full_scan(request, _stop_gap, batch_size, false)?;
+                    let wallet_events = wallet.apply_update_events(update)?;
+                    print_wallet_events(&wallet_events);
                 }
                 #[cfg(feature = "esplora")]
                 Esplora {
@@ -900,7 +901,8 @@ pub(crate) async fn handle_online_wallet_subcommand(
                         .full_scan(request, _stop_gap, *parallel_requests)
                         .await
                         .map_err(|e| *e)?;
-                    wallet.apply_update(update)?;
+                    let wallet_events = wallet.apply_update_events(update)?;
+                    print_wallet_events(&wallet_events);
                 }
 
                 #[cfg(feature = "rpc")]
@@ -1834,10 +1836,12 @@ pub async fn sync_wallet(client: &BlockchainClient, wallet: &mut Wallet) -> Resu
             // already have.
             client.populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
 
-            let update = client.sync(request, *batch_size, false)?;
-            wallet
-                .apply_update(update)
-                .map_err(|e| Error::Generic(e.to_string()))
+            let update = client.sync(request, batch_size, false)?;
+            let wallet_events = wallet
+                .apply_update_events(update)
+                .map_err(|e| Error::Generic(e.to_string()))?;
+            print_wallet_events(&wallet_events);
+            Ok(())
         }
         #[cfg(feature = "esplora")]
         Esplora {
@@ -1848,9 +1852,11 @@ pub async fn sync_wallet(client: &BlockchainClient, wallet: &mut Wallet) -> Resu
                 .sync(request, *parallel_requests)
                 .await
                 .map_err(|e| *e)?;
-            wallet
-                .apply_update(update)
-                .map_err(|e| Error::Generic(e.to_string()))
+            let wallet_events = wallet
+                .apply_update_events(update)
+                .map_err(|e| Error::Generic(e.to_string()))?;
+            print_wallet_events(&wallet_events);
+            Ok(())
         }
         #[cfg(feature = "rpc")]
         RpcClient { client } => {
