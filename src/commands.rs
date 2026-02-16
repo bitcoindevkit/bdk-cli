@@ -479,6 +479,20 @@ pub enum OnlineWalletSubCommand {
         )]
         fee_rate: u64,
     },
+    /// Resume pending payjoin sessions.
+    ResumePayjoin {
+        /// Payjoin directory for the session
+        #[arg(env = "PAYJOIN_DIRECTORY", long = "directory", required = true)]
+        directory: String,
+        /// URL of the Payjoin OHTTP relay. Can be repeated multiple times.
+        #[arg(env = "PAYJOIN_OHTTP_RELAY", long = "ohttp_relay", required = true)]
+        ohttp_relay: Vec<String>,
+        /// Resume only a specific active session ID (sender and/or receiver).
+        #[arg(env = "PAYJOIN_SESSION_ID", long = "session_id")]
+        session_id: Option<i64>,
+    },
+    /// Show payjoin session history.
+    PayjoinHistory,
 }
 
 /// Subcommands for Key operations.

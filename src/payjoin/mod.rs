@@ -42,6 +42,60 @@ pub(crate) struct PayjoinManager<'a> {
     relay_manager: Arc<Mutex<RelayManager>>,
     db: Arc<crate::payjoin::db::Database>,
 }
+
+trait StatusText {
+    fn status_text(&self) -> &'static str;
+}
+
+impl StatusText for SendSession {
+    fn status_text(&self) -> &'static str {
+        match self {
+            SendSession::WithReplyKey(_) | SendSession::PollingForProposal(_) => {
+                "Waiting for proposal"
+            }
+            SendSession::Closed(session_outcome) => match session_outcome {
+                SenderSessionOutcome::Failure => "Session failure",
+                SenderSessionOutcome::Success(_) => "Session success",
+                SenderSessionOutcome::Cancel => "Session cancelled",
+            },
+        }
+    }
+}
+
+impl StatusText for ReceiveSession {
+    fn status_text(&self) -> &'static str {
+        match self {
+            ReceiveSession::Initialized(_) => "Waiting for original proposal",
+            ReceiveSession::UncheckedOriginalPayload(_)
+            | ReceiveSession::MaybeInputsOwned(_)
+            | ReceiveSession::MaybeInputsSeen(_)
+            | ReceiveSession::OutputsUnknown(_)
+            | ReceiveSession::WantsOutputs(_)
+            | ReceiveSession::WantsInputs(_)
+            | ReceiveSession::WantsFeeRange(_)
+            | ReceiveSession::ProvisionalProposal(_) => "Processing original proposal",
+            ReceiveSession::PayjoinProposal(_) => "Payjoin proposal sent",
+            ReceiveSession::HasReplyableError(_) => {
+                "Session failure, waiting to post error response"
+            }
+            ReceiveSession::Monitor(_) => "Monitoring payjoin proposal",
+            ReceiveSession::Closed(session_outcome) => match session_outcome {
+                ReceiverSessionOutcome::Failure => "Session failure",
+                ReceiverSessionOutcome::Success(_) => {
+                    "Session success, Payjoin proposal was broadcasted"
+                }
+                ReceiverSessionOutcome::Cancel => "Session cancelled",
+                ReceiverSessionOutcome::FallbackBroadcasted => "Fallback broadcasted",
+            },
+        }
+    }
+}
+
+struct SessionHistoryRow {
+    id: String,
+    role: &'static str,
+    status: String,
+    completed_at: Option<String>,
 }
 
 impl<'a> PayjoinManager<'a> {
@@ -230,14 +284,14 @@ impl<'a> PayjoinManager<'a> {
                         SenderPersister::new(self.db.clone(), receiver_pubkey)?
                     };
 
-                let sender = payjoin::send::v2::SenderBuilder::new(original_psbt.clone(), uri)
-                    .build_recommended(fee_rate)?
-                    .save(&persister)
-                    .map_err(|e| {
-                        Error::Generic(format!(
-                            "Failed to save the Payjoin v2 sender in the persister: {e}"
-                        ))
-                    })?;
+                    let sender = payjoin::send::v2::SenderBuilder::new(original_psbt.clone(), uri)
+                        .build_recommended(fee_rate)?
+                        .save(&persister)
+                        .map_err(|e| {
+                            Error::Generic(format!(
+                                "Failed to save the Payjoin v2 sender in the persister: {e}"
+                            ))
+                        })?;
 
                     (SendSession::WithReplyKey(sender), persister)
                 };
@@ -450,7 +504,7 @@ impl<'a> PayjoinManager<'a> {
     ) -> Result<(), Error> {
         let next_receiver_typestate = receiver
             .identify_receiver_outputs(&mut |output_script| {
-            Ok(self.wallet.is_mine(output_script.to_owned()))
+                Ok(self.wallet.is_mine(output_script.to_owned()))
             })
             .save(persister)?;
 
@@ -582,7 +636,7 @@ impl<'a> PayjoinManager<'a> {
             .create_post_request(
                 self.unwrap_relay_or_else_fetch(vec![], None::<&str>)
                     .await?
-                .as_str(),
+                    .as_str(),
             )
             .map_err(|e| {
                 Error::Generic(format!("Error occurred when creating a post request for sending final Payjoin proposal: {e}"))
@@ -750,7 +804,7 @@ impl<'a> PayjoinManager<'a> {
                     blockchain_client,
                     relay.to_string(),
                 )
-                    .await
+                .await
             }
             SendSession::PollingForProposal(context) => {
                 let relay = self
@@ -762,7 +816,7 @@ impl<'a> PayjoinManager<'a> {
                     blockchain_client,
                     relay.to_string(),
                 )
-                    .await
+                .await
             }
             SendSession::Closed(SenderSessionOutcome::Success(psbt)) => {
                 self.process_payjoin_proposal(psbt, blockchain_client).await
@@ -870,5 +924,250 @@ impl<'a> PayjoinManager<'a> {
             .body(req.body)
             .send()
             .await
+    }
+
+    /// Resume pending payjoin sessions from the database
+    pub async fn resume_payjoins(
+        &mut self,
+        directory: String,
+        ohttp_relays: Vec<String>,
+        session_id: Option<i64>,
+        blockchain_client: &BlockchainClient,
+    ) -> Result<String, Error> {
+        let db = self.db.clone();
+        let mut recv_session_ids = db.get_recv_session_ids()?;
+        let mut send_session_ids = db.get_send_session_ids()?;
+
+        if let Some(session_id) = session_id {
+            recv_session_ids.retain(|id| id.as_i64() == session_id);
+            send_session_ids.retain(|id| id.as_i64() == session_id);
+
+            if recv_session_ids.is_empty() && send_session_ids.is_empty() {
+                return Ok(serde_json::to_string_pretty(&json!({
+                    "message": format!("No active session found for session_id {}.", session_id)
+                }))?);
+            }
+        }
+
+        if recv_session_ids.is_empty() && send_session_ids.is_empty() {
+            return Ok(serde_json::to_string_pretty(&json!({
+                "message": "No sessions to resume."
+            }))?);
+        }
+
+        let ohttp_relays: Vec<url::Url> = ohttp_relays
+            .into_iter()
+            .map(|s| url::Url::parse(&s))
+            .collect::<Result<_, _>>()
+            .map_err(|e| Error::Generic(format!("Failed to parse OHTTP URLs: {e}")))?;
+
+        let relay = self
+            .unwrap_relay_or_else_fetch(ohttp_relays, Some(&directory))
+            .await?;
+
+        let max_fee_rate = FeeRate::BROADCAST_MIN;
+        let total_sessions = recv_session_ids.len() + send_session_ids.len();
+        let mut completed = 0usize;
+        let mut timed_out = 0usize;
+        let mut failed = 0usize;
+
+        println!("Resuming {} payjoin session(s)...\n", total_sessions);
+
+        // Resume receiver sessions
+        for session_id in recv_session_ids {
+            let persister = ReceiverPersister::from_id(db.clone(), session_id.clone());
+            match replay_receiver_event_log(&persister) {
+                Ok((receiver_state, _)) => {
+                    println!("Resuming receiver session {}", session_id);
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(30),
+                        self.proceed_receiver_session(
+                            receiver_state,
+                            &persister,
+                            relay.as_str(),
+                            max_fee_rate,
+                            blockchain_client,
+                        ),
+                    )
+                    .await
+                    {
+                        Ok(Ok(_)) => {
+                            completed += 1;
+                        }
+                        Ok(Err(e)) => {
+                            failed += 1;
+                            println!("Receiver session {} failed: {}", session_id, e);
+                        }
+                        Err(_) => {
+                            timed_out += 1;
+                            println!("Receiver session {} timed out", session_id);
+                        }
+                    }
+                }
+                Err(e) => {
+                    failed += 1;
+                    println!("Failed to replay receiver session {}: {:?}", session_id, e);
+                }
+            }
+        }
+
+        // Resume sender sessions
+        for session_id in send_session_ids {
+            let persister = SenderPersister::from_id(db.clone(), session_id.clone());
+            match replay_sender_event_log(&persister) {
+                Ok((sender_state, _)) => {
+                    println!("Resuming sender session {}", session_id);
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(30),
+                        self.proceed_sender_session(
+                            sender_state,
+                            &persister,
+                            vec![relay.clone()],
+                            blockchain_client,
+                        ),
+                    )
+                    .await
+                    {
+                        Ok(Ok(_)) => {
+                            completed += 1;
+                        }
+                        Ok(Err(e)) => {
+                            failed += 1;
+                            println!("Sender session {} failed: {}", session_id, e);
+                        }
+                        Err(_) => {
+                            timed_out += 1;
+                            println!("Sender session {} timed out", session_id);
+                        }
+                    }
+                }
+                Err(e) => {
+                    failed += 1;
+                    println!("Failed to replay sender session {}: {:?}", session_id, e);
+                }
+            }
+        }
+
+        Ok(serde_json::to_string_pretty(&json!({
+            "message": format!("Resumed polling for {} session(s).", total_sessions),
+            "outcome": format!(
+                "Completed: {}, timed out: {}, failed: {}.",
+                completed, timed_out, failed
+            )
+        }))?)
+    }
+
+    /// Show payjoin session history
+    pub fn history(datadir: Option<std::path::PathBuf>) -> Result<String, Error> {
+        let db = open_payjoin_db(datadir)?;
+        let mut send_rows: Vec<SessionHistoryRow> = Vec::new();
+        let mut recv_rows: Vec<SessionHistoryRow> = Vec::new();
+
+        // Active send sessions
+        for session_id in db
+            .get_send_session_ids()
+            .map_err(|e| Error::Generic(format!("{e}")))?
+        {
+            let persister = SenderPersister::from_id(db.clone(), session_id.clone());
+            let status = match replay_sender_event_log(&persister) {
+                Ok((state, _)) => state.status_text().to_string(),
+                Err(e) => e.to_string(),
+            };
+            send_rows.push(SessionHistoryRow {
+                id: session_id.to_string(),
+                role: "Sender",
+                status,
+                completed_at: None,
+            });
+        }
+
+        // Active receive sessions
+        for session_id in db
+            .get_recv_session_ids()
+            .map_err(|e| Error::Generic(format!("{e}")))?
+        {
+            let persister = ReceiverPersister::from_id(db.clone(), session_id.clone());
+            let status = match replay_receiver_event_log(&persister) {
+                Ok((state, _)) => state.status_text().to_string(),
+                Err(e) => e.to_string(),
+            };
+            recv_rows.push(SessionHistoryRow {
+                id: session_id.to_string(),
+                role: "Receiver",
+                status,
+                completed_at: None,
+            });
+        }
+
+        // Completed send sessions
+        for (session_id, completed_at) in db
+            .get_inactive_send_session_ids()
+            .map_err(|e| Error::Generic(format!("{e}")))?
+        {
+            let persister = SenderPersister::from_id(db.clone(), session_id.clone());
+            let status = match replay_sender_event_log(&persister) {
+                Ok((state, _)) => state.status_text().to_string(),
+                Err(e) => e.to_string(),
+            };
+            let completed_at = db
+                .format_unix_timestamp(completed_at)
+                .map_err(|e| Error::Generic(format!("{e}")))?;
+            send_rows.push(SessionHistoryRow {
+                id: session_id.to_string(),
+                role: "Sender",
+                status,
+                completed_at: Some(completed_at),
+            });
+        }
+
+        // Completed receive sessions
+        for (session_id, completed_at) in db
+            .get_inactive_recv_session_ids()
+            .map_err(|e| Error::Generic(format!("{e}")))?
+        {
+            let persister = ReceiverPersister::from_id(db.clone(), session_id.clone());
+            let status = match replay_receiver_event_log(&persister) {
+                Ok((state, _)) => state.status_text().to_string(),
+                Err(e) => e.to_string(),
+            };
+            let completed_at = db
+                .format_unix_timestamp(completed_at)
+                .map_err(|e| Error::Generic(format!("{e}")))?;
+            recv_rows.push(SessionHistoryRow {
+                id: session_id.to_string(),
+                role: "Receiver",
+                status,
+                completed_at: Some(completed_at),
+            });
+        }
+
+        let rows: Vec<Vec<CellStruct>> = send_rows
+            .iter()
+            .chain(recv_rows.iter())
+            .map(|row| {
+                vec![
+                    row.id.as_str().cell(),
+                    row.role.cell(),
+                    row.completed_at
+                        .clone()
+                        .unwrap_or_else(|| "Not Completed".to_string())
+                        .cell(),
+                    row.status.as_str().cell(),
+                ]
+            })
+            .collect();
+
+        let table = rows
+            .table()
+            .title(vec![
+                "Session ID".cell().bold(true),
+                "Sender/Receiver".cell().bold(true),
+                "Completed At".cell().bold(true),
+                "Status".cell().bold(true),
+            ])
+            .display()
+            .map_err(|e| Error::Generic(e.to_string()))?;
+
+        Ok(format!("{table}"))
     }
 }
