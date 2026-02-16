@@ -42,6 +42,60 @@ pub(crate) struct PayjoinManager<'a> {
     relay_manager: Arc<Mutex<RelayManager>>,
     db: Arc<crate::payjoin::db::Database>,
 }
+
+trait StatusText {
+    fn status_text(&self) -> &'static str;
+}
+
+impl StatusText for SendSession {
+    fn status_text(&self) -> &'static str {
+        match self {
+            SendSession::WithReplyKey(_) | SendSession::PollingForProposal(_) => {
+                "Waiting for proposal"
+            }
+            SendSession::Closed(session_outcome) => match session_outcome {
+                SenderSessionOutcome::Failure => "Session failure",
+                SenderSessionOutcome::Success(_) => "Session success",
+                SenderSessionOutcome::Cancel => "Session cancelled",
+            },
+        }
+    }
+}
+
+impl StatusText for ReceiveSession {
+    fn status_text(&self) -> &'static str {
+        match self {
+            ReceiveSession::Initialized(_) => "Waiting for original proposal",
+            ReceiveSession::UncheckedOriginalPayload(_)
+            | ReceiveSession::MaybeInputsOwned(_)
+            | ReceiveSession::MaybeInputsSeen(_)
+            | ReceiveSession::OutputsUnknown(_)
+            | ReceiveSession::WantsOutputs(_)
+            | ReceiveSession::WantsInputs(_)
+            | ReceiveSession::WantsFeeRange(_)
+            | ReceiveSession::ProvisionalProposal(_) => "Processing original proposal",
+            ReceiveSession::PayjoinProposal(_) => "Payjoin proposal sent",
+            ReceiveSession::HasReplyableError(_) => {
+                "Session failure, waiting to post error response"
+            }
+            ReceiveSession::Monitor(_) => "Monitoring payjoin proposal",
+            ReceiveSession::Closed(session_outcome) => match session_outcome {
+                ReceiverSessionOutcome::Failure => "Session failure",
+                ReceiverSessionOutcome::Success(_) => {
+                    "Session success, Payjoin proposal was broadcasted"
+                }
+                ReceiverSessionOutcome::Cancel => "Session cancelled",
+                ReceiverSessionOutcome::FallbackBroadcasted => "Fallback broadcasted",
+            },
+        }
+    }
+}
+
+struct SessionHistoryRow {
+    id: String,
+    role: &'static str,
+    status: String,
+    completed_at: Option<String>,
 }
 
 impl<'a> PayjoinManager<'a> {
@@ -230,14 +284,14 @@ impl<'a> PayjoinManager<'a> {
                         SenderPersister::new(self.db.clone(), receiver_pubkey)?
                     };
 
-                let sender = payjoin::send::v2::SenderBuilder::new(original_psbt.clone(), uri)
-                    .build_recommended(fee_rate)?
-                    .save(&persister)
-                    .map_err(|e| {
-                        Error::Generic(format!(
-                            "Failed to save the Payjoin v2 sender in the persister: {e}"
-                        ))
-                    })?;
+                    let sender = payjoin::send::v2::SenderBuilder::new(original_psbt.clone(), uri)
+                        .build_recommended(fee_rate)?
+                        .save(&persister)
+                        .map_err(|e| {
+                            Error::Generic(format!(
+                                "Failed to save the Payjoin v2 sender in the persister: {e}"
+                            ))
+                        })?;
 
                     (SendSession::WithReplyKey(sender), persister)
                 };
@@ -450,7 +504,7 @@ impl<'a> PayjoinManager<'a> {
     ) -> Result<(), Error> {
         let next_receiver_typestate = receiver
             .identify_receiver_outputs(&mut |output_script| {
-            Ok(self.wallet.is_mine(output_script.to_owned()))
+                Ok(self.wallet.is_mine(output_script.to_owned()))
             })
             .save(persister)?;
 
@@ -582,7 +636,7 @@ impl<'a> PayjoinManager<'a> {
             .create_post_request(
                 self.unwrap_relay_or_else_fetch(vec![], None::<&str>)
                     .await?
-                .as_str(),
+                    .as_str(),
             )
             .map_err(|e| {
                 Error::Generic(format!("Error occurred when creating a post request for sending final Payjoin proposal: {e}"))
@@ -750,7 +804,7 @@ impl<'a> PayjoinManager<'a> {
                     blockchain_client,
                     relay.to_string(),
                 )
-                    .await
+                .await
             }
             SendSession::PollingForProposal(context) => {
                 let relay = self
@@ -762,7 +816,7 @@ impl<'a> PayjoinManager<'a> {
                     blockchain_client,
                     relay.to_string(),
                 )
-                    .await
+                .await
             }
             SendSession::Closed(SenderSessionOutcome::Success(psbt)) => {
                 self.process_payjoin_proposal(psbt, blockchain_client).await
