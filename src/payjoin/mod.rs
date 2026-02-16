@@ -44,6 +44,60 @@ pub(crate) struct PayjoinManager<'a> {
     relay_manager: Arc<Mutex<RelayManager>>,
     db: Arc<crate::payjoin::db::Database>,
 }
+
+trait StatusText {
+    fn status_text(&self) -> &'static str;
+}
+
+impl StatusText for SendSession {
+    fn status_text(&self) -> &'static str {
+        match self {
+            SendSession::WithReplyKey(_) | SendSession::PollingForProposal(_) => {
+                "Waiting for proposal"
+            }
+            SendSession::Closed(session_outcome) => match session_outcome {
+                SenderSessionOutcome::Failure => "Session failure",
+                SenderSessionOutcome::Success(_) => "Session success",
+                SenderSessionOutcome::Cancel => "Session cancelled",
+            },
+        }
+    }
+}
+
+impl StatusText for ReceiveSession {
+    fn status_text(&self) -> &'static str {
+        match self {
+            ReceiveSession::Initialized(_) => "Waiting for original proposal",
+            ReceiveSession::UncheckedOriginalPayload(_)
+            | ReceiveSession::MaybeInputsOwned(_)
+            | ReceiveSession::MaybeInputsSeen(_)
+            | ReceiveSession::OutputsUnknown(_)
+            | ReceiveSession::WantsOutputs(_)
+            | ReceiveSession::WantsInputs(_)
+            | ReceiveSession::WantsFeeRange(_)
+            | ReceiveSession::ProvisionalProposal(_) => "Processing original proposal",
+            ReceiveSession::PayjoinProposal(_) => "Payjoin proposal sent",
+            ReceiveSession::HasReplyableError(_) => {
+                "Session failure, waiting to post error response"
+            }
+            ReceiveSession::Monitor(_) => "Monitoring payjoin proposal",
+            ReceiveSession::Closed(session_outcome) => match session_outcome {
+                ReceiverSessionOutcome::Failure => "Session failure",
+                ReceiverSessionOutcome::Success(_) => {
+                    "Session success, Payjoin proposal was broadcasted"
+                }
+                ReceiverSessionOutcome::Cancel => "Session cancelled",
+                ReceiverSessionOutcome::FallbackBroadcasted => "Fallback broadcasted",
+            },
+        }
+    }
+}
+
+struct SessionHistoryRow {
+    id: String,
+    role: &'static str,
+    status: String,
+    completed_at: Option<String>,
 }
 
 impl<'a> PayjoinManager<'a> {
