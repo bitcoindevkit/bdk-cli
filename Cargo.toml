@@ -56,7 +56,7 @@ esplora = ["bdk_esplora", "_payjoin-dependencies"]
 rpc = ["bdk_bitcoind_rpc", "_payjoin-dependencies"] 
 
 # Internal features
-_payjoin-dependencies = ["payjoin", "reqwest", "url"]
+_payjoin-dependencies = ["payjoin", "reqwest", "url", "sqlite"]
 bip322 = ["bdk_bip322"]
 
 # Use this to consensus verify transactions at sync time
