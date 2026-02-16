@@ -77,14 +77,7 @@ use std::convert::TryFrom;
 use std::io::Write;
 use std::path::Path;
 use std::str::FromStr;
-#[cfg(any(
-    feature = "redb",
-    feature = "compiler",
-    feature = "electrum",
-    feature = "esplora",
-    feature = "cbf",
-    feature = "rpc"
-))]
+#[cfg(any(feature = "redb", feature = "compiler"))]
 use std::sync::Arc;
 
 #[cfg(feature = "bip322")]
@@ -100,9 +93,8 @@ use bdk_bip322::{BIP322, MessageProof, MessageVerificationResult};
 ))]
 use {
     crate::commands::OnlineWalletSubCommand::*,
-    crate::payjoin::{PayjoinManager, ohttp::RelayManager},
+    crate::payjoin::PayjoinManager,
     bdk_wallet::bitcoin::{Transaction, consensus::Decodable, hex::FromHex},
-    std::sync::Mutex,
 };
 #[cfg(feature = "esplora")]
 use {crate::utils::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
@@ -863,6 +855,8 @@ pub(crate) async fn handle_online_wallet_subcommand(
     wallet: &mut Wallet,
     client: &BlockchainClient,
     online_subcommand: OnlineWalletSubCommand,
+    datadir: Option<std::path::PathBuf>,
+    wallet_name: &str,
 ) -> Result<String, Error> {
     match online_subcommand {
         FullScan {
@@ -989,8 +983,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
             ohttp_relay,
             max_fee_rate,
         } => {
-            let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
-            let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);
+            let mut payjoin_manager = PayjoinManager::new(wallet, datadir.clone(), wallet_name)?;
             return payjoin_manager
                 .receive_payjoin(amount, directory, max_fee_rate, ohttp_relay, client)
                 .await;
@@ -1000,12 +993,22 @@ pub(crate) async fn handle_online_wallet_subcommand(
             ohttp_relay,
             fee_rate,
         } => {
-            let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
-            let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);
+            let mut payjoin_manager = PayjoinManager::new(wallet, datadir.clone(), wallet_name)?;
             return payjoin_manager
                 .send_payjoin(uri, fee_rate, ohttp_relay, client)
                 .await;
         }
+        ResumePayjoin {
+            directory,
+            ohttp_relay,
+            session_id,
+        } => {
+            let mut payjoin_manager = PayjoinManager::new(wallet, datadir, wallet_name)?;
+            return payjoin_manager
+                .resume_payjoins(directory, ohttp_relay, session_id, client)
+                .await;
+        }
+        PayjoinHistory => crate::payjoin::PayjoinManager::history(datadir, wallet_name),
     }
 }
 
@@ -1511,14 +1514,14 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             feature = "rpc"
         ))]
         CliSubCommand::Wallet {
-            wallet,
+            wallet: wallet_name,
             subcommand: WalletSubCommand::OnlineWalletSubCommand(online_subcommand),
         } => {
-            let home_dir = prepare_home_dir(cli_opts.datadir)?;
+            let home_dir = prepare_home_dir(cli_opts.datadir.clone())?;
 
-            let (wallet_opts, network) = load_wallet_config(&home_dir, &wallet)?;
+            let (wallet_opts, network) = load_wallet_config(&home_dir, &wallet_name)?;
 
-            let database_path = prepare_wallet_db_dir(&home_dir, &wallet)?;
+            let database_path = prepare_wallet_db_dir(&home_dir, &wallet_name)?;
 
             #[cfg(any(feature = "sqlite", feature = "redb"))]
             let result = {
@@ -1532,13 +1535,16 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     }
                     #[cfg(feature = "redb")]
                     DatabaseType::Redb => {
-                        let wallet_name = &wallet_opts.wallet;
+                        let redb_store_wallet_name = &wallet_opts.wallet;
                         let db = Arc::new(bdk_redb::redb::Database::create(
                             home_dir.join("wallet.redb"),
                         )?);
                         let store = RedbStore::new(
                             db,
-                            wallet_name.as_deref().unwrap_or("wallet").to_string(),
+                            redb_store_wallet_name
+                                .as_deref()
+                                .unwrap_or("wallet")
+                                .to_string(),
                         )?;
                         log::debug!("Redb database opened successfully");
                         Persister::RedbStore(store)
@@ -1553,6 +1559,8 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     &mut wallet,
                     &blockchain_client,
                     online_subcommand,
+                    cli_opts.datadir.clone(),
+                    &wallet_name,
                 )
                 .await?;
                 wallet.persist(&mut persister)?;
@@ -1563,8 +1571,14 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 let mut wallet = new_wallet(network, wallet_opts)?;
                 let blockchain_client =
                     crate::utils::new_blockchain_client(wallet_opts, &wallet, database_path)?;
-                handle_online_wallet_subcommand(&mut wallet, &blockchain_client, online_subcommand)
-                    .await?
+                handle_online_wallet_subcommand(
+                    &mut wallet,
+                    &blockchain_client,
+                    online_subcommand,
+                    cli_opts.datadir.clone(),
+                    &wallet_name,
+                )
+                .await?
             };
             Ok(result)
         }
@@ -1751,7 +1765,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
 async fn respond(
     network: Network,
     wallet: &mut Wallet,
-    wallet_name: &String,
+    wallet_name: &str,
     wallet_opts: &mut WalletOpts,
     line: &str,
     _datadir: std::path::PathBuf,
@@ -1773,9 +1787,15 @@ async fn respond(
         } => {
             let blockchain =
                 new_blockchain_client(wallet_opts, wallet, _datadir).map_err(|e| e.to_string())?;
-            let value = handle_online_wallet_subcommand(wallet, &blockchain, online_subcommand)
-                .await
-                .map_err(|e| e.to_string())?;
+            let value = handle_online_wallet_subcommand(
+                wallet,
+                &blockchain,
+                online_subcommand,
+                cli_opts.datadir.clone(),
+                wallet_name,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
             Some(value)
         }
         ReplSubCommand::Wallet {
