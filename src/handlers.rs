@@ -73,7 +73,7 @@ use std::sync::Arc;
 #[cfg(feature = "bip322")]
 use crate::error::BDKCliError;
 #[cfg(feature = "bip322")]
-use bdk_bip322::{BIP322, Bip322Proof, Bip322VerificationResult};
+use bdk_bip322::{BIP322, MessageProof, MessageVerificationResult};
 
 #[cfg(any(
     feature = "electrum",
@@ -598,7 +598,7 @@ pub fn handle_offline_wallet_subcommand(
             )?)
         }
         #[cfg(feature = "bip322")]
-        SignBip322 {
+        SignMessage {
             message,
             signature_type,
             address,
@@ -607,29 +607,30 @@ pub fn handle_offline_wallet_subcommand(
             let address: Address = parse_address(&address)?;
             let signature_format = parse_signature_format(&signature_type)?;
 
-            let proof: Bip322Proof = wallet
-                .sign_bip322(message.as_str(), signature_format, &address, utxos)
-                .map_err(|e| {
-                    BDKCliError::Generic(format!("Failed to sign BIP-322 message: {e}"))
-                })?;
+            if !wallet.is_mine(address.script_pubkey()) {
+                return Err(Error::Generic(format!(
+                    "Address {} does not belong to this wallet.",
+                    address
+                )));
+            }
+
+            let proof: MessageProof =
+                wallet.sign_message(message.as_str(), signature_format, &address, utxos)?;
 
             Ok(json!({"proof": proof.to_base64()}).to_string())
         }
         #[cfg(feature = "bip322")]
-        VerifyBip322 {
+        VerifyMessage {
             proof,
             message,
-            signature_type,
             address,
         } => {
             let address: Address = parse_address(&address)?;
-            let signature_format = parse_signature_format(&signature_type)?;
-
-            let parsed_proof: Bip322Proof = Bip322Proof::from_base64(&proof)
+            let parsed_proof: MessageProof = MessageProof::from_base64(&proof)
                 .map_err(|e| BDKCliError::Generic(format!("Invalid proof: {e}")))?;
 
-            let is_valid: Bip322VerificationResult =
-                wallet.verify_bip322(&parsed_proof, &message, signature_format, &address)?;
+            let is_valid: MessageVerificationResult =
+                wallet.verify_message(&parsed_proof, &message, &address)?;
 
             Ok(json!({
                 "valid": is_valid.valid,
