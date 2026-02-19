@@ -69,6 +69,11 @@ use std::str::FromStr;
 ))]
 use std::sync::Arc;
 
+#[cfg(feature = "bip322")]
+use crate::error::BDKCliError;
+#[cfg(feature = "bip322")]
+use bdk_bip322::{BIP322, Bip322Proof, Bip322VerificationResult};
+
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -590,6 +595,50 @@ pub fn handle_offline_wallet_subcommand(
             Ok(serde_json::to_string_pretty(
                 &json!({ "psbt": BASE64_STANDARD.encode(final_psbt.serialize()) }),
             )?)
+        }
+        #[cfg(feature = "bip322")]
+        SignMessage {
+            message,
+            signature_type,
+            address,
+            utxos,
+        } => {
+            let address: Address = parse_address(&address)?;
+            let signature_format = parse_signature_format(&signature_type)?;
+
+            if !wallet.is_mine(address.script_pubkey()) {
+                return Err(Error::Generic(format!(
+                    "Address {} does not belong to this wallet.",
+                    address
+                )));
+            }
+
+            let proof: Bip322Proof =
+                wallet.sign_bip322(message.as_str(), signature_format, &address, utxos)?;
+
+            Ok(json!({"proof": proof.to_base64()}).to_string())
+        }
+        #[cfg(feature = "bip322")]
+        VerifyMessage {
+            proof,
+            message,
+            signature_type,
+            address,
+        } => {
+            let address: Address = parse_address(&address)?;
+            let signature_format = parse_signature_format(&signature_type)?;
+
+            let parsed_proof: Bip322Proof = Bip322Proof::from_base64(&proof)
+                .map_err(|e| BDKCliError::Generic(format!("Invalid proof: {e}")))?;
+
+            let is_valid: Bip322VerificationResult =
+                wallet.verify_bip322(&parsed_proof, &message, signature_format, &address)?;
+
+            Ok(json!({
+                "valid": is_valid.valid,
+                "proven_amount": is_valid.proven_amount.map(|a| a.to_sat()) // optional field
+            })
+            .to_string())
         }
     }
 }
