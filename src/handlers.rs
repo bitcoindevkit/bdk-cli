@@ -597,7 +597,7 @@ pub fn handle_offline_wallet_subcommand(
             )?)
         }
         #[cfg(feature = "bip322")]
-        SignBip322 {
+        SignMessage {
             message,
             signature_type,
             address,
@@ -606,16 +606,20 @@ pub fn handle_offline_wallet_subcommand(
             let address: Address = parse_address(&address)?;
             let signature_format = parse_signature_format(&signature_type)?;
 
-            let proof: Bip322Proof = wallet
-                .sign_bip322(message.as_str(), signature_format, &address, utxos)
-                .map_err(|e| {
-                    BDKCliError::Generic(format!("Failed to sign BIP-322 message: {e}"))
-                })?;
+            if !wallet.is_mine(address.script_pubkey()) {
+                return Err(Error::Generic(format!(
+                    "Address {} does not belong to this wallet.",
+                    address
+                )));
+            }
+
+            let proof: Bip322Proof =
+                wallet.sign_bip322(message.as_str(), signature_format, &address, utxos)?;
 
             Ok(json!({"proof": proof.to_base64()}).to_string())
         }
         #[cfg(feature = "bip322")]
-        VerifyBip322 {
+        VerifyMessage {
             proof,
             message,
             signature_type,

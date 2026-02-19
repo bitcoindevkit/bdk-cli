@@ -112,17 +112,14 @@ pub enum BDKCliError {
     ))]
     #[error("Reqwest error: {0}")]
     ReqwestError(#[from] reqwest::Error),
+
+    #[cfg(feature = "bip322")]
+    #[error("BIP-322 error: {0}")]
+    Bip322Error(#[from] bdk_bip322::error::Error),
 }
 
 impl From<ExtractTxError> for BDKCliError {
     fn from(value: ExtractTxError) -> Self {
         BDKCliError::PsbtExtractTxError(Box::new(value))
-    }
-}
-
-#[cfg(feature = "bip322")]
-impl From<bdk_bip322::error::Error> for BDKCliError {
-    fn from(e: bdk_bip322::error::Error) -> Self {
-        BDKCliError::Generic(e.to_string())
     }
 }

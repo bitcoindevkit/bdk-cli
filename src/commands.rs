@@ -407,7 +407,7 @@ pub enum OfflineWalletSubCommand {
     },
     /// Sign a message using BIP322
     #[cfg(feature = "bip322")]
-    SignBip322 {
+    SignMessage {
         /// The message to sign
         #[arg(long)]
         message: String,
@@ -422,7 +422,7 @@ pub enum OfflineWalletSubCommand {
     },
     /// Verify a BIP322 signature
     #[cfg(feature = "bip322")]
-    VerifyBip322 {
+    VerifyMessage {
         /// The signature proof to verify
         #[arg(long)]
         proof: String,
