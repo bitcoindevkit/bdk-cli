@@ -266,10 +266,6 @@ pub struct HwiOpts {
     /// External descriptor
     #[arg(env = "EXT_DESCRIPTOR", short = 'e', long = "ext_descriptor")]
     pub ext_descriptor: Option<String>,
-
-    /// Database type
-    #[arg(short = 'd', long = "database_type")]
-    pub database_type: Option<DatabaseType>,
 }
 
 /// Options to configure a SOCKS5 proxy for a blockchain client connection.

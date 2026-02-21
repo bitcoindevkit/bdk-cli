@@ -37,17 +37,7 @@ use bdk_wallet::{
 };
 use cli_table::{Cell, CellStruct, Style, Table};
 #[cfg(feature = "hwi")]
-use {
-    crate::commands::HwiOpts,
-    async_hwi::jade::{self, Jade},
-    async_hwi::ledger::{HidApi, Ledger, LedgerSimulator, TransportHID},
-    async_hwi::specter::{Specter, SpecterSimulator},
-    async_hwi::{HWI, coldcard},
-    async_hwi::{
-        bitbox::api::runtime,
-        bitbox::{BitBox02, PairingBitbox02WithLocalCache},
-    },
-};
+use std::marker::Sync as MarkerSync;
 
 #[cfg(any(
     feature = "electrum",
@@ -676,109 +666,113 @@ pub fn load_wallet_config(
 }
 
 #[cfg(feature = "hwi")]
-pub async fn connect_to_hardware_wallet(
+pub async fn connect_hwi_device(
     network: Network,
-    hwi_opts: &HwiOpts,
-) -> Result<Option<Box<dyn HWI + Send>>, Error> {
-    if let Ok(device) = SpecterSimulator::try_connect().await {
-        return Ok(Some(device.into()));
-    }
-
-    if let Ok(devices) = Specter::enumerate().await {
-        if let Some(device) = devices.into_iter().next() {
-            return Ok(Some(device.into()));
-        }
-    }
-
-    match Jade::enumerate().await {
-        Err(e) => {
-            println!("Jade enumeration error: {e:?}");
-        }
-        Ok(devices) => {
-            for device in devices {
-                let device = device.with_network(network);
-                if let Ok(info) = device.get_info().await {
-                    if info.jade_state == jade::api::JadeState::Locked {
-                        if let Err(e) = device.auth().await {
-                            eprintln!("Jade auth error: {:?}", e);
-                            continue;
-                        }
-                    }
-                    return Ok(Some(device.into()));
-                }
-            }
-        }
-    }
-
-    if let Ok(device) = LedgerSimulator::try_connect().await {
-        return Ok(Some(device.into()));
-    }
+    hwi_opts: &crate::commands::HwiOpts,
+) -> Result<Option<Arc<dyn async_hwi::HWI + Send + MarkerSync>>, Error> {
+    use async_hwi::bitbox::{BitBox02, PairingBitbox02WithLocalCache, api::runtime};
+    use async_hwi::coldcard::api::{CKCC_PID, COINKITE_VID, Coldcard};
+    use async_hwi::jade::{self, Jade};
+    use async_hwi::ledger::{HidApi, Ledger, LedgerSimulator, TransportHID};
+    use async_hwi::specter::{Specter, SpecterSimulator};
+    use async_hwi::{HWI, coldcard};
+    use tracing::{debug, info, warn};
 
     let api = Box::new(HidApi::new().map_err(|e| Error::Generic(e.to_string()))?);
 
+    let mut devices: Vec<Arc<dyn HWI + Send + MarkerSync>> = Vec::new();
+
+    if let Ok(device) = SpecterSimulator::try_connect().await {
+        devices.push(Arc::new(device));
+    }
+
+    // Specter
+    if let Ok(specters) = Specter::enumerate().await {
+        for device in specters {
+            devices.push(Arc::new(device));
+        }
+    }
+
+    // Jade
+    match Jade::enumerate().await {
+        Ok(jades) => {
+            for mut device in jades {
+                device = device.with_network(network);
+                if let Ok(info) = device.get_info().await {
+                    if info.jade_state == jade::api::JadeState::Locked {
+                        if let Err(e) = device.auth().await {
+                            warn!("Jade auth failed: {:?}", e);
+                            continue;
+                        }
+                    }
+                    devices.push(Arc::new(device));
+                }
+            }
+        }
+        Err(e) => warn!("Jade enumeration failed: {:?}", e),
+    }
+    // LedgerSimulator
+    if let Ok(device) = LedgerSimulator::try_connect().await {
+        devices.push(Arc::new(device));
+    }
+
     for device_info in api.device_list() {
-        let ext_descriptor = hwi_opts.ext_descriptor.clone().ok_or_else(|| {
-                Error::Generic("External descriptor is required for connecting to bitbox  and coldcard hardware devices".to_string())
-            })?;
-        let wallet_name = hwi_opts.wallet.clone().ok_or_else(|| {
-            Error::Generic(
-                "Wallet name is required for connecting to bitbox and coldcard hardware devices"
-                    .to_string(),
-            )
-        })?;
         if async_hwi::bitbox::is_bitbox02(device_info) {
-            if let Ok(device) = device_info
-                .open_device(&api)
-                .map_err(|e| Error::Generic(e.to_string()))
-            {
-                if let Ok(device) =
-                    PairingBitbox02WithLocalCache::<runtime::TokioRuntime>::connect(device, None)
-                        .await
+            if let Ok(device_handle) = device_info.open_device(&api) {
+                if let Ok(device) = PairingBitbox02WithLocalCache::<runtime::TokioRuntime>::connect(
+                    device_handle,
+                    None,
+                )
+                .await
                 {
                     if let Ok((device, _)) = device.wait_confirm().await {
                         let mut bb02 = BitBox02::from(device).with_network(network);
-                        bb02 = bb02
-                            .with_policy(&ext_descriptor.as_str())
-                            .map_err(Error::HwiError)?;
-                        return Ok(Some(bb02.into()));
+                        if let Some(policy) = hwi_opts.ext_descriptor.as_ref() {
+                            bb02 = bb02
+                                .with_policy(policy)
+                                .map_err(|e| Error::Generic(e.to_string()))?;
+                        }
+                        devices.push(Arc::new(bb02));
                     }
                 }
             }
         }
-        if device_info.vendor_id() == coldcard::api::COINKITE_VID
-            && device_info.product_id() == coldcard::api::CKCC_PID
-        {
+
+        if device_info.vendor_id() == COINKITE_VID && device_info.product_id() == CKCC_PID {
             if let Some(sn) = device_info.serial_number() {
-                if let Ok((cc, _)) = coldcard::api::Coldcard::open(&api, sn, None)
-                    .map_err(|e| Error::Generic(e.to_string()))
-                {
+                debug!("Coldcard detected with SN: {}", sn);
+                if let Ok((cc, _)) = Coldcard::open(&api, sn, None) {
                     let mut hw = coldcard::Coldcard::from(cc);
-                    hw = hw.with_wallet_name(wallet_name.to_string());
-                    return Ok(Some(hw.into()));
+                    if let Some(wallet_name) = hwi_opts.wallet.as_ref() {
+                        hw = hw.with_wallet_name(wallet_name.clone());
+                    }
+                    info!("Coldcard connected successfully.");
+                    devices.push(Arc::new(hw));
+                } else {
+                    warn!("Failed to open Coldcard with SN: {}", sn);
                 }
             }
         }
     }
 
     for detected in Ledger::<TransportHID>::enumerate(&api) {
-        let ext_descriptor = hwi_opts.ext_descriptor.clone().ok_or_else(|| {
-            Error::Generic(
-                "External descriptor required for connecting to ledger hardware device".to_string(),
-            )
-        })?;
-        let wallet_name = hwi_opts.wallet.clone().ok_or_else(|| {
-            Error::Generic(
-                "Wallet name is required for connecting to ledger hardware device".to_string(),
-            )
-        })?;
-
         if let Ok(mut device) = Ledger::<TransportHID>::connect(&api, detected) {
-            device = device
-                .with_wallet(wallet_name, &ext_descriptor, None)
-                .map_err(Error::HwiError)?;
-            return Ok(Some(device.into()));
+            if let Some(wallet_name) = hwi_opts.wallet.as_ref() {
+                if let Some(policy) = hwi_opts.ext_descriptor.as_ref() {
+                    device = device
+                        .with_wallet(wallet_name, policy, None)
+                        .map_err(|e| Error::Generic(e.to_string()))?;
+                }
+            }
+            devices.push(Arc::new(device));
         }
     }
 
-    Ok(None)
+    if devices.is_empty() {
+        warn!("No hardware devices detected. Ensure device is connected");
+        Ok(None)
+    } else {
+        info!("Detected {} devices; returning first.", devices.len());
+        Ok(Some(devices.into_iter().next().unwrap()))
+    }
 }
