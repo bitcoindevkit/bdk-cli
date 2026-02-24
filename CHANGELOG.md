@@ -6,11 +6,12 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 ## [Unreleased]
 - Add wallet subcommand `config` to save wallet configs
 - Add `wallets` command to list all wallets saved configs
+- Added `completions` subcommand to generate shell completions
 
 ## [2.0.0]
 
 - Removed MSRV and bumped Rust Edition to 2024
-- Add `--pretty` flag for formatting outputs in human-readable form
+- Added `--pretty` flag for formatting outputs in human-readable form
 - Updated `bdk_wallet ` to  `2.1.0`,  `bdk_bitcoind_rpc` to `0.21.0`, `bdk_esplora` to `0.22.1`, `bdk_kyoto` to `0.13.1` 
 - Updated `tracing-subscriber` to 0.3.20
 - Added `tr` script type to `compile` command to support creating taproot descriptors

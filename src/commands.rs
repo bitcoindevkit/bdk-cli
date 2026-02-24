@@ -18,6 +18,7 @@ use bdk_wallet::bitcoin::{
     bip32::{DerivationPath, Xpriv},
 };
 use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
+use clap_complete::Shell;
 
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
@@ -127,7 +128,62 @@ pub enum CliSubCommand {
     },
     /// List all saved wallet configurations.
     Wallets,
+    /// Generate tab-completion scripts for your shell.
+    ///
+    /// The completion script is output on stdout, allowing you to redirect
+    /// it to a file of your choosing. Where you place the file will depend
+    /// on your shell and operating system.
+    ///
+    /// Here are common setups for supported shells:
+    ///
+    /// Bash:
+    ///
+    ///     Completion files are commonly stored in
+    ///     `~/.local/share/bash-completion/completions` for user-specific commands.
+    ///     Run the commands:
+    ///
+    ///         $ mkdir -p ~/.local/share/bash-completion/completions
+    ///         $ bdk-cli completions bash > ~/.local/share/bash-completion/completions/bdk-cli
+    ///
+    /// Zsh:
+    ///
+    ///     Completion files are commonly stored in a directory listed in your `fpath`.
+    ///     Run the commands:
+    ///
+    ///         $ mkdir -p ~/.zfunc
+    ///         $ bdk-cli completions zsh > ~/.zfunc/_bdk-cli
+    ///
+    ///     Make sure `~/.zfunc` is in your fpath by adding to your `.zshrc`:
+    ///
+    ///         fpath=(~/.zfunc $fpath)
+    ///         autoload -Uz compinit && compinit
+    ///
+    /// Fish:
+    ///
+    ///     Completion files are commonly stored in
+    ///     `~/.config/fish/completions`. Run the commands:
+    ///
+    ///         $ mkdir -p ~/.config/fish/completions
+    ///         $ bdk-cli completions fish > ~/.config/fish/completions/bdk-cli.fish
+    ///
+    /// PowerShell:
+    ///
+    ///         $ bdk-cli completions powershell >> $PROFILE
+    ///
+    /// Elvish:
+    ///
+    ///         $ bdk-cli completions elvish >> ~/.elvish/rc.elv
+    ///
+    /// After installing the completion script, restart your shell or source
+    /// the configuration file for the changes to take effect.
+    #[command(verbatim_doc_comment)]
+    Completions {
+        /// Target shell syntax
+        #[arg(value_enum)]
+        shell: Shell,
+    },
 }
+
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
 pub enum WalletSubCommand {
