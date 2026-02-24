@@ -59,7 +59,7 @@ pub enum BDKCliError {
 
     #[cfg(feature = "sqlite")]
     #[error("Rusqlite error: {0}")]
-    RusqliteError(#[from] bdk_wallet::rusqlite::Error),
+    RusqliteError(Box<bdk_wallet::rusqlite::Error>),
 
     #[cfg(feature = "redb")]
     #[error("Redb StoreError: {0}")]
@@ -67,7 +67,7 @@ pub enum BDKCliError {
 
     #[cfg(feature = "redb")]
     #[error("Redb dabtabase error: {0}")]
-    RedbDatabaseError(#[from] bdk_redb::redb::DatabaseError),
+    RedbDatabaseError(Box<bdk_redb::redb::DatabaseError>),
 
     #[error("Serde json error: {0}")]
     SerdeJson(#[from] serde_json::Error),
@@ -112,6 +112,34 @@ pub enum BDKCliError {
     ))]
     #[error("Reqwest error: {0}")]
     ReqwestError(#[from] reqwest::Error),
+
+    #[cfg(feature = "payjoin")]
+    #[error("Payjoin URL parse error: {0}")]
+    PayjoinUrlParse(#[from] payjoin::IntoUrlError),
+
+    #[cfg(feature = "payjoin")]
+    #[error("Payjoin send response error: {0}")]
+    PayjoinSendResponse(#[from] payjoin::send::ResponseError),
+
+    #[cfg(feature = "payjoin")]
+    #[error("Payjoin sender build error: {0}")]
+    PayjoinSenderBuild(#[from] payjoin::send::BuildSenderError),
+
+    #[cfg(feature = "payjoin")]
+    #[error("Payjoin receive error: {0}")]
+    PayjoinReceive(#[from] payjoin::receive::Error),
+
+    #[cfg(feature = "payjoin")]
+    #[error("Payjoin selection error: {0}")]
+    PayjoinSelection(#[from] payjoin::receive::SelectionError),
+
+    #[cfg(feature = "payjoin")]
+    #[error("Payjoin input contribution error: {0}")]
+    PayjoinInputContribution(#[from] payjoin::receive::InputContributionError),
+
+    #[cfg(feature = "payjoin")]
+    #[error("Payjoin create request error: {0}")]
+    PayjoinCreateRequest(#[from] payjoin::send::v2::CreateRequestError),
 }
 
 impl From<ExtractTxError> for BDKCliError {
@@ -124,5 +152,19 @@ impl From<ExtractTxError> for BDKCliError {
 impl From<bdk_redb::error::StoreError> for BDKCliError {
     fn from(err: bdk_redb::error::StoreError) -> Self {
         BDKCliError::RedbStoreError(Box::new(err))
+    }
+}
+
+#[cfg(feature = "redb")]
+impl From<bdk_redb::redb::DatabaseError> for BDKCliError {
+    fn from(err: bdk_redb::redb::DatabaseError) -> Self {
+        BDKCliError::RedbDatabaseError(Box::new(err))
+    }
+}
+
+#[cfg(feature = "sqlite")]
+impl From<bdk_wallet::rusqlite::Error> for BDKCliError {
+    fn from(err: bdk_wallet::rusqlite::Error) -> Self {
+        BDKCliError::RusqliteError(Box::new(err))
     }
 }
