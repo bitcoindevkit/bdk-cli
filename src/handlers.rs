@@ -15,6 +15,8 @@ use crate::config::{WalletConfig, WalletConfigInner};
 use crate::error::BDKCliError as Error;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 use crate::persister::Persister;
+#[cfg(feature = "cbf")]
+use crate::utils::BlockchainClient::KyotoClient;
 use crate::utils::*;
 #[cfg(feature = "redb")]
 use bdk_redb::Store as RedbStore;
@@ -46,8 +48,6 @@ use bdk_wallet::{
 };
 use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
 use serde_json::json;
-#[cfg(feature = "cbf")]
-use {crate::utils::BlockchainClient::KyotoClient, bdk_kyoto::LightClient, tokio::select};
 
 #[cfg(feature = "electrum")]
 use crate::utils::BlockchainClient::Electrum;
@@ -605,7 +605,7 @@ pub fn handle_offline_wallet_subcommand(
 ))]
 pub(crate) async fn handle_online_wallet_subcommand(
     wallet: &mut Wallet,
-    client: BlockchainClient,
+    client: &BlockchainClient,
     online_subcommand: OnlineWalletSubCommand,
 ) -> Result<String, Error> {
     match online_subcommand {
@@ -632,7 +632,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     client
                         .populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
 
-                    let update = client.full_scan(request, _stop_gap, batch_size, false)?;
+                    let update = client.full_scan(request, _stop_gap, *batch_size, false)?;
                     wallet.apply_update(update)?;
                 }
                 #[cfg(feature = "esplora")]
@@ -641,7 +641,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                     parallel_requests,
                 } => {
                     let update = client
-                        .full_scan(request, _stop_gap, parallel_requests)
+                        .full_scan(request, _stop_gap, *parallel_requests)
                         .await
                         .map_err(|e| *e)?;
                     wallet.apply_update(update)?;
@@ -658,7 +658,7 @@ pub(crate) async fn handle_online_wallet_subcommand(
                         hash: genesis_block.block_hash(),
                     });
                     let mut emitter = Emitter::new(
-                        &*client,
+                        client.as_ref(),
                         genesis_cp.clone(),
                         genesis_cp.height(),
                         NO_EXPECTED_MEMPOOL_TXS,
@@ -1156,6 +1156,7 @@ pub fn handle_wallets_subcommand(datadir: &Path, pretty: bool) -> Result<String,
             .wallets
             .iter()
             .map(|(name, wallet_config)| {
+                #[allow(unused_mut)]
                 let mut wallet_json = json!({
                     "name": name,
                     "network": wallet_config.network,
@@ -1246,7 +1247,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
 
                 let result = handle_online_wallet_subcommand(
                     &mut wallet,
-                    blockchain_client,
+                    &blockchain_client,
                     online_subcommand,
                 )
                 .await?;
@@ -1258,7 +1259,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 let mut wallet = new_wallet(network, wallet_opts)?;
                 let blockchain_client =
                     crate::utils::new_blockchain_client(wallet_opts, &wallet, database_path)?;
-                handle_online_wallet_subcommand(&mut wallet, blockchain_client, online_subcommand)
+                handle_online_wallet_subcommand(&mut wallet, &blockchain_client, online_subcommand)
                     .await?
             };
             Ok(result)
@@ -1452,7 +1453,7 @@ async fn respond(
         } => {
             let blockchain =
                 new_blockchain_client(wallet_opts, wallet, _datadir).map_err(|e| e.to_string())?;
-            let value = handle_online_wallet_subcommand(wallet, blockchain, online_subcommand)
+            let value = handle_online_wallet_subcommand(wallet, &blockchain, online_subcommand)
                 .await
                 .map_err(|e| e.to_string())?;
             Some(value)
@@ -1508,7 +1509,7 @@ async fn respond(
     feature = "rpc"
 ))]
 /// Syncs a given wallet using the blockchain client.
-pub async fn sync_wallet(client: BlockchainClient, wallet: &mut Wallet) -> Result<(), Error> {
+pub async fn sync_wallet(client: &BlockchainClient, wallet: &mut Wallet) -> Result<(), Error> {
     #[cfg(any(feature = "electrum", feature = "esplora"))]
     let request = wallet
         .start_sync_with_revealed_spks()
@@ -1523,7 +1524,7 @@ pub async fn sync_wallet(client: BlockchainClient, wallet: &mut Wallet) -> Resul
             // already have.
             client.populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
 
-            let update = client.sync(request, batch_size, false)?;
+            let update = client.sync(request, *batch_size, false)?;
             wallet
                 .apply_update(update)
                 .map_err(|e| Error::Generic(e.to_string()))
@@ -1534,7 +1535,7 @@ pub async fn sync_wallet(client: BlockchainClient, wallet: &mut Wallet) -> Resul
             parallel_requests,
         } => {
             let update = client
-                .sync(request, parallel_requests)
+                .sync(request, *parallel_requests)
                 .await
                 .map_err(|e| *e)?;
             wallet
@@ -1549,7 +1550,7 @@ pub async fn sync_wallet(client: BlockchainClient, wallet: &mut Wallet) -> Resul
             // reload the last 200 blocks in case of a reorg
             let emitter_height = wallet_cp.height().saturating_sub(200);
             let mut emitter = Emitter::new(
-                &*client,
+                client.as_ref(),
                 wallet_cp,
                 emitter_height,
                 wallet
@@ -1600,7 +1601,7 @@ pub async fn sync_wallet(client: BlockchainClient, wallet: &mut Wallet) -> Resul
 ))]
 /// Broadcasts a given transaction using the blockchain client.
 pub async fn broadcast_transaction(
-    client: BlockchainClient,
+    client: &BlockchainClient,
     tx: Transaction,
 ) -> Result<Txid, Error> {
     match client {
@@ -1627,38 +1628,15 @@ pub async fn broadcast_transaction(
 
         #[cfg(feature = "cbf")]
         KyotoClient { client } => {
-            let LightClient {
-                requester,
-                mut info_subscriber,
-                mut warning_subscriber,
-                update_subscriber: _,
-                node,
-            } = *client;
-
-            let subscriber = tracing_subscriber::FmtSubscriber::new();
-            tracing::subscriber::set_global_default(subscriber)
-                .map_err(|e| Error::Generic(format!("SetGlobalDefault error: {e}")))?;
-
-            tokio::task::spawn(async move { node.run().await });
-            tokio::task::spawn(async move {
-                select! {
-                    info = info_subscriber.recv() => {
-                        if let Some(info) = info {
-                            tracing::info!("{info}");
-                        }
-                    },
-                    warn = warning_subscriber.recv() => {
-                        if let Some(warn) = warn {
-                            tracing::warn!("{warn}");
-                        }
-                    }
-                }
-            });
             let txid = tx.compute_txid();
-            let wtxid = requester.broadcast_random(tx.clone()).await.map_err(|_| {
-                tracing::warn!("Broadcast was unsuccessful");
-                Error::Generic("Transaction broadcast timed out after 30 seconds".into())
-            })?;
+            let wtxid = client
+                .requester
+                .broadcast_random(tx.clone())
+                .await
+                .map_err(|_| {
+                    tracing::warn!("Broadcast was unsuccessful");
+                    Error::Generic("Transaction broadcast timed out after 30 seconds".into())
+                })?;
             tracing::info!("Successfully broadcast WTXID: {wtxid}");
             Ok(txid)
         }
