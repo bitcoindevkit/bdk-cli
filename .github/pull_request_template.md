@@ -20,7 +20,7 @@ of the PR were done in a specific way -->
 
 * [ ] I've signed all my commits
 * [ ] I followed the [contribution guidelines](https://github.com/bitcoindevkit/bdk-cli/blob/master/CONTRIBUTING.md)
-* [ ] I ran `just fmt` and `just clippy` before committing
+* [ ] I ran `just pre-push` before committing
 
 #### New Features:
 
