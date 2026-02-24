@@ -1156,6 +1156,7 @@ pub fn handle_wallets_subcommand(datadir: &Path, pretty: bool) -> Result<String,
             .wallets
             .iter()
             .map(|(name, wallet_config)| {
+                #[allow(unused_mut)]
                 let mut wallet_json = json!({
                     "name": name,
                     "network": wallet_config.network,

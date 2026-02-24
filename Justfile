@@ -25,6 +25,15 @@ build: fmt
 test:
     cargo test --all-features --tests 
 
+# checks before pushing
+pre-push:
+    cargo test --features default
+    cargo test --no-default-features
+    cargo test --all-features
+    cargo clippy --no-default-features --all-targets -- -D warnings
+    cargo clippy --all-features --all-targets -- -D warnings
+    cargo fmt --all -- --check
+
 # clean the project target directory
 clean:
     cargo clean
