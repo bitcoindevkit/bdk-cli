@@ -13,12 +13,15 @@
 //! All subcommands are defined in the below enums.
 
 #![allow(clippy::large_enum_variant)]
+
 use bdk_wallet::bitcoin::{
     Address, Network, OutPoint, ScriptBuf,
     bip32::{DerivationPath, Xpriv},
 };
 use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
 
+#[cfg(feature = "dns_payment")]
+use crate::utils::parse_dns_recipients;
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
 use crate::utils::{parse_address, parse_outpoint, parse_recipient};
@@ -127,6 +130,10 @@ pub enum CliSubCommand {
     },
     /// List all saved wallet configurations.
     Wallets,
+
+    #[cfg(feature = "dns_payment")]
+    /// Resolves the given hrn payment instructions
+    ResolveDnsRecipient { hrn: String , resolver: Option<String>},
 }
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
@@ -298,6 +305,14 @@ pub enum OfflineWalletSubCommand {
         // Address and amount parsing is done at run time in handler function.
         #[arg(env = "ADDRESS:SAT", long = "to", required = true, value_parser = parse_recipient)]
         recipients: Vec<(ScriptBuf, u64)>,
+        #[cfg(feature = "dns_payment")]
+        /// Adds DNS recipients to the transaction
+        #[arg(long = "to_dns", value_parser = parse_dns_recipients)]
+        dns_recipients: Vec<(String, u64)>,
+        #[cfg(feature = "dns_payment")]
+        /// Custom resolver DNS IP to be used for resolution.
+        #[arg(long = "dns_resolver", default_value = "8.8.8.8:53")]
+        dns_resolver: String,
         /// Sends all the funds (or all the selected utxos). Requires only one recipient with value 0.
         #[arg(long = "send_all", short = 'a')]
         send_all: bool,
