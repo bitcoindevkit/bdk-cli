@@ -35,7 +35,7 @@ And yes, it can do Taproot!!
 This crate can be used for the following purposes:
  - Instantly create a miniscript based wallet and connect to your backend of choice (Electrum, Esplora, Core RPC, Kyoto etc) and quickly play around with your own complex bitcoin scripting workflow. With one or many wallets, connected with one or many backends.
  - The `tests/integration.rs` module is used to document high level complex workflows between BDK and different Bitcoin infrastructure systems, like Core, Electrum and Lightning(soon TM).
- - Receive and send Async Payjoins. Note that even though Async Payjoin as a protocol allows the receiver and sender to go offline during the payjoin, the BDK CLI implementation currently does not support persisting.
+ - Receive and send Async Payjoins with session persistence. Sessions can be resumed if interrupted.
  - (Planned) Expose the basic command handler via `wasm` to integrate `bdk-cli` functionality natively into the web platform. See also the [playground](https://bitcoindevkit.org/bdk-cli/playground/) page.
 
 If you are considering using BDK in your own wallet project bdk-cli is a nice playground to get started with. It allows easy testnet and regtest wallet operations, to try out what's possible with descriptors, miniscript, and BDK APIs. For more information on BDK refer to the [website](https://bitcoindevkit.org/) and the [rust docs](https://docs.rs/bdk_wallet/1.0.0/bdk_wallet/index.html)
@@ -138,6 +138,31 @@ cargo run --features rpc -- wallet --wallet payjoin_wallet2 sync
 cargo run --features rpc -- wallet --wallet payjoin_wallet2 balance
 
 cargo run --features rpc -- wallet --wallet payjoin_wallet2 send_payjoin --ohttp_relay "https://pj.bobspacebkk.com" --ohttp_relay "https://pj.benalleng.com" --fee_rate 1 --uri "<URI>"
+```
+
+### Payjoin Session Persistence
+
+Payjoin sessions are automatically persisted to a SQLite database (`payjoin.sqlite`) in the data directory. This allows sessions to be resumed if interrupted.
+
+#### Resume Payjoin Sessions
+
+Resume all pending sessions:
+```
+cargo run --features rpc -- wallet --wallet <wallet_name> resume_payjoin --directory "https://payjo.in" --ohttp_relay "https://pj.bobspacebkk.com"
+```
+
+Resume a specific session by ID:
+```
+cargo run --features rpc -- wallet --wallet <wallet_name> resume_payjoin --directory "https://payjo.in" --ohttp_relay "https://pj.bobspacebkk.com" --session_id <id>
+```
+
+Sessions are processed sequentially (not concurrently) due to BDK-CLI's architecture. Each session waits up to 30 seconds for updates before timing out. If no session ID is specified, the most recent active sessions are resumed first.
+
+#### View Session History
+
+View all payjoin sessions (active and completed) and also see their status:
+```
+cargo run -- wallet --wallet <wallet_name> payjoin_history
 ```
 
 ## Justfile

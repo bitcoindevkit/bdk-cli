@@ -140,6 +140,10 @@ pub enum BDKCliError {
     #[cfg(feature = "payjoin")]
     #[error("Payjoin create request error: {0}")]
     PayjoinCreateRequest(#[from] payjoin::send::v2::CreateRequestError),
+
+    #[cfg(feature = "payjoin")]
+    #[error("Payjoin database error: {0}")]
+    PayjoinDb(#[from] PayjoinDbError),
 }
 
 impl From<ExtractTxError> for BDKCliError {
@@ -166,5 +170,66 @@ impl From<bdk_redb::redb::DatabaseError> for BDKCliError {
 impl From<bdk_wallet::rusqlite::Error> for BDKCliError {
     fn from(err: bdk_wallet::rusqlite::Error) -> Self {
         BDKCliError::RusqliteError(Box::new(err))
+    }
+}
+
+/// Error type for payjoin database operations
+#[cfg(feature = "payjoin")]
+#[derive(Debug)]
+pub enum PayjoinDbError {
+    /// SQLite database error
+    Rusqlite(bdk_wallet::rusqlite::Error),
+    /// JSON serialization error
+    Serialize(serde_json::Error),
+    /// JSON deserialization error
+    Deserialize(serde_json::Error),
+}
+
+#[cfg(feature = "payjoin")]
+impl std::fmt::Display for PayjoinDbError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PayjoinDbError::Rusqlite(e) => write!(f, "Database operation failed: {e}"),
+            PayjoinDbError::Serialize(e) => write!(f, "Serialization failed: {e}"),
+            PayjoinDbError::Deserialize(e) => write!(f, "Deserialization failed: {e}"),
+        }
+    }
+}
+
+#[cfg(feature = "payjoin")]
+impl std::error::Error for PayjoinDbError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            PayjoinDbError::Rusqlite(e) => Some(e),
+            PayjoinDbError::Serialize(e) => Some(e),
+            PayjoinDbError::Deserialize(e) => Some(e),
+        }
+    }
+}
+
+#[cfg(feature = "payjoin")]
+impl From<bdk_wallet::rusqlite::Error> for PayjoinDbError {
+    fn from(error: bdk_wallet::rusqlite::Error) -> Self {
+        PayjoinDbError::Rusqlite(error)
+    }
+}
+
+#[cfg(feature = "payjoin")]
+impl From<PayjoinDbError> for payjoin::ImplementationError {
+    fn from(error: PayjoinDbError) -> Self {
+        payjoin::ImplementationError::new(error)
+    }
+}
+
+#[cfg(feature = "payjoin")]
+impl<ApiErr, StorageErr, ErrorState>
+    From<payjoin::persist::PersistedError<ApiErr, StorageErr, ErrorState>> for BDKCliError
+where
+    ApiErr: std::error::Error,
+    StorageErr: std::error::Error,
+    ErrorState: std::fmt::Debug,
+{
+    fn from(e: payjoin::persist::PersistedError<ApiErr, StorageErr, ErrorState>) -> Self {
+        BDKCliError::Generic(e.to_string())
     }
 }
