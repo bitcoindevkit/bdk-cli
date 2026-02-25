@@ -23,6 +23,11 @@ use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
 use crate::utils::parse_proxy_auth;
 use crate::utils::{parse_address, parse_outpoint, parse_recipient};
 
+#[cfg(feature = "hwi")]
+const ENABLE_OFFLINE_SIGNER: bool = true;
+#[cfg(not(feature = "hwi"))]
+const ENABLE_OFFLINE_SIGNER: bool = false;
+
 /// The BDK Command Line Wallet App
 ///
 /// bdk-cli is a lightweight command line bitcoin wallet, powered by BDK.
@@ -127,6 +132,14 @@ pub enum CliSubCommand {
     },
     /// List all saved wallet configurations.
     Wallets,
+    #[cfg(feature = "hwi")]
+    /// Hardware wallet interface operations.
+    Hwi {
+        #[command(flatten)]
+        hwi_opts: HwiOpts,
+        #[clap(subcommand)]
+        subcommand: HwiSubCommand,
+    },
 }
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
@@ -242,6 +255,19 @@ pub struct WalletOpts {
     pub compactfilter_opts: CompactFilterOpts,
 }
 
+/// HWI specific options
+#[cfg(feature = "hwi")]
+#[derive(Clone, Debug, PartialEq, Eq, Args)]
+pub struct HwiOpts {
+    /// Wallet name
+    #[arg(env = "WALLET", short = 'w', long = "wallet")]
+    pub wallet: Option<String>,
+
+    /// External descriptor
+    #[arg(env = "EXT_DESCRIPTOR", short = 'e', long = "ext_descriptor")]
+    pub ext_descriptor: Option<String>,
+}
+
 /// Options to configure a SOCKS5 proxy for a blockchain client connection.
 #[cfg(any(feature = "electrum", feature = "esplora"))]
 #[derive(Debug, Args, Clone, PartialEq, Eq)]
@@ -305,7 +331,7 @@ pub enum OfflineWalletSubCommand {
         #[arg(long = "enable_rbf", short = 'r', default_value_t = true)]
         enable_rbf: bool,
         /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
-        #[arg(long = "offline_signer")]
+        #[arg(long = "offline_signer", default_value_t=ENABLE_OFFLINE_SIGNER)]
         offline_signer: bool,
         /// Selects which utxos *must* be spent.
         #[arg(env = "MUST_SPEND_TXID:VOUT", long = "utxos", value_parser = parse_outpoint)]
@@ -515,6 +541,23 @@ pub enum KeySubCommand {
         /// Path to use to derive extended public key from extended private key.
         #[arg(env = "PATH", short = 'p', long = "path")]
         path: DerivationPath,
+    },
+}
+
+/// Subcommands for HWI operations.
+#[cfg(feature = "hwi")]
+#[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
+pub enum HwiSubCommand {
+    /// List connected hardware wallet device.
+    Devices,
+    /// Register hardware wallet
+    Register,
+    /// Generate address
+    Address,
+    /// Sign PSBT with hardware wallet
+    Sign {
+        /// The base64-encoded PSBT to sign
+        psbt: String,
     },
 }
 

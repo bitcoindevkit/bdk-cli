@@ -24,6 +24,7 @@ use bdk_kyoto::{
     BuilderExt, Info, LightClient, Receiver, ScanType::Sync, UnboundedReceiver, Warning,
     builder::Builder,
 };
+use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 use bdk_wallet::{
     KeychainKind,
     bitcoin::bip32::{DerivationPath, Xpub},
@@ -35,6 +36,8 @@ use bdk_wallet::{
     template::DescriptorTemplate,
 };
 use cli_table::{Cell, CellStruct, Style, Table};
+#[cfg(feature = "hwi")]
+use std::marker::Sync as MarkerSync;
 
 #[cfg(any(
     feature = "electrum",
@@ -49,9 +52,7 @@ use bdk_wallet::Wallet;
 use bdk_wallet::{PersistedWallet, WalletPersister};
 
 use bdk_wallet::bip39::{Language, Mnemonic};
-use bdk_wallet::bitcoin::{
-    Address, Network, OutPoint, ScriptBuf, bip32::Xpriv, secp256k1::Secp256k1,
-};
+use bdk_wallet::bitcoin::{bip32::Xpriv, secp256k1::Secp256k1};
 use bdk_wallet::descriptor::Segwitv0;
 use bdk_wallet::keys::{GeneratableKey, GeneratedKey, bip39::WordCount};
 use serde_json::{Value, json};
@@ -662,4 +663,116 @@ pub fn load_wallet_config(
     }?;
 
     Ok((wallet_opts, network))
+}
+
+#[cfg(feature = "hwi")]
+pub async fn connect_hwi_device(
+    network: Network,
+    hwi_opts: &crate::commands::HwiOpts,
+) -> Result<Option<Arc<dyn async_hwi::HWI + Send + MarkerSync>>, Error> {
+    use async_hwi::bitbox::{BitBox02, PairingBitbox02WithLocalCache, api::runtime};
+    use async_hwi::coldcard::api::{CKCC_PID, COINKITE_VID, Coldcard};
+    use async_hwi::jade::{self, Jade};
+    use async_hwi::ledger::{HidApi, Ledger, LedgerSimulator, TransportHID};
+    use async_hwi::specter::{Specter, SpecterSimulator};
+    use async_hwi::{HWI, coldcard};
+    use tracing::{debug, info, warn};
+
+    let api = Box::new(HidApi::new().map_err(|e| Error::Generic(e.to_string()))?);
+
+    let mut devices: Vec<Arc<dyn HWI + Send + MarkerSync>> = Vec::new();
+
+    if let Ok(device) = SpecterSimulator::try_connect().await {
+        devices.push(Arc::new(device));
+    }
+
+    // Specter
+    if let Ok(specters) = Specter::enumerate().await {
+        for device in specters {
+            devices.push(Arc::new(device));
+        }
+    }
+
+    // Jade
+    match Jade::enumerate().await {
+        Ok(jades) => {
+            for mut device in jades {
+                device = device.with_network(network);
+                if let Ok(info) = device.get_info().await {
+                    if info.jade_state == jade::api::JadeState::Locked {
+                        if let Err(e) = device.auth().await {
+                            warn!("Jade auth failed: {:?}", e);
+                            continue;
+                        }
+                    }
+                    devices.push(Arc::new(device));
+                }
+            }
+        }
+        Err(e) => warn!("Jade enumeration failed: {:?}", e),
+    }
+    // LedgerSimulator
+    if let Ok(device) = LedgerSimulator::try_connect().await {
+        devices.push(Arc::new(device));
+    }
+
+    for device_info in api.device_list() {
+        if async_hwi::bitbox::is_bitbox02(device_info) {
+            if let Ok(device_handle) = device_info.open_device(&api) {
+                if let Ok(device) = PairingBitbox02WithLocalCache::<runtime::TokioRuntime>::connect(
+                    device_handle,
+                    None,
+                )
+                .await
+                {
+                    if let Ok((device, _)) = device.wait_confirm().await {
+                        let mut bb02 = BitBox02::from(device).with_network(network);
+                        if let Some(policy) = hwi_opts.ext_descriptor.as_ref() {
+                            bb02 = bb02
+                                .with_policy(policy)
+                                .map_err(|e| Error::Generic(e.to_string()))?;
+                        }
+                        devices.push(Arc::new(bb02));
+                    }
+                }
+            }
+        }
+
+        if device_info.vendor_id() == COINKITE_VID && device_info.product_id() == CKCC_PID {
+            if let Some(sn) = device_info.serial_number() {
+                debug!("Coldcard detected with SN: {}", sn);
+                if let Ok((cc, _)) = Coldcard::open(&api, sn, None) {
+                    let mut hw = coldcard::Coldcard::from(cc);
+                    if let Some(wallet_name) = hwi_opts.wallet.as_ref() {
+                        hw = hw.with_wallet_name(wallet_name.clone());
+                    }
+                    info!("Coldcard connected successfully.");
+                    devices.push(Arc::new(hw));
+                } else {
+                    warn!("Failed to open Coldcard with SN: {}", sn);
+                }
+            }
+        }
+    }
+
+    for detected in Ledger::<TransportHID>::enumerate(&api) {
+        if let Ok(mut device) = Ledger::<TransportHID>::connect(&api, detected) {
+            if let Some(wallet_name) = hwi_opts.wallet.as_ref() {
+                if let Some(policy) = hwi_opts.ext_descriptor.as_ref() {
+                    device = device
+                        .with_wallet(wallet_name, policy, None)
+                        .map_err(|e| Error::Generic(e.to_string()))?;
+                }
+            }
+            devices.push(Arc::new(device));
+        }
+    }
+
+    if devices.is_empty() {
+        warn!("No hardware devices detected. Ensure device is connected");
+        Ok(None)
+    } else {
+        info!("Detected {} devices; returning first.", devices.len());
+        Ok(Some(devices.into_iter().next().unwrap()))
+    }
 }

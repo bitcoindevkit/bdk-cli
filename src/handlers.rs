@@ -1194,9 +1194,83 @@ pub fn handle_wallets_subcommand(datadir: &Path, pretty: bool) -> Result<String,
     }
 }
 
+/// Handle hardware wallet operations
+#[cfg(feature = "hwi")]
+pub async fn handle_hwi_subcommand(
+    network: Network,
+    hwi_opts: &HwiOpts,
+    subcommand: HwiSubCommand,
+) -> Result<serde_json::Value, Error> {
+    use async_hwi::AddressScript;
+    use bdk_wallet::bitcoin::hex::DisplayHex;
+
+    match subcommand {
+        HwiSubCommand::Devices => {
+            let device_opt = crate::utils::connect_hwi_device(network, hwi_opts).await?;
+            let device = if let Some(device) = device_opt.as_ref() {
+                json!({
+                    "fingerprint": device.get_master_fingerprint().await.map_err(Error::HwiError)?.to_string(),
+                    "model": device.device_kind().to_string(),
+                })
+            } else {
+                json!(null)
+            };
+            Ok(json!({ "device": device }))
+        }
+        HwiSubCommand::Register => {
+            let policy = hwi_opts
+                .ext_descriptor
+                .clone()
+                .ok_or_else(|| Error::Generic("External descriptor required".to_string()))?;
+            let wallet_name = hwi_opts
+                .wallet
+                .clone()
+                .ok_or_else(|| Error::Generic("Wallet name required".to_string()))?;
+            let device_opt = crate::utils::connect_hwi_device(network, hwi_opts).await?;
+            let device = device_opt
+                .ok_or_else(|| Error::Generic("No hardware wallet detected".to_string()))?;
+            tracing::debug!(
+                "Registering wallet '{}' with policy '{}'",
+                wallet_name,
+                policy
+            );
+            let hmac_opt = device
+                .register_wallet(&wallet_name, &policy)
+                .await
+                .map_err(Error::HwiError)?;
+            let hmac_hex = hmac_opt.map(|h| h.to_lower_hex_string());
+            Ok(json!({ "success": true, "hmac": hmac_hex }))
+        }
+        HwiSubCommand::Address => {
+            let device_opt = crate::utils::connect_hwi_device(network, hwi_opts).await?;
+            let device = device_opt
+                .ok_or_else(|| Error::Generic("No hardware wallet detected".to_string()))?;
+            let address_script = AddressScript::Miniscript {
+                index: 0,
+                change: false,
+            };
+            device
+                .display_address(&address_script)
+                .await
+                .map_err(Error::HwiError)?;
+            Ok(json!({ "success": true, "message": "Address displayed and verified on device" }))
+        }
+        HwiSubCommand::Sign { psbt } => {
+            let mut psbt = Psbt::from_str(&psbt)
+                .map_err(|e| Error::Generic(format!("Failed to parse PSBT: {e}")))?;
+            let device_opt = crate::utils::connect_hwi_device(network, hwi_opts).await?;
+            let device = device_opt
+                .ok_or_else(|| Error::Generic("No hardware wallet detected".to_string()))?;
+            device.sign_tx(&mut psbt).await.map_err(Error::HwiError)?;
+            Ok(json!({ "psbt": psbt.to_string() }))
+        }
+    }
+}
+
 /// The global top level handler.
 pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
     let pretty = cli_opts.pretty;
+    let network = cli_opts.network;
     let subcommand = cli_opts.subcommand.clone();
 
     let result: Result<String, Error> = match subcommand {
@@ -1321,7 +1395,6 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             wallet,
             subcommand: WalletSubCommand::Config { force, wallet_opts },
         } => {
-            let network = cli_opts.network;
             let home_dir = prepare_home_dir(cli_opts.datadir)?;
             let result = handle_config_subcommand(&home_dir, network, wallet, &wallet_opts, force)?;
             Ok(result)
@@ -1334,7 +1407,6 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
         CliSubCommand::Key {
             subcommand: key_subcommand,
         } => {
-            let network = cli_opts.network;
             let result = handle_key_subcommand(network, key_subcommand, pretty)?;
             Ok(result)
         }
@@ -1343,7 +1415,6 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             policy,
             script_type,
         } => {
-            let network = cli_opts.network;
             let result = handle_compile_subcommand(network, policy, script_type, pretty)?;
             Ok(result)
         }
@@ -1423,6 +1494,15 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             let descriptor = handle_descriptor_command(cli_opts.network, desc_type, key, pretty)?;
             Ok(descriptor)
         }
+
+        #[cfg(feature = "hwi")]
+        CliSubCommand::Hwi {
+            hwi_opts,
+            subcommand,
+        } => {
+            let result = handle_hwi_subcommand(network, &hwi_opts, subcommand).await?;
+            Ok(serde_json::to_string_pretty(&result).map_err(Error::SerdeJson)?)
+        }
     };
     result
 }
@@ -1492,6 +1572,7 @@ async fn respond(
         ReplSubCommand::Exit => None,
     };
     if let Some(value) = response {
+        let value = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
         writeln!(std::io::stdout(), "{value}").map_err(|e| e.to_string())?;
         std::io::stdout().flush().map_err(|e| e.to_string())?;
         Ok(false)
