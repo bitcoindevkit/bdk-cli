@@ -57,8 +57,13 @@ The `default` feature set is `repl` and `sqlite`. With the `default` features, `
 
 ## Install bdk-cli
 
-### From source
+### Prerequisites
+Building BDK requires gcc. If you do not have this installed run:
+``` shell
+sudo apt-get install build-essential
+````
 
+### From source
 To install a dev version of `bdk-cli` from a local git repo with the `electrum` blockchain client enabled:
 
 ```shell
