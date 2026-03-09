@@ -13,32 +13,29 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Install lcov tools
-        run: sudo apt-get install lcov -y
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          override: true
-          profile: minimal
           components: llvm-tools-preview
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2.7.8
       - name: Install grcov
-        run: if [[ ! -e ~/.cargo/bin/grcov ]]; then cargo install grcov; fi
+        run: command -v grcov || cargo install grcov
       - name: Test
         run: cargo test --all-features
-      - name: Make coverage directory
-        run: mkdir coverage
       - name: Run grcov
-        run: grcov . --binary-path ./target/debug/ -s . -t lcov --branch --ignore-not-existing --keep-only 'src/**' --ignore 'tests/**' -o ./coverage/lcov.info
+        run: |
+          mkdir -p coverage
+          grcov . --binary-path ./target/debug/ -s . -t lcov --branch --ignore-not-existing --keep-only 'src/**' --ignore 'tests/**' -o ./coverage/lcov.info
       - name: Check lcov.info
         run: cat ./coverage/lcov.info
-      - name: Coveralls
-        uses: coverallsapp/github-action@v2
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          file: ./coverage/lcov.info
+          files: ./coverage/lcov.info
+          fail_ci_if_error: false
+          flags: rust
+          
