@@ -27,7 +27,8 @@
 ## About
 
 **EXPERIMENTAL**
-This crate has been updated to use `bdk_wallet` 1.x. Only use  for testing on test networks.
+
+This crate has been updated to use `bdk_wallet` 2.x. Only use  for testing on test networks.
 
 This project provides a command-line Bitcoin wallet application using the latest [BDK Wallet APIs](https://docs.rs/bdk_wallet/1.0.0/bdk_wallet/index.html) and chain sources ([RPC](https://docs.rs/bdk_bitcoind_rpc/0.18.0/bdk_bitcoind_rpc/index.html), [Electrum](https://docs.rs/bdk_electrum/0.21.0/bdk_electrum/index.html), [Esplora](https://docs.rs/bdk_esplora/0.21.0/bdk_esplora/), [Kyoto](https://docs.rs/bdk_kyoto/0.9.0/bdk_kyoto/)). This might look tiny and innocent, but by harnessing the power of BDK it provides a powerful generic descriptor based command line wallet tool.
 And yes, it can do Taproot!!
@@ -57,6 +58,14 @@ The `default` feature set is `repl` and `sqlite`. With the `default` features, `
 
 ## Install bdk-cli
 
+### Prerequisites
+
+Building BDK requires `gcc`. If you do not have this installed run:
+
+```shell
+sudo apt-get install build-essential
+```
+
 ### From source
 
 To install a dev version of `bdk-cli` from a local git repo with the `electrum` blockchain client enabled:
@@ -83,6 +92,7 @@ Available blockchain client features are:
 `electrum`, `esplora`, `kyoto`, `rpc`.
 
 ### From crates.io
+
 You can install the binary for the latest tag of `bdk-cli` with online wallet features 
 directly from [crates.io](https://crates.io/crates/bdk-cli) with a command as below:
 ```sh
