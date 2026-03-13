@@ -28,7 +28,7 @@ toml = "1.1.0"
 serde= {version = "1.0", features = ["derive"]}
 
 # Optional dependencies
-bdk_bitcoind_rpc = { version = "0.21.0", features = ["std"], optional = true }
+bdk_bitcoind_rpc = { version = "0.22.0", features = ["std"], optional = true }
 bdk_electrum = { version = "0.23.2", optional = true }
 bdk_esplora = { version = "0.22.1", features = ["async-https", "tokio"], optional = true }
 bdk_kyoto = { version = "0.15.4", optional = true }
