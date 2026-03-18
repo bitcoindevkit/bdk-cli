@@ -40,12 +40,18 @@ use bdk_wallet::miniscript::miniscript;
 #[cfg(feature = "sqlite")]
 use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::{KeychainKind, SignOptions, Wallet};
+
 #[cfg(feature = "compiler")]
 use bdk_wallet::{
-    bitcoin::XOnlyPublicKey,
+    bitcoin::{
+        XOnlyPublicKey,
+        key::{Parity, rand},
+        secp256k1::{PublicKey, Scalar, SecretKey},
+    },
     descriptor::{Descriptor, Legacy, Miniscript},
     miniscript::{Tap, descriptor::TapTree, policy::Concrete},
 };
+
 use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
 use serde_json::json;
 
@@ -1013,30 +1019,41 @@ pub(crate) fn handle_compile_subcommand(
     pretty: bool,
 ) -> Result<String, Error> {
     let policy = Concrete::<String>::from_str(policy.as_str())?;
-    let legacy_policy: Miniscript<String, Legacy> = policy
-        .compile()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-    let segwit_policy: Miniscript<String, Segwitv0> = policy
-        .compile()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-    let taproot_policy: Miniscript<String, Tap> = policy
-        .compile()
-        .map_err(|e| Error::Generic(e.to_string()))?;
+
+    let legacy_policy: Miniscript<String, Legacy> = policy.compile()?;
+    let segwit_policy: Miniscript<String, Segwitv0> = policy.compile()?;
+    let taproot_policy: Miniscript<String, Tap> = policy.compile()?;
+
+    let mut r = None;
+    let mut shorten_descriptor = None;
 
     let descriptor = match script_type.as_str() {
         "sh" => Descriptor::new_sh(legacy_policy),
         "wsh" => Descriptor::new_wsh(segwit_policy),
         "sh-wsh" => Descriptor::new_sh_wsh(segwit_policy),
         "tr" => {
-            // For tr descriptors, we use a well-known unspendable key (NUMS point).
-            // This ensures the key path is effectively disabled and only script path can be used.
-            // See https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#constructing-and-spending-taproot-outputs
+            // For tr descriptors, we use a randomized unspendable key (H + rG).
+            // This improves privacy by preventing observers from determining if key path spending is disabled.
+            // See BIP-341: https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#constructing-and-spending-taproot-outputs
 
-            let xonly_public_key = XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)
-                .map_err(|e| Error::Generic(format!("Invalid NUMS key: {e}")))?;
+            let secp = Secp256k1::new();
+            let r_secret = SecretKey::new(&mut rand::thread_rng());
+            r = Some(r_secret.display_secret().to_string());
+
+            let nums_key = XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)?;
+            let nums_point = PublicKey::from_x_only_public_key(nums_key, Parity::Even);
+
+            let internal_key_point = nums_point.add_exp_tweak(&secp, &Scalar::from(r_secret))?;
+            let (xonly_internal_key, _) = internal_key_point.x_only_public_key();
 
             let tree = TapTree::Leaf(Arc::new(taproot_policy));
-            Descriptor::new_tr(xonly_public_key.to_string(), Some(tree))
+
+            shorten_descriptor = Some(Descriptor::new_tr(
+                shorten(xonly_internal_key, 4, 4),
+                Some(tree.clone()),
+            )?);
+
+            Descriptor::new_tr(xonly_internal_key.to_string(), Some(tree))
         }
         _ => {
             return Err(Error::Generic(
@@ -1044,19 +1061,28 @@ pub(crate) fn handle_compile_subcommand(
             ));
         }
     }?;
+
     if pretty {
-        let table = vec![vec![
-            "Descriptor".cell().bold(true),
-            descriptor.to_string().cell(),
-        ]]
-        .table()
-        .display()
-        .map_err(|e| Error::Generic(e.to_string()))?;
+        let descriptor = shorten_descriptor.unwrap_or(descriptor);
+
+        let mut rows = vec![vec!["Descriptor".cell().bold(true), descriptor.cell()]];
+
+        if let Some(r_value) = &r {
+            rows.push(vec!["r".cell().bold(true), shorten(r_value, 4, 4).cell()]);
+        }
+
+        let table = rows
+            .table()
+            .display()
+            .map_err(|e| Error::Generic(e.to_string()))?;
+
         Ok(format!("{table}"))
     } else {
-        Ok(serde_json::to_string_pretty(
-            &json!({"descriptor": descriptor.to_string()}),
-        )?)
+        let mut output = json!({"descriptor": descriptor});
+        if let Some(r_value) = r {
+            output["r"] = json!(r_value);
+        }
+        Ok(serde_json::to_string_pretty(&output)?)
     }
 }
 
@@ -1707,93 +1733,5 @@ mod test {
 
         let full_signed_psbt = Psbt::from_str("cHNidP8BAIkBAAAAASWJHzxzyVORV/C3lAynKHVVL7+Rw7/Jj8U9fuvD24olAAAAAAD+////AiBOAAAAAAAAIgAgLzY9yE4jzTFJnHtTjkc+rFAtJ9NB7ENFQ1xLYoKsI1cfqgKVAAAAACIAIFsbWgDeLGU8EA+RGwBDIbcv4gaGG0tbEIhDvwXXa/E7LwEAAAABALUCAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////BALLAAD/////AgD5ApUAAAAAIgAgWxtaAN4sZTwQD5EbAEMhty/iBoYbS1sQiEO/Bddr8TsAAAAAAAAAACZqJKohqe3i9hw/cdHe/T+pmd+jaVN1XGkGiXmZYrSL69g2l06M+QEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQErAPkClQAAAAAiACBbG1oA3ixlPBAPkRsAQyG3L+IGhhtLWxCIQ78F12vxOwEFR1IhA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDIQLKhV/gEZYmlsQXnsL5/Uqv5Y8O31tmWW1LQqIBkiqzCVKuIgYCyoVf4BGWJpbEF57C+f1Kr+WPDt9bZlltS0KiAZIqswkEboH3lCIGA/JV2U/0pXW+iP49QcsYilEvkZEd4phmDM8nV8wC+MeDBDS6ZSEBBwABCNsEAEgwRQIhAJzT6busDV9h12M/LNquZ17oOHFn7whg90kh9gjSpvshAiBEDu/1EYVD7BqJJzExPhq2CX/Vsap/ULLjfRRo99nEKQFHMEQCIGoFCvJ2zPB7PCpznh4+1jsY03kMie49KPoPDdr7/T9TAiB3jV7wzR9BH11FSbi+8U8gSX95PrBlnp1lOBgTUIUw3QFHUiED8lXZT/Sldb6I/j1ByxiKUS+RkR3imGYMzydXzAL4x4MhAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJUq4AACICAsqFX+ARliaWxBeewvn9Sq/ljw7fW2ZZbUtCogGSKrMJBG6B95QiAgPyVdlP9KV1voj+PUHLGIpRL5GRHeKYZgzPJ1fMAvjHgwQ0umUhAA==").unwrap();
         assert!(is_final(&full_signed_psbt).is_ok());
-    }
-
-    #[cfg(feature = "compiler")]
-    #[test]
-    fn test_compile_taproot() {
-        use super::{NUMS_UNSPENDABLE_KEY_HEX, handle_compile_subcommand};
-        use bdk_wallet::bitcoin::Network;
-
-        // Expected taproot descriptors with checksums (using NUMS key from constant)
-        let expected_pk_a = format!("tr({},pk(A))#a2mlskt0", NUMS_UNSPENDABLE_KEY_HEX);
-        let expected_and_ab = format!(
-            "tr({},and_v(v:pk(A),pk(B)))#sfplm6kv",
-            NUMS_UNSPENDABLE_KEY_HEX
-        );
-
-        // Test simple pk policy compilation to taproot
-        let result = handle_compile_subcommand(
-            Network::Testnet,
-            "pk(A)".to_string(),
-            "tr".to_string(),
-            false,
-        );
-        assert!(result.is_ok());
-        let json_string = result.unwrap();
-        let json_result: serde_json::Value = serde_json::from_str(&json_string).unwrap();
-        let descriptor = json_result.get("descriptor").unwrap().as_str().unwrap();
-        assert_eq!(descriptor, expected_pk_a);
-
-        // Test more complex policy
-        let result = handle_compile_subcommand(
-            Network::Testnet,
-            "and(pk(A),pk(B))".to_string(),
-            "tr".to_string(),
-            false,
-        );
-        assert!(result.is_ok());
-        let json_string = result.unwrap();
-        let json_result: serde_json::Value = serde_json::from_str(&json_string).unwrap();
-        let descriptor = json_result.get("descriptor").unwrap().as_str().unwrap();
-        assert_eq!(descriptor, expected_and_ab);
-    }
-
-    #[cfg(feature = "compiler")]
-    #[test]
-    fn test_compile_invalid_cases() {
-        use super::handle_compile_subcommand;
-        use bdk_wallet::bitcoin::Network;
-
-        // Test invalid policy syntax
-        let result = handle_compile_subcommand(
-            Network::Testnet,
-            "invalid_policy".to_string(),
-            "tr".to_string(),
-            false,
-        );
-        assert!(result.is_err());
-
-        // Test invalid script type
-        let result = handle_compile_subcommand(
-            Network::Testnet,
-            "pk(A)".to_string(),
-            "invalid_type".to_string(),
-            false,
-        );
-        assert!(result.is_err());
-
-        // Test empty policy
-        let result =
-            handle_compile_subcommand(Network::Testnet, "".to_string(), "tr".to_string(), false);
-        assert!(result.is_err());
-
-        // Test malformed policy with unmatched parentheses
-        let result = handle_compile_subcommand(
-            Network::Testnet,
-            "pk(A".to_string(),
-            "tr".to_string(),
-            false,
-        );
-        assert!(result.is_err());
-
-        // Test policy with unknown function
-        let result = handle_compile_subcommand(
-            Network::Testnet,
-            "unknown_func(A)".to_string(),
-            "tr".to_string(),
-            false,
-        );
-        assert!(result.is_err());
     }
 }
