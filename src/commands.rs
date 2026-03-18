@@ -444,7 +444,7 @@ pub enum OnlineWalletSubCommand {
         )]
         tx: Option<String>,
     },
-    // Generates a Payjoin receive URI and processes the sender's Payjoin proposal.
+    /// Generates a Payjoin receive URI and processes the sender's Payjoin proposal.
     ReceivePayjoin {
         /// Amount to be received in sats.
         #[arg(env = "PAYJOIN_AMOUNT", long = "amount", required = true)]
