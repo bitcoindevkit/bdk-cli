@@ -166,20 +166,49 @@ impl TryFrom<&WalletConfigInner> for WalletOpts {
 mod tests {
     use super::*;
     use std::convert::TryInto;
+    const EXT_DESCRIPTOR: &str = "wpkh([07234a14/84'/1'/0']tpubDCSgT6PaVLQH9h2TAxKryhvkEurUBcYRJc9dhTcMDyahhWiMWfEWvQQX89yaw7w7XU8bcVujoALfxq59VkFATri3Cxm5mkp9kfHfRFDckEh/0/*)#429nsxmg";
+    const INT_DESCRIPTOR: &str = "wpkh([07234a14/84'/1'/0']tpubDCSgT6PaVLQH9h2TAxKryhvkEurUBcYRJc9dhTcMDyahhWiMWfEWvQQX89yaw7w7XU8bcVujoALfxq59VkFATri3Cxm5mkp9kfHfRFDckEh/1/*)#y7qjdnts";
 
     #[test]
     fn test_wallet_config_inner_to_opts_conversion() {
+        #[cfg(any(
+            feature = "electrum",
+            feature = "esplora",
+            feature = "rpc",
+            feature = "cbf"
+        ))]
+        let client_type = {
+            if cfg!(feature = "esplora") {
+                Some("esplora".to_string())
+            } else if cfg!(feature = "rpc") {
+                Some("rpc".to_string())
+            } else if cfg!(feature = "electrum") {
+                Some("electrum".to_string())
+            } else if cfg!(feature = "cbf") {
+                Some("cbf".to_string())
+            } else {
+                None
+            }
+        };
+
         let wallet_config = WalletConfigInner {
             wallet: "test_wallet".to_string(),
             network: "testnet4".to_string(),
-            ext_descriptor: "wpkh([07234a14/84'/1'/0']tpubDCSgT6PaVLQH9h2TAxKryhvkEurUBcYRJc9dhTcMDyahhWiMWfEWvQQX89yaw7w7XU8bcVujoALfxq59VkFATri3Cxm5mkp9kfHfRFDckEh/0/*)#429nsxmg".to_string(),
-            int_descriptor: Some("wpkh([07234a14/84'/1'/0']tpubDCSgT6PaVLQH9h2TAxKryhvkEurUBcYRJc9dhTcMDyahhWiMWfEWvQQX89yaw7w7XU8bcVujoALfxq59VkFATri3Cxm5mkp9kfHfRFDckEh/1/*)#y7qjdnts".to_string()),
+            ext_descriptor: EXT_DESCRIPTOR.to_string(),
+            int_descriptor: Some(INT_DESCRIPTOR.to_string()),
             #[cfg(any(feature = "sqlite", feature = "redb"))]
             database_type: "sqlite".to_string(),
-            #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc", feature = "cbf"))]
-            client_type: Some("esplora".to_string()),
+
+            #[cfg(any(
+                feature = "electrum",
+                feature = "esplora",
+                feature = "rpc",
+                feature = "cbf"
+            ))]
+            client_type,
+
             #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
-            server_url: Some(" https://blockstream.info/testnet4/api".to_string()),
+            server_url: Some("https://example.com/testnet/api".to_string()),
             #[cfg(feature = "electrum")]
             batch_size: None,
             #[cfg(feature = "esplora")]
@@ -197,21 +226,32 @@ mod tests {
             .expect("Conversion should succeed");
 
         assert_eq!(opts.wallet, Some("test_wallet".to_string()));
-        assert_eq!(
-            opts.ext_descriptor,
-            "wpkh([07234a14/84'/1'/0']tpubDCSgT6PaVLQH9h2TAxKryhvkEurUBcYRJc9dhTcMDyahhWiMWfEWvQQX89yaw7w7XU8bcVujoALfxq59VkFATri3Cxm5mkp9kfHfRFDckEh/0/*)#429nsxmg"
-        );
 
-        #[cfg(any(
-            feature = "electrum",
+        #[cfg(all(
             feature = "esplora",
-            feature = "rpc",
-            feature = "cbf"
+            not(any(feature = "electrum", feature = "rpc", feature = "cbf"))
         ))]
         assert_eq!(opts.client_type, ClientType::Esplora);
 
+        #[cfg(all(
+            feature = "rpc",
+            not(any(feature = "esplora", feature = "electrum", feature = "cbf"))
+        ))]
+        assert_eq!(opts.client_type, ClientType::Rpc);
+
+        #[cfg(all(feature = "electrum", not(any(feature = "esplora", feature = "rpc"))))]
+        assert_eq!(opts.client_type, ClientType::Electrum);
+
+        #[cfg(all(
+            feature = "cbf",
+            not(any(feature = "esplora", feature = "rpc", feature = "electrum"))
+        ))]
+        assert_eq!(opts.client_type, ClientType::Cbf);
+
         #[cfg(feature = "sqlite")]
         assert_eq!(opts.database_type, DatabaseType::Sqlite);
+
+        assert_eq!(opts.ext_descriptor, EXT_DESCRIPTOR);
 
         #[cfg(feature = "electrum")]
         assert_eq!(opts.batch_size, 10);
