@@ -1,5 +1,4 @@
 set quiet := true
-msrv := "1.75.0"
 default_wallet := 'regtest_default_wallet'
 default_datadir := "$HOME/.bdk-bitcoin"
 rpc_user := 'user'
@@ -41,10 +40,6 @@ clean:
 # set the rust version to stable
 stable: clean
     rustup override set stable; cargo update
-
-# set the rust version to the msrv and pin dependencies
-msrv: clean
-    rustup override set {{msrv}}; cargo update; ./ci/pin-msrv.sh
 
 # start regtest bitcoind in default data directory
 [group('rpc')]

@@ -364,10 +364,10 @@ pub fn handle_offline_wallet_subcommand(
                 tx_builder.include_output_redeem_witness_script();
             }
 
-            if let Some(fee_rate) = fee_rate {
-                if let Some(fee_rate) = FeeRate::from_sat_per_vb(fee_rate as u64) {
-                    tx_builder.fee_rate(fee_rate);
-                }
+            if let Some(fee_rate) = fee_rate
+                && let Some(fee_rate) = FeeRate::from_sat_per_vb(fee_rate as u64)
+            {
+                tx_builder.fee_rate(fee_rate);
             }
 
             if let Some(utxos) = utxos {
@@ -770,14 +770,14 @@ pub fn handle_config_subcommand(
         );
     }
 
-    if let Some(ref internal_desc) = int_descriptor {
-        if internal_desc.contains("xprv") || internal_desc.contains("tprv") {
-            eprintln!(
-                "WARNING: Your internal descriptor contains PRIVATE KEYS.
+    if let Some(ref internal_desc) = int_descriptor
+        && (internal_desc.contains("xprv") || internal_desc.contains("tprv"))
+    {
+        eprintln!(
+            "WARNING: Your internal descriptor contains PRIVATE KEYS.
                  Private keys will be saved in PLAINTEXT in the config file.
                  This is a security risk. Consider using public descriptors instead.\n"
-            );
-        }
+        );
     }
 
     let mut config = WalletConfig::load(datadir)?.unwrap_or(WalletConfig {
