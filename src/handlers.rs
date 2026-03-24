@@ -1744,41 +1744,86 @@ mod test {
     #[cfg(feature = "compiler")]
     #[test]
     fn test_compile_taproot() {
-        use super::{NUMS_UNSPENDABLE_KEY_HEX, handle_compile_subcommand};
+        use super::handle_compile_subcommand;
         use bdk_wallet::bitcoin::Network;
-
-        // Expected taproot descriptors with checksums (using NUMS key from constant)
-        let expected_pk_a = format!("tr({},pk(A))#a2mlskt0", NUMS_UNSPENDABLE_KEY_HEX);
-        let expected_and_ab = format!(
-            "tr({},and_v(v:pk(A),pk(B)))#sfplm6kv",
-            NUMS_UNSPENDABLE_KEY_HEX
-        );
+        use claims::assert_ok;
 
         // Test simple pk policy compilation to taproot
-        let result = handle_compile_subcommand(
+        let json_string = assert_ok!(handle_compile_subcommand(
             Network::Testnet,
             "pk(A)".to_string(),
             "tr".to_string(),
             false,
-        );
-        assert!(result.is_ok());
-        let json_string = result.unwrap();
+        ));
         let json_result: serde_json::Value = serde_json::from_str(&json_string).unwrap();
+
         let descriptor = json_result.get("descriptor").unwrap().as_str().unwrap();
-        assert_eq!(descriptor, expected_pk_a);
+        assert!(descriptor.starts_with("tr("));
+        assert!(descriptor.contains(",pk(A))#"));
+        assert!(json_result.get("r").is_some());
 
         // Test more complex policy
-        let result = handle_compile_subcommand(
+        let json_string = assert_ok!(handle_compile_subcommand(
             Network::Testnet,
             "and(pk(A),pk(B))".to_string(),
             "tr".to_string(),
             false,
-        );
-        assert!(result.is_ok());
-        let json_string = result.unwrap();
+        ));
         let json_result: serde_json::Value = serde_json::from_str(&json_string).unwrap();
+
         let descriptor = json_result.get("descriptor").unwrap().as_str().unwrap();
-        assert_eq!(descriptor, expected_and_ab);
+        assert!(descriptor.starts_with("tr("));
+        assert!(descriptor.contains(",and_v(v:pk(A),pk(B)))#"));
+        assert!(json_result.get("r").is_some());
+    }
+
+    #[cfg(feature = "compiler")]
+    #[test]
+    fn test_compile_non_taproot_has_no_r() {
+        use super::handle_compile_subcommand;
+        use bdk_wallet::bitcoin::Network;
+        use claims::assert_ok;
+
+        let json_string = assert_ok!(handle_compile_subcommand(
+            Network::Testnet,
+            "pk(A)".to_string(),
+            "wsh".to_string(),
+            false,
+        ));
+        let json_result: serde_json::Value = serde_json::from_str(&json_string).unwrap();
+
+        let descriptor = json_result.get("descriptor").unwrap().as_str().unwrap();
+        assert!(descriptor.starts_with("wsh(pk(A))#"));
+        assert!(json_result.get("r").is_none());
+    }
+
+    #[cfg(feature = "compiler")]
+    #[test]
+    fn test_compile_taproot_randomness() {
+        use super::handle_compile_subcommand;
+        use bdk_wallet::bitcoin::Network;
+        use claims::assert_ok;
+
+        // Two compilations of the same policy should produce different internal keys
+        let result1 = assert_ok!(handle_compile_subcommand(
+            Network::Testnet,
+            "pk(A)".to_string(),
+            "tr".to_string(),
+            false,
+        ));
+        let result2 = assert_ok!(handle_compile_subcommand(
+            Network::Testnet,
+            "pk(A)".to_string(),
+            "tr".to_string(),
+            false,
+        ));
+
+        let json1: serde_json::Value = serde_json::from_str(&result1).unwrap();
+        let json2: serde_json::Value = serde_json::from_str(&result2).unwrap();
+
+        let r1 = json1.get("r").unwrap().as_str().unwrap();
+        let r2 = json2.get("r").unwrap().as_str().unwrap();
+        assert_ne!(r1, r2, "Each compilation should produce a unique r value");
     }
 
     #[cfg(feature = "compiler")]
@@ -1786,46 +1831,46 @@ mod test {
     fn test_compile_invalid_cases() {
         use super::handle_compile_subcommand;
         use bdk_wallet::bitcoin::Network;
+        use claims::assert_err;
 
         // Test invalid policy syntax
-        let result = handle_compile_subcommand(
+        assert_err!(handle_compile_subcommand(
             Network::Testnet,
             "invalid_policy".to_string(),
             "tr".to_string(),
             false,
-        );
-        assert!(result.is_err());
+        ));
 
         // Test invalid script type
-        let result = handle_compile_subcommand(
+        assert_err!(handle_compile_subcommand(
             Network::Testnet,
             "pk(A)".to_string(),
             "invalid_type".to_string(),
             false,
-        );
-        assert!(result.is_err());
+        ));
 
         // Test empty policy
-        let result =
-            handle_compile_subcommand(Network::Testnet, "".to_string(), "tr".to_string(), false);
-        assert!(result.is_err());
+        assert_err!(handle_compile_subcommand(
+            Network::Testnet,
+            "".to_string(),
+            "tr".to_string(),
+            false,
+        ));
 
         // Test malformed policy with unmatched parentheses
-        let result = handle_compile_subcommand(
+        assert_err!(handle_compile_subcommand(
             Network::Testnet,
             "pk(A".to_string(),
             "tr".to_string(),
             false,
-        );
-        assert!(result.is_err());
+        ));
 
         // Test policy with unknown function
-        let result = handle_compile_subcommand(
+        assert_err!(handle_compile_subcommand(
             Network::Testnet,
             "unknown_func(A)".to_string(),
             "tr".to_string(),
             false,
-        );
-        assert!(result.is_err());
+        ));
     }
 }

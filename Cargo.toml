@@ -63,3 +63,6 @@ verify = []
 # Extra utility tools
 # Compile policies
 compiler = []
+
+[dev-dependencies]
+claims = "0.8.0"
