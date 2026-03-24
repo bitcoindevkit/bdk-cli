@@ -48,13 +48,15 @@ use bdk_wallet::{
         key::{Parity, rand},
         secp256k1::{PublicKey, Scalar, SecretKey},
     },
-    descriptor::{Descriptor, Legacy, Miniscript},
+    descriptor::{Descriptor, Legacy},
     miniscript::{Tap, descriptor::TapTree, policy::Concrete},
 };
 
 use clap::CommandFactory;
 use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
 use serde_json::json;
+#[cfg(feature = "compiler")]
+use tap::Pipe;
 
 #[cfg(feature = "electrum")]
 use crate::utils::BlockchainClient::Electrum;
@@ -1021,16 +1023,12 @@ pub(crate) fn handle_compile_subcommand(
 ) -> Result<String, Error> {
     let policy = Concrete::<String>::from_str(policy.as_str())?;
 
-    let legacy_policy: Miniscript<String, Legacy> = policy.compile()?;
-    let segwit_policy: Miniscript<String, Segwitv0> = policy.compile()?;
-    let taproot_policy: Miniscript<String, Tap> = policy.compile()?;
-
     let mut r = None;
 
     let descriptor = match script_type.as_str() {
-        "sh" => Descriptor::new_sh(legacy_policy),
-        "wsh" => Descriptor::new_wsh(segwit_policy),
-        "sh-wsh" => Descriptor::new_sh_wsh(segwit_policy),
+        "sh" => policy.compile::<Legacy>()?.pipe(Descriptor::new_sh),
+        "wsh" => policy.compile::<Segwitv0>()?.pipe(Descriptor::new_wsh),
+        "sh-wsh" => policy.compile::<Segwitv0>()?.pipe(Descriptor::new_sh_wsh),
         "tr" => {
             // For tr descriptors, we use a randomized unspendable key (H + rG).
             // This improves privacy by preventing observers from determining if key path spending is disabled.
@@ -1046,7 +1044,7 @@ pub(crate) fn handle_compile_subcommand(
             let internal_key_point = nums_point.add_exp_tweak(&secp, &Scalar::from(r_secret))?;
             let (xonly_internal_key, _) = internal_key_point.x_only_public_key();
 
-            let tree = TapTree::Leaf(Arc::new(taproot_policy));
+            let tree = TapTree::Leaf(Arc::new(policy.compile::<Tap>()?));
 
             Descriptor::new_tr(xonly_internal_key.to_string(), Some(tree))
         }
