@@ -4,9 +4,24 @@ Changelog info is also documented on the [GitHub releases](https://github.com/bi
 page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [Unreleased]
-- Add wallet subcommand `config` to save wallet configs
-- Add `wallets` command to list all wallets saved configs
-- Added `completions` subcommand to generate shell completions
+
+## [3.0.0]
+
+- Added `descriptor` command for generating descriptors
+- Added wallet subcommand `config` for saving and reusing wallet configuration 
+- Added non-persisted async payjoin support 
+- Added `completions` command to generate shell completions
+- Added `wallets` command to list all saved wallets configs 
+- Refactor sync kyoto client to be borrowed/referenced 
+- Updated `cont_integration` and `audit` workflows 
+- Updated `--pretty` to be used in any position 
+- Updated documentation to include installation prerequisite 
+- Updated dependencies `bdk_electrum` to v0.23.2, `bdk_kyoto` to v0.15.4, `bdk_redb` to v0.1.1, `clap` to v4.6, `clap_complete` to v4.6, `env_logger` to v0.11.10, `thiserror` to v2.0.18, `tracing` to v0.1.44, `toml` to v1.1.0, `reqwest` to v0.13.2, `url` to v2.5.8 and other transitive dependencies
+- Replaced `coveralls` with `codecov` for coverage reporting 
+- Fixed config test to use any client
+- Locked payjoin version to 1.0.0-rc.1
+- Fix duplicate wallet creation in non-persistent path 
+- Removed remaining MSRV mentions in documentation
 
 ## [2.0.0]
 
@@ -124,8 +139,9 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [0.1.0-beta.1]
 
-[Unreleased]: https://github.com/bitcoindevkit/bdk-cli/compare/v2.0.0...HEAD
-[2.0.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v1.0.0....v2.0.0
+[Unreleased]: https://github.com/bitcoindevkit/bdk-cli/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v2.0.0...v3.0.0
+[2.0.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.27.1...v1.0.0
 [0.27.1]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.26.0...v0.27.1
 [0.26.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.6.0...v0.26.0
