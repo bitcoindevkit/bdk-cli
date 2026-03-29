@@ -46,10 +46,8 @@ Every new feature should be covered by functional tests where possible.
 When refactoring, structure your PR to make it easy to review and don't
 hesitate to split it into multiple small, focused PRs.
 
-The Minimal Supported Rust Version is 1.45 (enforced by our CI).
-
 Commits should cover both the issue fixed and the solution's rationale.
-These [guidelines](https://chris.beams.io/posts/git-commit/) should be kept in mind.
+These [guidelines](https://chris.beams.io/posts/git-commit/) should be kept in mind. Commit messages follow the ["Conventional Commits 1.0.0"](https://www.conventionalcommits.org/en/v1.0.0/) to make commit histories easier to read by humans and automated tools. All commits must be [GPG signed](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits).
 
 To facilitate communication with other contributors, the project is making use
 of GitHub's "assignee" field. First check that no one is assigned and then
