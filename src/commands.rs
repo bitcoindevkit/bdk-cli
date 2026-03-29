@@ -12,7 +12,6 @@
 //! All optional args are defined in the structs below.
 //! All subcommands are defined in the below enums.
 
-#![allow(clippy::large_enum_variant)]
 use bdk_wallet::bitcoin::{
     Address, Network, OutPoint, ScriptBuf,
     bip32::{DerivationPath, Xpriv},
@@ -270,6 +269,7 @@ pub struct WalletOpts {
     #[cfg(feature = "electrum")]
     #[arg(env = "ELECTRUM_BATCH_SIZE", short = 'b', long, default_value = "10")]
     pub batch_size: usize,
+
     /// Esplora parallel requests.
     #[cfg(feature = "esplora")]
     #[arg(
@@ -480,8 +480,11 @@ pub enum OnlineWalletSubCommand {
         stop_gap: usize,
     },
     /// Syncs with the chosen blockchain server.
-    Sync,
-    /// Broadcasts a transaction to the network. Takes either a raw transaction or a PSBT to extract.
+    Sync {
+        #[command(flatten)]
+        wallet_opts: WalletOpts,
+    },
+
     Broadcast {
         /// Sets the PSBT to sign.
         #[arg(
