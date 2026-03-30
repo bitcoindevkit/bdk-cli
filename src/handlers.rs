@@ -103,6 +103,7 @@ pub fn handle_offline_wallet_subcommand(
     wallet_opts: &WalletOpts,
     cli_opts: &CliOpts,
     offline_subcommand: OfflineWalletSubCommand,
+    labels: &mut bip329::Labels,
 ) -> Result<String, Error> {
     match offline_subcommand {
         NewAddress => {
@@ -1273,6 +1274,15 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             let home_dir = prepare_home_dir(datadir)?;
             let (wallet_opts, network) = load_wallet_config(&home_dir, &wallet_name)?;
 
+            let database_path = prepare_wallet_db_dir(&home_dir, &wallet_name)?;
+            let label_file_path = database_path.join("labels.jsonl");
+
+            let mut labels = match bip329::Labels::try_from_file(&label_file_path) {
+                Ok(loaded_labels) => loaded_labels,
+                Err(bip329::error::ParseError::FileReadError(io_err)) if io_err.kind() == std::io::ErrorKind::NotFound => bip329::Labels::default(),
+                Err(e) => return Err(Error::Generic(format!("Failed to load labels: {}", e))),
+            };
+
             #[cfg(any(feature = "sqlite", feature = "redb"))]
             let result = {
                 let mut persister: Persister = match &wallet_opts.database_type {
@@ -1302,6 +1312,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     &wallet_opts,
                     &cli_opts,
                     offline_subcommand.clone(),
+                    &mut labels,
                 )?;
                 wallet.persist(&mut persister)?;
                 result
@@ -1314,8 +1325,11 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                     &wallet_opts,
                     &cli_opts,
                     offline_subcommand.clone(),
+                    &mut labels,
                 )?
             };
+            labels.export_to_file(&label_file_path).map_err(|e| Error::Generic(format!("Failed to save labels: {}", e)))?;
+            
             Ok(result)
         }
         CliSubCommand::Wallet {
