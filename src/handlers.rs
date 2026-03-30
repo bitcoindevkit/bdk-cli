@@ -91,6 +91,27 @@ use {
     bdk_wallet::chain::{BlockId, CanonicalizationParams, CheckPoint},
 };
 
+use bip329::LabelRef;
+
+/// Helper to format BIP-329 LabelRefs into searchable strings
+fn format_ref_str(item_ref: &LabelRef) -> String {
+    match item_ref {
+        LabelRef::Txid(txid) => format!("txid:{}", txid),
+        LabelRef::Address(addr) => format!("addr:{}", addr),
+        LabelRef::Output(op) => format!("output:{}", op),
+        LabelRef::Input(op) => format!("input:{}", op),
+        _ => item_ref.to_string(), // Fallback for pubkey/xpub
+    }
+}
+
+/// Helper to safely extract a label string or return an em dash
+fn get_label_string(labels: &bip329::Labels, target_ref_str: &str) -> String {
+    labels.iter()
+        .find(|l| format_ref_str(&l.ref_()) == target_ref_str)
+        .and_then(|l| l.label().map(|s| s.to_string()))
+        .unwrap_or_else(|| "—".to_string())
+}
+
 #[cfg(feature = "compiler")]
 const NUMS_UNSPENDABLE_KEY_HEX: &str =
     "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
@@ -173,6 +194,8 @@ pub fn handle_offline_wallet_subcommand(
                         ChainPosition::Unconfirmed { .. } => "Unconfirmed".to_string(),
                     };
 
+                    let label_str = get_label_string(labels, &format!("output:{}", utxo.outpoint));
+
                     rows.push(vec![
                         shorten(utxo.outpoint, 8, 10).cell(),
                         utxo.txout
@@ -189,6 +212,7 @@ pub fn handle_offline_wallet_subcommand(
                         utxo.derivation_index.cell(),
                         height.to_string().cell().justify(Justify::Right),
                         shorten(block_hash, 8, 8).cell().justify(Justify::Right),
+                        label_str.cell(),
                     ]);
                 }
                 let table = rows
@@ -202,12 +226,18 @@ pub fn handle_offline_wallet_subcommand(
                         "Index".cell().bold(true),
                         "Block Height".cell().bold(true),
                         "Block Hash".cell().bold(true),
+                        "Label".cell().bold(true)
                     ])
                     .display()
                     .map_err(|e| Error::Generic(e.to_string()))?;
                 Ok(format!("{table}"))
             } else {
-                Ok(serde_json::to_string_pretty(&utxos)?)
+                let utxos_json: Vec<_> = utxos.iter().map(|utxo| {
+                    let mut json_obj = serde_json::to_value(utxo).unwrap();
+                    json_obj["label"] = json!(get_label_string(labels, &format!("output:{}", utxo.outpoint)));
+                    json_obj
+                }).collect();
+                Ok(serde_json::to_string_pretty(&utxos_json)?)
             }
         }
         Transactions => {
@@ -234,6 +264,7 @@ pub fn handle_offline_wallet_subcommand(
                     .collect::<Vec<_>>();
                 let mut rows: Vec<Vec<CellStruct>> = vec![];
                 for (txid, version, is_rbf, input_count, output_count, total_value) in txns {
+                    let label_str = get_label_string(labels, &format!("txid:{}", txid));
                     rows.push(vec![
                         txid.cell(),
                         version.to_string().cell().justify(Justify::Right),
@@ -241,6 +272,7 @@ pub fn handle_offline_wallet_subcommand(
                         input_count.to_string().cell().justify(Justify::Right),
                         output_count.to_string().cell().justify(Justify::Right),
                         total_value.to_string().cell().justify(Justify::Right),
+                        label_str.cell(),
                     ]);
                 }
                 let table = rows
@@ -252,6 +284,7 @@ pub fn handle_offline_wallet_subcommand(
                         "Input Count".cell().bold(true),
                         "Output Count".cell().bold(true),
                         "Total Value (sat)".cell().bold(true),
+                        "Label".cell().bold(true),
                     ])
                     .display()
                     .map_err(|e| Error::Generic(e.to_string()))?;
@@ -259,14 +292,16 @@ pub fn handle_offline_wallet_subcommand(
             } else {
                 let txns: Vec<_> = transactions
                     .map(|tx| {
+                        let txid = tx.tx_node.txid.to_string();
                         json!({
-                            "txid": tx.tx_node.txid,
+                            "txid": txid,
                             "is_coinbase": tx.tx_node.is_coinbase(),
                             "wtxid": tx.tx_node.compute_wtxid(),
                             "version": tx.tx_node.version,
                             "is_rbf": tx.tx_node.is_explicitly_rbf(),
                             "inputs": tx.tx_node.input,
                             "outputs": tx.tx_node.output,
+                            "label": get_label_string(labels, &format!("txid:{}", txid)),
                         })
                     })
                     .collect();
@@ -1329,7 +1364,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 )?
             };
             labels.export_to_file(&label_file_path).map_err(|e| Error::Generic(format!("Failed to save labels: {}", e)))?;
-            
+
             Ok(result)
         }
         CliSubCommand::Wallet {
