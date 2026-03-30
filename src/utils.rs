@@ -50,7 +50,7 @@ use bdk_wallet::{PersistedWallet, WalletPersister};
 
 use bdk_wallet::bip39::{Language, Mnemonic};
 use bdk_wallet::bitcoin::{
-    Address, Network, OutPoint, ScriptBuf, bip32::Xpriv, secp256k1::Secp256k1,
+    Address, Network, OutPoint, ScriptBuf, Txid, bip32::Xpriv, secp256k1::Secp256k1,
 };
 use bdk_wallet::descriptor::Segwitv0;
 use bdk_wallet::keys::{GeneratableKey, GeneratedKey, bip39::WordCount};
@@ -82,6 +82,11 @@ pub(crate) fn parse_proxy_auth(s: &str) -> Result<(String, String), Error> {
     let passwd = parts[1].to_string();
 
     Ok((user, passwd))
+}
+
+/// Parse a txid argument from cli input.
+pub(crate) fn parse_txid(s: &str) -> Result<Txid, Error> {
+    Ok(Txid::from_str(s).map_err(|e| Error::Generic(e.to_string()))?)
 }
 
 /// Parse a outpoint (Txid:Vout) argument from cli input.

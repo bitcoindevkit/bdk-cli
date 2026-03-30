@@ -202,6 +202,7 @@ dependencies = [
  "bdk_kyoto",
  "bdk_redb",
  "bdk_wallet",
+ "bip329",
  "clap",
  "clap_complete",
  "cli-table",
@@ -354,6 +355,18 @@ dependencies = [
  "chacha20-poly1305",
  "rand 0.8.5",
  "tokio",
+]
+
+[[package]]
+name = "bip329"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "689260fce0f6e366877a624be4c87518e80f99951c421ae80c3be6523a51bc9d"
+dependencies = [
+ "bitcoin",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

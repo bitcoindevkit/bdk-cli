@@ -14,7 +14,7 @@
 
 #![allow(clippy::large_enum_variant)]
 use bdk_wallet::bitcoin::{
-    Address, Network, OutPoint, ScriptBuf,
+    Address, Network, OutPoint, ScriptBuf, Txid,
     bip32::{DerivationPath, Xpriv},
 };
 use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
@@ -460,6 +460,22 @@ pub enum OfflineWalletSubCommand {
         /// Add one PSBT to combine. This option can be repeated multiple times, one for each PSBT.
         #[arg(env = "BASE64_PSBT", required = true)]
         psbt: Vec<String>,
+    },
+
+    /// Set a human-readable label for a wallet item (address, transaction, or UTXO).
+    Label {
+        /// The human-readable label string.
+        #[arg(env = "LABEL_STR", required = true)]
+        label_str: String,
+        /// The address to label.
+        #[arg(long, conflicts_with_all = ["txid", "utxo"], required_unless_present_any = ["txid", "utxo"], value_parser = crate::utils::parse_address)]
+        address: Option<Address>,
+        /// The transaction ID to label.
+        #[arg(long, conflicts_with_all = ["address", "utxo"], required_unless_present_any = ["address", "utxo"], value_parser = crate::utils::parse_txid)]
+        txid: Option<Txid>,
+        /// The UTXO (outpoint) to label.
+        #[arg(long, conflicts_with_all = ["address", "txid"], required_unless_present_any = ["address", "txid"], value_parser = crate::utils::parse_outpoint)]
+        utxo: Option<OutPoint>,
     },
 }
 
