@@ -43,6 +43,8 @@ use cli_table::{Cell, CellStruct, Style, Table};
     feature = "cbf"
 ))]
 use crate::commands::ClientType;
+#[cfg(any(feature = "electrum", feature = "esplora",))]
+use bdk_wallet::event::WalletEvent;
 
 use bdk_wallet::Wallet;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
@@ -662,4 +664,46 @@ pub fn load_wallet_config(
     }?;
 
     Ok((wallet_opts, network))
+}
+#[cfg(any(feature = "electrum", feature = "esplora",))]
+pub fn print_wallet_events(events: &Vec<WalletEvent>) {
+    for event in events {
+        match event {
+            WalletEvent::TxConfirmed {
+                txid,
+                tx: _,
+                block_time,
+                old_block_time: _,
+            } => {
+                eprintln!(
+                    "Transaction {} confirmed in block {:?}",
+                    txid, block_time.block_id
+                );
+            }
+            WalletEvent::TxUnconfirmed {
+                txid,
+                tx: _,
+                old_block_time: _,
+            } => {
+                eprintln!("Transaction {txid} became unconfirmed");
+            }
+            WalletEvent::TxReplaced {
+                txid,
+                tx: _,
+                conflicts: _,
+            } => {
+                eprintln!("Received new transaction: {txid}");
+            }
+            WalletEvent::TxDropped { txid, tx: _ } => {
+                eprintln!("Transaction {txid} has been dropped");
+            }
+            WalletEvent::ChainTipChanged { old_tip, new_tip } => {
+                eprintln!(
+                    "Wallet has synced to {:?} chain tip from {:?}",
+                    new_tip.height, old_tip.height
+                );
+            }
+            _ => eprintln!(),
+        }
+    }
 }
