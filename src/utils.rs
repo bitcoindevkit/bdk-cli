@@ -86,7 +86,7 @@ pub(crate) fn parse_proxy_auth(s: &str) -> Result<(String, String), Error> {
 
 /// Parse a txid argument from cli input.
 pub(crate) fn parse_txid(s: &str) -> Result<Txid, Error> {
-    Ok(Txid::from_str(s).map_err(|e| Error::Generic(e.to_string()))?)
+    Txid::from_str(s).map_err(|e| Error::Generic(e.to_string()))
 }
 
 /// Parse a outpoint (Txid:Vout) argument from cli input.

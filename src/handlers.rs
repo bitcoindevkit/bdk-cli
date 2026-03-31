@@ -98,10 +98,10 @@ use std::ops::DerefMut;
 /// Helper to format BIP-329 LabelRefs into searchable strings
 fn format_ref_str(item_ref: &LabelRef) -> String {
     match item_ref {
-        LabelRef::Txid(txid) => format!("txid:{}", txid),
+        LabelRef::Txid(txid) => format!("txid:{txid}"),
         LabelRef::Address(addr) => format!("addr:{}", addr.assume_checked_ref()),
-        LabelRef::Output(op) => format!("output:{}", op),
-        LabelRef::Input(op) => format!("input:{}", op),
+        LabelRef::Output(op) => format!("output:{op}"),
+        LabelRef::Input(op) => format!("input:{op}"),
         _ => item_ref.to_string(), // Fallback for pubkey/xpub
     }
 }
@@ -223,7 +223,7 @@ pub fn handle_offline_wallet_subcommand(
             add_or_update_label(labels, new_label);
 
             if cli_opts.pretty {
-                Ok(format!("Successfully applied label '{}'", label_str))
+                Ok(format!("Successfully applied label '{label_str}'"))
             } else {
                 Ok(serde_json::to_string_pretty(&json!({
                     "message": "Label successfully applied",
@@ -323,7 +323,7 @@ pub fn handle_offline_wallet_subcommand(
                     .collect::<Vec<_>>();
                 let mut rows: Vec<Vec<CellStruct>> = vec![];
                 for (txid, version, is_rbf, input_count, output_count, total_value) in txns {
-                    let label_str = get_label_string(labels, &format!("txid:{}", txid));
+                    let label_str = get_label_string(labels, &format!("txid:{txid}"));
                     rows.push(vec![
                         txid.cell(),
                         version.to_string().cell().justify(Justify::Right),
@@ -360,7 +360,7 @@ pub fn handle_offline_wallet_subcommand(
                             "is_rbf": tx.tx_node.is_explicitly_rbf(),
                             "inputs": tx.tx_node.input,
                             "outputs": tx.tx_node.output,
-                            "label": get_label_string(labels, &format!("txid:{}", txid)),
+                            "label": get_label_string(labels, &format!("txid:{txid}")),
                         })
                     })
                     .collect();
@@ -1377,7 +1377,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
                 {
                     bip329::Labels::default()
                 }
-                Err(e) => return Err(Error::Generic(format!("Failed to load labels: {}", e))),
+                Err(e) => return Err(Error::Generic(format!("Failed to load labels: {e}"))),
             };
 
             #[cfg(any(feature = "sqlite", feature = "redb"))]
@@ -1427,7 +1427,7 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
             };
             labels
                 .export_to_file(&label_file_path)
-                .map_err(|e| Error::Generic(format!("Failed to save labels: {}", e)))?;
+                .map_err(|e| Error::Generic(format!("Failed to save labels: {e}")))?;
 
             Ok(result)
         }
