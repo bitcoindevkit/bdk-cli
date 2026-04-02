@@ -161,6 +161,7 @@ The below are some of the commands included:
 just # list all available recipes
 just test # test the project
 just build # build the project
+just pre-push # run full CI checks locally (tests, clippy, fmt) before pushing
 ```
 
 ### Using `Justfile` to run `bitcoind` as a Client
