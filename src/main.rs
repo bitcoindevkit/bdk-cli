@@ -10,27 +10,10 @@
 #![doc(html_logo_url = "https://github.com/bitcoindevkit/bdk/raw/master/static/bdk.png")]
 #![warn(missing_docs)]
 
-mod commands;
-mod config;
-mod error;
-mod handlers;
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "cbf",
-    feature = "rpc"
-))]
-mod payjoin;
-#[cfg(any(feature = "sqlite", feature = "redb"))]
-mod persister;
-mod utils;
-
+use bdk_cli::{CliOpts, handle_command};
 use bdk_wallet::bitcoin::Network;
-use log::{debug, error, warn};
-
-use crate::commands::CliOpts;
-use crate::handlers::*;
 use clap::Parser;
+use log::{debug, error, warn};
 
 #[tokio::main]
 async fn main() {
