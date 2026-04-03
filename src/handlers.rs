@@ -604,7 +604,7 @@ pub fn handle_offline_wallet_subcommand(
     feature = "cbf",
     feature = "rpc"
 ))]
-pub(crate) async fn handle_online_wallet_subcommand(
+pub async fn handle_online_wallet_subcommand(
     wallet: &mut Wallet,
     client: &BlockchainClient,
     online_subcommand: OnlineWalletSubCommand,
@@ -1196,7 +1196,7 @@ pub fn handle_wallets_subcommand(datadir: &Path, pretty: bool) -> Result<String,
 }
 
 /// The global top level handler.
-pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
+pub async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
     let pretty = cli_opts.pretty;
     let subcommand = cli_opts.subcommand.clone();
 

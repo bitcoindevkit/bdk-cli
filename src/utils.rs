@@ -141,7 +141,7 @@ pub(crate) fn prepare_wallet_db_dir(
     feature = "rpc",
     feature = "cbf",
 ))]
-pub(crate) enum BlockchainClient {
+pub enum BlockchainClient {
     #[cfg(feature = "electrum")]
     Electrum {
         client: Box<bdk_electrum::BdkElectrumClient<bdk_electrum::electrum_client::Client>>,
@@ -176,7 +176,7 @@ pub struct KyotoClientHandle {
     feature = "cbf",
 ))]
 /// Create a new blockchain from the wallet configuration options.
-pub(crate) fn new_blockchain_client(
+pub fn new_blockchain_client(
     wallet_opts: &WalletOpts,
     _wallet: &Wallet,
     _datadir: PathBuf,
