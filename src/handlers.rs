@@ -231,6 +231,50 @@ pub fn handle_offline_wallet_subcommand(
                 }))?)
             }
         }
+        ImportLabels { file } => {
+            let imported_labels = bip329::Labels::try_from_file(&file).map_err(|e| {
+                Error::Generic(format!(
+                    "Failed to import labels from {}: {e}",
+                    file.display()
+                ))
+            })?;
+
+            for label in imported_labels.into_iter() {
+                add_or_update_label(labels, label);
+            }
+
+            if cli_opts.pretty {
+                Ok(format!(
+                    "Successfully imported labels from '{}'",
+                    file.display()
+                ))
+            } else {
+                Ok(serde_json::to_string_pretty(&json!({
+                    "message": "Labels successfully imported",
+                    "file": file.display().to_string()
+                }))?)
+            }
+        }
+        ExportLabels { file } => {
+            labels.export_to_file(&file).map_err(|e| {
+                Error::Generic(format!(
+                    "Failed to export labels to {}: {e}",
+                    file.display()
+                ))
+            })?;
+
+            if cli_opts.pretty {
+                Ok(format!(
+                    "Labels successfully exported to '{}'",
+                    file.display()
+                ))
+            } else {
+                Ok(serde_json::to_string_pretty(&json!({
+                    "message": "Labels successfully exported",
+                    "file": file.display().to_string()
+                }))?)
+            }
+        }
         Unspent => {
             let utxos = wallet.list_unspent().collect::<Vec<_>>();
             if cli_opts.pretty {

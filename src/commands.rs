@@ -477,6 +477,19 @@ pub enum OfflineWalletSubCommand {
         #[arg(long, conflicts_with_all = ["address", "txid"], required_unless_present_any = ["address", "txid"], value_parser = crate::utils::parse_outpoint)]
         utxo: Option<OutPoint>,
     },
+    /// Import from an existing BIP-329 JSONL label file, merging with current labels.
+    ImportLabels {
+        /// The jsonl label file path
+        #[arg(required = true)]
+        file: std::path::PathBuf,
+    },
+
+    /// Export current labels to a BIP-329 JSONL file.
+    ExportLabels {
+        /// The jsonl label file path
+        #[arg(required = true)]
+        file: std::path::PathBuf,
+    },
 }
 
 /// Wallet subcommands that needs a blockchain backend.
