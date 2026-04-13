@@ -86,6 +86,9 @@ impl StatusText for ReceiveSession {
                 }
                 ReceiverSessionOutcome::Cancel => "Session cancelled",
                 ReceiverSessionOutcome::FallbackBroadcasted => "Fallback broadcasted",
+                ReceiverSessionOutcome::PayjoinProposalSent => {
+                    "Payjoin proposal sent, skipping monitoring as the sender is spending non-SegWit inputs"
+                }
             },
         }
     }
@@ -700,13 +703,6 @@ impl<'a> PayjoinManager<'a> {
                                         return Ok(Some(tx_details.tx.as_ref().clone()));
                                     }
                                 Err(ImplementationError::from("Cannot find the transaction in the mempool or the blockchain"))
-                                },
-                                |outpoint| {
-                                    let utxo = self.wallet.get_utxo(outpoint);
-                                    match utxo {
-                                        Some(_) => Ok(false),
-                                        None => Ok(true),
-                                    }
                                 }
                             )
                             .save(persister);
