@@ -16,6 +16,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// Default filename for the payjoin database
 pub const DB_FILENAME: &str = "payjoin.sqlite";
+const SESSION_RETENTION_SECS: i64 = 30 * 24 * 60 * 60;
 
 /// Returns the current Unix timestamp in seconds
 #[inline]
@@ -107,6 +108,83 @@ impl Database {
             params![key, now()],
         )? == 0;
         Ok(was_seen_before)
+    }
+
+    /// Removes old completed sessions and stale incomplete sessions plus their event logs.
+    pub fn prune_expired_sessions(&self) -> Result<()> {
+        let cutoff = now() - SESSION_RETENTION_SECS;
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let stale_send_session_ids = {
+            let mut stmt = tx.prepare(
+                "SELECT session_id FROM send_sessions
+                 WHERE (completed_at IS NOT NULL AND completed_at < ?1)
+                    OR (
+                        completed_at IS NULL
+                        AND session_id IN (
+                            SELECT session_id FROM send_session_events
+                            GROUP BY session_id
+                            HAVING MAX(created_at) < ?1
+                        )
+                    )",
+            )?;
+            let rows = stmt.query_map(params![cutoff], |row| row.get::<_, i64>(0))?;
+            let mut ids = Vec::new();
+            for row in rows {
+                ids.push(row?);
+            }
+            ids
+        };
+        let stale_receive_session_ids = {
+            let mut stmt = tx.prepare(
+                "SELECT session_id FROM receive_sessions
+                 WHERE (completed_at IS NOT NULL AND completed_at < ?1)
+                    OR (
+                        completed_at IS NULL
+                        AND session_id IN (
+                            SELECT session_id FROM receive_session_events
+                            GROUP BY session_id
+                            HAVING MAX(created_at) < ?1
+                        )
+                    )",
+            )?;
+            let rows = stmt.query_map(params![cutoff], |row| row.get::<_, i64>(0))?;
+            let mut ids = Vec::new();
+            for row in rows {
+                ids.push(row?);
+            }
+            ids
+        };
+        let deleted_any =
+            !stale_send_session_ids.is_empty() || !stale_receive_session_ids.is_empty();
+
+        for session_id in stale_send_session_ids {
+            tx.execute(
+                "DELETE FROM send_session_events WHERE session_id = ?1",
+                params![session_id],
+            )?;
+            tx.execute(
+                "DELETE FROM send_sessions WHERE session_id = ?1",
+                params![session_id],
+            )?;
+        }
+
+        for session_id in stale_receive_session_ids {
+            tx.execute(
+                "DELETE FROM receive_session_events WHERE session_id = ?1",
+                params![session_id],
+            )?;
+            tx.execute(
+                "DELETE FROM receive_sessions WHERE session_id = ?1",
+                params![session_id],
+            )?;
+        }
+
+        tx.commit()?;
+        if deleted_any {
+            conn.execute("VACUUM", [])?;
+        }
+        Ok(())
     }
 
     /// Returns IDs of all active (incomplete) receive sessions

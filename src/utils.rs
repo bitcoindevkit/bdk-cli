@@ -160,9 +160,9 @@ pub fn open_payjoin_db(
     use crate::payjoin::db::{DB_FILENAME, Database};
     let wallet_dir = prepare_home_dir(datadir)?.join(wallet_name);
     std::fs::create_dir_all(&wallet_dir).map_err(|e| Error::Generic(e.to_string()))?;
-    Ok(std::sync::Arc::new(Database::create(
-        wallet_dir.join(DB_FILENAME),
-    )?))
+    let db = std::sync::Arc::new(Database::create(wallet_dir.join(DB_FILENAME))?);
+    db.prune_expired_sessions()?;
+    Ok(db)
 }
 
 #[cfg(any(
