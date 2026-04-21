@@ -1,6 +1,14 @@
-use crate::error::BDKCliError as Error;
-use crate::handlers::{broadcast_transaction, sync_wallet};
-use crate::utils::BlockchainClient;
+#![cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf"
+))]
+
+use crate::{
+    backend::BlockchainClient,
+    handlers::online::{broadcast_transaction, sync_wallet},
+};
 use bdk_wallet::{
     SignOptions, Wallet,
     bitcoin::{FeeRate, Psbt, Txid, consensus::encode::serialize_hex},
@@ -22,7 +30,10 @@ use payjoin::{ImplementationError, UriExt};
 use serde_json::{json, to_string_pretty};
 use std::sync::{Arc, Mutex};
 
-use crate::payjoin::ohttp::{RelayManager, fetch_ohttp_keys};
+use crate::{
+    error::BDKCliError as Error,
+    payjoin::ohttp::{RelayManager, fetch_ohttp_keys},
+};
 
 pub mod ohttp;
 
@@ -109,6 +120,12 @@ impl<'a> PayjoinManager<'a> {
         Ok(to_string_pretty(&json!({}))?)
     }
 
+    #[cfg(any(
+        feature = "electrum",
+        feature = "esplora",
+        feature = "rpc",
+        feature = "cbf"
+    ))]
     pub async fn send_payjoin(
         &mut self,
         uri: String,
