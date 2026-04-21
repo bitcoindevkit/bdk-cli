@@ -10,6 +10,7 @@
 #![doc(html_logo_url = "https://github.com/bitcoindevkit/bdk/raw/master/static/bdk.png")]
 #![warn(missing_docs)]
 
+mod backend;
 mod commands;
 mod config;
 mod error;
@@ -21,15 +22,14 @@ mod handlers;
     feature = "rpc"
 ))]
 mod payjoin;
-#[cfg(any(feature = "sqlite", feature = "redb"))]
-mod persister;
 mod utils;
+mod wallet;
 
 use bdk_wallet::bitcoin::Network;
 use log::{debug, error, warn};
 
 use crate::commands::CliOpts;
-use crate::handlers::*;
+use crate::handlers::handle_command;
 use clap::Parser;
 
 #[tokio::main]
