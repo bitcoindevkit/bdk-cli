@@ -140,6 +140,10 @@ pub enum BDKCliError {
     #[cfg(feature = "payjoin")]
     #[error("Payjoin create request error: {0}")]
     PayjoinCreateRequest(#[from] payjoin::send::v2::CreateRequestError),
+
+    #[cfg(feature = "bip322")]
+    #[error("BIP-322 error: {0}")]
+    Bip322Error(#[from] bdk_bip322::error::Error),
 }
 
 impl From<ExtractTxError> for BDKCliError {
