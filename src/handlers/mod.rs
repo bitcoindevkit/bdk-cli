@@ -4,6 +4,7 @@ pub mod key;
 pub mod offline;
 pub mod online;
 pub mod repl;
+pub mod types;
 pub mod wallets;
 
 #[cfg(feature = "repl")]

@@ -1,16 +1,17 @@
 use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::{CliOpts, OfflineWalletSubCommand, WalletOpts};
 use crate::error::BDKCliError as Error;
-use crate::utils::shorten;
+use crate::handlers::types::{
+    AddressResult, BalanceResult, PoliciesResult, PsbtResult, PublicDescriptorResult, RawPsbt,
+    TransactionDetails, TransactionListResult, UnspentDetails, UnspentListResult,
+};
+use crate::utils::output::FormatOutput;
 use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
-use bdk_wallet::bitcoin::{Address, Amount, FeeRate, Psbt, Sequence, Txid};
-use bdk_wallet::chain::ChainPosition;
+use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence, Txid};
 use bdk_wallet::{KeychainKind, SignOptions, Wallet};
-use cli_table::format::Justify;
-use cli_table::{Cell, CellStruct, Style, Table};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::str::FromStr;
@@ -24,232 +25,62 @@ pub fn handle_offline_wallet_subcommand(
     cli_opts: &CliOpts,
     offline_subcommand: OfflineWalletSubCommand,
 ) -> Result<String, Error> {
+    let pretty = cli_opts.pretty;
     match offline_subcommand {
         NewAddress => {
             let addr = wallet.reveal_next_address(KeychainKind::External);
-            if cli_opts.pretty {
-                let table = vec![
-                    vec!["Address".cell().bold(true), addr.address.to_string().cell()],
-                    vec![
-                        "Index".cell().bold(true),
-                        addr.index.to_string().cell().justify(Justify::Right),
-                    ],
-                ]
-                .table()
-                .display()
-                .map_err(|e| Error::Generic(e.to_string()))?;
-                Ok(format!("{table}"))
-            } else if wallet_opts.verbose {
-                Ok(serde_json::to_string_pretty(&json!({
-                    "address": addr.address,
-                    "index": addr.index
-                }))?)
-            } else {
-                Ok(serde_json::to_string_pretty(&json!({
-                    "address": addr.address,
-                }))?)
-            }
+            let result: AddressResult = addr.into();
+            result.format(pretty)
         }
         UnusedAddress => {
             let addr = wallet.next_unused_address(KeychainKind::External);
-
-            if cli_opts.pretty {
-                let table = vec![
-                    vec!["Address".cell().bold(true), addr.address.to_string().cell()],
-                    vec![
-                        "Index".cell().bold(true),
-                        addr.index.to_string().cell().justify(Justify::Right),
-                    ],
-                ]
-                .table()
-                .display()
-                .map_err(|e| Error::Generic(e.to_string()))?;
-                Ok(format!("{table}"))
-            } else if wallet_opts.verbose {
-                Ok(serde_json::to_string_pretty(&json!({
-                    "address": addr.address,
-                    "index": addr.index
-                }))?)
-            } else {
-                Ok(serde_json::to_string_pretty(&json!({
-                    "address": addr.address,
-                }))?)
-            }
+            let result: AddressResult = addr.into();
+            result.format(pretty)
         }
         Unspent => {
-            let utxos = wallet.list_unspent().collect::<Vec<_>>();
-            if cli_opts.pretty {
-                let mut rows: Vec<Vec<CellStruct>> = vec![];
-                for utxo in &utxos {
-                    let height = utxo
-                        .chain_position
-                        .confirmation_height_upper_bound()
-                        .map(|h| h.to_string())
-                        .unwrap_or("Pending".to_string());
+            let utxos: Vec<UnspentDetails> = wallet
+                .list_unspent()
+                .map(|utxo| UnspentDetails::from_local_output(&utxo, cli_opts.network))
+                .collect();
 
-                    let block_hash = match &utxo.chain_position {
-                        ChainPosition::Confirmed { anchor, .. } => anchor.block_id.hash.to_string(),
-                        ChainPosition::Unconfirmed { .. } => "Unconfirmed".to_string(),
-                    };
-
-                    rows.push(vec![
-                        shorten(utxo.outpoint, 8, 10).cell(),
-                        utxo.txout
-                            .value
-                            .to_sat()
-                            .to_string()
-                            .cell()
-                            .justify(Justify::Right),
-                        Address::from_script(&utxo.txout.script_pubkey, cli_opts.network)
-                            .unwrap()
-                            .cell(),
-                        utxo.keychain.cell(),
-                        utxo.is_spent.cell(),
-                        utxo.derivation_index.cell(),
-                        height.to_string().cell().justify(Justify::Right),
-                        shorten(block_hash, 8, 8).cell().justify(Justify::Right),
-                    ]);
-                }
-                let table = rows
-                    .table()
-                    .title(vec![
-                        "Outpoint".cell().bold(true),
-                        "Output (sat)".cell().bold(true),
-                        "Output Address".cell().bold(true),
-                        "Keychain".cell().bold(true),
-                        "Is Spent".cell().bold(true),
-                        "Index".cell().bold(true),
-                        "Block Height".cell().bold(true),
-                        "Block Hash".cell().bold(true),
-                    ])
-                    .display()
-                    .map_err(|e| Error::Generic(e.to_string()))?;
-                Ok(format!("{table}"))
-            } else {
-                Ok(serde_json::to_string_pretty(&utxos)?)
-            }
+            let result = UnspentListResult(utxos);
+            result.format(pretty)
         }
         Transactions => {
             let transactions = wallet.transactions();
 
-            if cli_opts.pretty {
-                let txns = transactions
-                    .map(|tx| {
-                        let total_value = tx
-                            .tx_node
-                            .output
-                            .iter()
-                            .map(|output| output.value.to_sat())
-                            .sum::<u64>();
-                        (
-                            tx.tx_node.txid.to_string(),
-                            tx.tx_node.version,
-                            tx.tx_node.is_explicitly_rbf(),
-                            tx.tx_node.input.len(),
-                            tx.tx_node.output.len(),
-                            total_value,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let mut rows: Vec<Vec<CellStruct>> = vec![];
-                for (txid, version, is_rbf, input_count, output_count, total_value) in txns {
-                    rows.push(vec![
-                        txid.cell(),
-                        version.to_string().cell().justify(Justify::Right),
-                        is_rbf.to_string().cell().justify(Justify::Center),
-                        input_count.to_string().cell().justify(Justify::Right),
-                        output_count.to_string().cell().justify(Justify::Right),
-                        total_value.to_string().cell().justify(Justify::Right),
-                    ]);
-                }
-                let table = rows
-                    .table()
-                    .title(vec![
-                        "Txid".cell().bold(true),
-                        "Version".cell().bold(true),
-                        "Is RBF".cell().bold(true),
-                        "Input Count".cell().bold(true),
-                        "Output Count".cell().bold(true),
-                        "Total Value (sat)".cell().bold(true),
-                    ])
-                    .display()
-                    .map_err(|e| Error::Generic(e.to_string()))?;
-                Ok(format!("{table}"))
-            } else {
-                let txns: Vec<_> = transactions
-                    .map(|tx| {
-                        json!({
-                            "txid": tx.tx_node.txid,
-                            "is_coinbase": tx.tx_node.is_coinbase(),
-                            "wtxid": tx.tx_node.compute_wtxid(),
-                            "version": tx.tx_node.version,
-                            "is_rbf": tx.tx_node.is_explicitly_rbf(),
-                            "inputs": tx.tx_node.input,
-                            "outputs": tx.tx_node.output,
-                        })
-                    })
-                    .collect();
-                Ok(serde_json::to_string_pretty(&txns)?)
-            }
+            let txns: Vec<TransactionDetails> = transactions
+                .map(|tx| {
+                    let total_value = tx
+                        .tx_node
+                        .output
+                        .iter()
+                        .map(|output| output.value.to_sat())
+                        .sum::<u64>();
+
+                    TransactionDetails {
+                        txid: tx.tx_node.txid.to_string(),
+                        is_coinbase: tx.tx_node.is_coinbase(),
+                        wtxid: tx.tx_node.compute_wtxid().to_string(),
+                        version: serde_json::to_value(tx.tx_node.version).unwrap_or(json!(1)),
+                        version_display: tx.tx_node.version.to_string(),
+                        is_rbf: tx.tx_node.is_explicitly_rbf(),
+                        inputs: serde_json::to_value(&tx.tx_node.input).unwrap_or_default(),
+                        outputs: serde_json::to_value(&tx.tx_node.output).unwrap_or_default(),
+                        input_count: tx.tx_node.input.len(),
+                        output_count: tx.tx_node.output.len(),
+                        total_value,
+                    }
+                })
+                .collect();
+
+            let result = TransactionListResult(txns);
+            result.format(pretty)
         }
         Balance => {
             let balance = wallet.balance();
-            if cli_opts.pretty {
-                let table = vec![
-                    vec!["Type".cell().bold(true), "Amount (sat)".cell().bold(true)],
-                    vec![
-                        "Total".cell(),
-                        balance
-                            .total()
-                            .to_sat()
-                            .to_string()
-                            .cell()
-                            .justify(Justify::Right),
-                    ],
-                    vec![
-                        "Confirmed".cell(),
-                        balance
-                            .confirmed
-                            .to_sat()
-                            .to_string()
-                            .cell()
-                            .justify(Justify::Right),
-                    ],
-                    vec![
-                        "Unconfirmed".cell(),
-                        balance
-                            .immature
-                            .to_sat()
-                            .to_string()
-                            .cell()
-                            .justify(Justify::Right),
-                    ],
-                    vec![
-                        "Trusted Pending".cell(),
-                        balance
-                            .trusted_pending
-                            .to_sat()
-                            .cell()
-                            .justify(Justify::Right),
-                    ],
-                    vec![
-                        "Untrusted Pending".cell(),
-                        balance
-                            .untrusted_pending
-                            .to_sat()
-                            .cell()
-                            .justify(Justify::Right),
-                    ],
-                ]
-                .table()
-                .display()
-                .map_err(|e| Error::Generic(e.to_string()))?;
-                Ok(format!("{table}"))
-            } else {
-                Ok(serde_json::to_string_pretty(
-                    &json!({"satoshi": wallet.balance()}),
-                )?)
-            }
+            let result: BalanceResult = balance.into();
+            result.format(pretty)
         }
 
         CreateTx {
@@ -319,17 +150,8 @@ pub fn handle_offline_wallet_subcommand(
 
             let psbt = tx_builder.finish()?;
 
-            let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
-
-            if wallet_opts.verbose {
-                Ok(serde_json::to_string_pretty(
-                    &json!({"psbt": psbt_base64, "details": psbt}),
-                )?)
-            } else {
-                Ok(serde_json::to_string_pretty(
-                    &json!({"psbt": psbt_base64 }),
-                )?)
-            }
+            let result = PsbtResult::with_details(&psbt, wallet_opts.verbose);
+            result.format(pretty)
         }
         BumpFee {
             txid,
@@ -365,62 +187,24 @@ pub fn handle_offline_wallet_subcommand(
 
             let psbt = tx_builder.finish()?;
 
-            let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
-
-            Ok(serde_json::to_string_pretty(
-                &json!({"psbt": psbt_base64 }),
-            )?)
+            let result = PsbtResult::with_details(&psbt, wallet_opts.verbose);
+            result.format(pretty)
         }
         Policies => {
             let external_policy = wallet.policies(KeychainKind::External)?;
             let internal_policy = wallet.policies(KeychainKind::Internal)?;
-            if cli_opts.pretty {
-                let table = vec![
-                    vec![
-                        "External".cell().bold(true),
-                        serde_json::to_string_pretty(&external_policy)?.cell(),
-                    ],
-                    vec![
-                        "Internal".cell().bold(true),
-                        serde_json::to_string_pretty(&internal_policy)?.cell(),
-                    ],
-                ]
-                .table()
-                .display()
-                .map_err(|e| Error::Generic(e.to_string()))?;
-                Ok(format!("{table}"))
-            } else {
-                Ok(serde_json::to_string_pretty(&json!({
-                    "external": external_policy,
-                    "internal": internal_policy,
-                }))?)
-            }
+            let result = PoliciesResult {
+                external: serde_json::to_value(&external_policy).unwrap_or(json!(null)),
+                internal: serde_json::to_value(&internal_policy).unwrap_or(json!(null)),
+            };
+            result.format(pretty)
         }
         PublicDescriptor => {
-            let external = wallet.public_descriptor(KeychainKind::External).to_string();
-            let internal = wallet.public_descriptor(KeychainKind::Internal).to_string();
-
-            if cli_opts.pretty {
-                let table = vec![
-                    vec![
-                        "External Descriptor".cell().bold(true),
-                        external.to_string().cell(),
-                    ],
-                    vec![
-                        "Internal Descriptor".cell().bold(true),
-                        internal.to_string().cell(),
-                    ],
-                ]
-                .table()
-                .display()
-                .map_err(|e| Error::Generic(e.to_string()))?;
-                Ok(format!("{table}"))
-            } else {
-                Ok(serde_json::to_string_pretty(&json!({
-                    "external": external.to_string(),
-                    "internal": internal.to_string(),
-                }))?)
-            }
+            let result = PublicDescriptorResult {
+                external: wallet.public_descriptor(KeychainKind::External).to_string(),
+                internal: wallet.public_descriptor(KeychainKind::Internal).to_string(),
+            };
+            result.format(pretty)
         }
         Sign {
             psbt,
@@ -435,35 +219,16 @@ pub fn handle_offline_wallet_subcommand(
                 ..Default::default()
             };
             let finalized = wallet.sign(&mut psbt, signopt)?;
-            let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
-            if wallet_opts.verbose {
-                Ok(serde_json::to_string_pretty(
-                    &json!({"psbt": &psbt_base64, "is_finalized": finalized, "serialized_psbt": &psbt}),
-                )?)
-            } else {
-                Ok(serde_json::to_string_pretty(
-                    &json!({"psbt": &psbt_base64, "is_finalized": finalized}),
-                )?)
-            }
+
+            let result = PsbtResult::with_status_and_details(&psbt, finalized, wallet_opts.verbose);
+            result.format(pretty)
         }
         ExtractPsbt { psbt } => {
             let psbt_serialized = BASE64_STANDARD.decode(psbt)?;
             let psbt = Psbt::deserialize(&psbt_serialized)?;
             let raw_tx = psbt.extract_tx()?;
-            if cli_opts.pretty {
-                let table = vec![vec![
-                    "Raw Transaction".cell().bold(true),
-                    serialize_hex(&raw_tx).cell(),
-                ]]
-                .table()
-                .display()
-                .map_err(|e| Error::Generic(e.to_string()))?;
-                Ok(format!("{table}"))
-            } else {
-                Ok(serde_json::to_string_pretty(
-                    &json!({"raw_tx": serialize_hex(&raw_tx)}),
-                )?)
-            }
+            let result = RawPsbt::new(&raw_tx);
+            result.format(pretty)
         }
         FinalizePsbt {
             psbt,
@@ -479,15 +244,9 @@ pub fn handle_offline_wallet_subcommand(
                 ..Default::default()
             };
             let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
-            if wallet_opts.verbose {
-                Ok(serde_json::to_string_pretty(
-                    &json!({ "psbt": BASE64_STANDARD.encode(psbt.serialize()), "is_finalized": finalized, "details": psbt}),
-                )?)
-            } else {
-                Ok(serde_json::to_string_pretty(
-                    &json!({ "psbt": BASE64_STANDARD.encode(psbt.serialize()), "is_finalized": finalized}),
-                )?)
-            }
+
+            let result = PsbtResult::with_status_and_details(&psbt, finalized, wallet_opts.verbose);
+            result.format(pretty)
         }
         CombinePsbt { psbt } => {
             let mut psbts = psbt
@@ -508,9 +267,8 @@ pub fn handle_offline_wallet_subcommand(
                     Ok(acc)
                 },
             )?;
-            Ok(serde_json::to_string_pretty(
-                &json!({ "psbt": BASE64_STANDARD.encode(final_psbt.serialize()) }),
-            )?)
+            let result = PsbtResult::new(&final_psbt);
+            result.format(pretty)
         }
     }
 }
