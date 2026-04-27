@@ -49,6 +49,15 @@ use bdk_wallet::{
 use clap::CommandFactory;
 use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
 use serde_json::json;
+#[cfg(feature = "silent-payments")]
+use {
+    bdk_sp::{
+        bitcoin::{PrivateKey, PublicKey, ScriptBuf},
+        encoding::SilentPaymentCode,
+        send::psbt::derive_sp,
+    },
+    bdk_wallet::keys::{DescriptorPublicKey, DescriptorSecretKey, SinglePubKey},
+};
 
 #[cfg(feature = "electrum")]
 use crate::utils::BlockchainClient::Electrum;
@@ -336,7 +345,185 @@ pub fn handle_offline_wallet_subcommand(
                 )?)
             }
         }
+        #[cfg(feature = "silent-payments")]
+        CreateSpTx {
+            recipients: maybe_recipients,
+            silent_payment_recipients,
+            send_all,
+            offline_signer,
+            utxos,
+            unspendable,
+            fee_rate,
+            external_policy,
+            internal_policy,
+            add_data,
+            add_string,
+        } => {
+            let mut tx_builder = wallet.build_tx();
 
+            let sp_recipients: Vec<SilentPaymentCode> = silent_payment_recipients
+                .iter()
+                .map(|(sp_code, _)| sp_code.clone())
+                .collect();
+
+            if send_all {
+                if sp_recipients.len() == 1 && maybe_recipients.is_none() {
+                    tx_builder
+                        .drain_wallet()
+                        .drain_to(sp_recipients[0].get_placeholder_p2tr_spk());
+                } else if let Some(ref recipients) = maybe_recipients
+                    && sp_recipients.is_empty()
+                {
+                    if recipients.len() == 1 {
+                        tx_builder.drain_wallet().drain_to(recipients[0].0.clone());
+                    } else {
+                        return Err(Error::Generic(
+                            "Wallet can only be drain to a single output".to_string(),
+                        ));
+                    }
+                } else {
+                    return Err(Error::Generic(
+                        "Wallet can only be drain to a single output".to_string(),
+                    ));
+                }
+            } else {
+                let mut outputs: Vec<(ScriptBuf, Amount)> = silent_payment_recipients
+                    .iter()
+                    .map(|(sp_code, amount)| {
+                        let script = sp_code.get_placeholder_p2tr_spk();
+                        (script, Amount::from_sat(*amount))
+                    })
+                    .collect();
+
+                if let Some(recipients) = maybe_recipients {
+                    let recipients = recipients
+                        .into_iter()
+                        .map(|(script, amount)| (script, Amount::from_sat(amount)));
+
+                    outputs.extend(recipients);
+                }
+
+                tx_builder.set_recipients(outputs);
+            }
+
+            // Do not enable RBF for this transaction
+            tx_builder.set_exact_sequence(Sequence::MAX);
+
+            if offline_signer {
+                tx_builder.include_output_redeem_witness_script();
+            }
+
+            if let Some(fee_rate) = fee_rate
+                && let Some(fee_rate) = FeeRate::from_sat_per_vb(fee_rate as u64)
+            {
+                tx_builder.fee_rate(fee_rate);
+            }
+
+            if let Some(utxos) = utxos {
+                tx_builder
+                    .add_utxos(&utxos[..])
+                    .map_err(|_| bdk_wallet::error::CreateTxError::UnknownUtxo)?;
+            }
+
+            if let Some(unspendable) = unspendable {
+                tx_builder.unspendable(unspendable);
+            }
+
+            if let Some(base64_data) = add_data {
+                let op_return_data = BASE64_STANDARD
+                    .decode(base64_data)
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+                tx_builder.add_data(
+                    &PushBytesBuf::try_from(op_return_data)
+                        .map_err(|e| Error::Generic(e.to_string()))?,
+                );
+            } else if let Some(string_data) = add_string {
+                let data = PushBytesBuf::try_from(string_data.as_bytes().to_vec())
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+                tx_builder.add_data(&data);
+            }
+
+            let policies = vec![
+                external_policy.map(|p| (p, KeychainKind::External)),
+                internal_policy.map(|p| (p, KeychainKind::Internal)),
+            ];
+
+            for (policy, keychain) in policies.into_iter().flatten() {
+                let policy = serde_json::from_str::<BTreeMap<String, Vec<usize>>>(&policy)?;
+                tx_builder.policy_path(policy, keychain);
+            }
+
+            let mut psbt = tx_builder.finish()?;
+
+            let unsigned_psbt = psbt.clone();
+
+            let finalized = wallet.sign(&mut psbt, SignOptions::default())?;
+
+            if !finalized {
+                return Err(Error::Generic(
+                    "Cannot produce silent payment outputs without intermediate signing phase."
+                        .to_string(),
+                ));
+            }
+
+            for (full_input, psbt_input) in unsigned_psbt.inputs.iter().zip(psbt.inputs.iter_mut())
+            {
+                // repopulate key derivation data
+                psbt_input.bip32_derivation = full_input.bip32_derivation.clone();
+                psbt_input.tap_key_origins = full_input.tap_key_origins.clone();
+            }
+
+            let secp = Secp256k1::new();
+            let mut external_signers = wallet.get_signers(KeychainKind::External).as_key_map(&secp);
+            let internal_signers = wallet.get_signers(KeychainKind::Internal).as_key_map(&secp);
+            external_signers.extend(internal_signers);
+
+            match external_signers.iter().next().expect("not empty") {
+                (DescriptorPublicKey::Single(single_pub), DescriptorSecretKey::Single(prv)) => {
+                    match single_pub.key {
+                        SinglePubKey::FullKey(pk) => {
+                            let keys: HashMap<PublicKey, PrivateKey> = [(pk, prv.key)].into();
+                            derive_sp(&mut psbt, &keys, &sp_recipients, &secp)
+                                .expect("will fix later");
+                        }
+                        SinglePubKey::XOnly(xonly) => {
+                            let keys: HashMap<bdk_sp::bitcoin::XOnlyPublicKey, PrivateKey> =
+                                [(xonly, prv.key)].into();
+                            derive_sp(&mut psbt, &keys, &sp_recipients, &secp)
+                                .expect("will fix later");
+                        }
+                    };
+                }
+                (_, DescriptorSecretKey::XPrv(k)) => {
+                    derive_sp(&mut psbt, &k.xkey, &sp_recipients, &secp).expect("will fix later");
+                }
+                _ => unimplemented!("multi xkey signer"),
+            };
+
+            // Unfinalize PSBT to resign
+            for psbt_input in psbt.inputs.iter_mut() {
+                psbt_input.final_script_sig = None;
+                psbt_input.final_script_witness = None;
+            }
+
+            let _resigned = wallet.sign(&mut psbt, SignOptions::default())?;
+
+            let raw_tx = psbt.extract_tx()?;
+            if cli_opts.pretty {
+                let table = vec![vec![
+                    "Raw Transaction".cell().bold(true),
+                    serialize_hex(&raw_tx).cell(),
+                ]]
+                .table()
+                .display()
+                .map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(format!("{table}"))
+            } else {
+                Ok(serde_json::to_string_pretty(
+                    &json!({"raw_tx": serialize_hex(&raw_tx)}),
+                )?)
+            }
+        }
         CreateTx {
             recipients,
             send_all,
@@ -377,7 +564,9 @@ pub fn handle_offline_wallet_subcommand(
             }
 
             if let Some(utxos) = utxos {
-                tx_builder.add_utxos(&utxos[..]).unwrap();
+                tx_builder
+                    .add_utxos(&utxos[..])
+                    .map_err(|_| bdk_wallet::error::CreateTxError::UnknownUtxo)?;
             }
 
             if let Some(unspendable) = unspendable {
@@ -385,10 +574,16 @@ pub fn handle_offline_wallet_subcommand(
             }
 
             if let Some(base64_data) = add_data {
-                let op_return_data = BASE64_STANDARD.decode(base64_data).unwrap();
-                tx_builder.add_data(&PushBytesBuf::try_from(op_return_data).unwrap());
+                let op_return_data = BASE64_STANDARD
+                    .decode(base64_data)
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+                tx_builder.add_data(
+                    &PushBytesBuf::try_from(op_return_data)
+                        .map_err(|e| Error::Generic(e.to_string()))?,
+                );
             } else if let Some(string_data) = add_string {
-                let data = PushBytesBuf::try_from(string_data.as_bytes().to_vec()).unwrap();
+                let data = PushBytesBuf::try_from(string_data.as_bytes().to_vec())
+                    .map_err(|e| Error::Generic(e.to_string()))?;
                 tx_builder.add_data(&data);
             }
 
@@ -937,6 +1132,30 @@ pub(crate) fn is_final(psbt: &Psbt) -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(feature = "silent-payments")]
+pub(crate) fn handle_sp_subcommand(
+    scan_pubkey: bdk_sp::bitcoin::secp256k1::PublicKey,
+    spend_pubkey: bdk_sp::bitcoin::secp256k1::PublicKey,
+    network: Network,
+    pretty: bool,
+) -> Result<String, Error> {
+    let sp_code = SilentPaymentCode::new_v0(scan_pubkey, spend_pubkey, network);
+    if pretty {
+        let table = vec![vec![
+            "sp_code".cell().bold(true),
+            sp_code.to_string().cell(),
+        ]]
+        .table()
+        .display()
+        .map_err(|e| Error::Generic(e.to_string()))?;
+        Ok(format!("{table}"))
+    } else {
+        Ok(serde_json::to_string_pretty(
+            &json!({"sp_code": sp_code.to_string()}),
+        )?)
+    }
+}
+
 /// Handle a key sub-command
 ///
 /// Key sub-commands are described in [`KeySubCommand`].
@@ -1383,6 +1602,12 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
         } => {
             let network = cli_opts.network;
             let result = handle_key_subcommand(network, key_subcommand, pretty)?;
+            Ok(result)
+        }
+        #[cfg(feature = "silent-payments")]
+        CliSubCommand::SilentPaymentCode { scan, spend } => {
+            let network = cli_opts.network;
+            let result = handle_sp_subcommand(scan, spend, network, pretty)?;
             Ok(result)
         }
         #[cfg(feature = "compiler")]
