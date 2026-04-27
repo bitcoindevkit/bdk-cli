@@ -1867,9 +1867,9 @@ dependencies = [
 
 [[package]]
 name = "payjoin"
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e20b76ae28f1420a918e8051681fc9669ed7273e542e515baa329be78c3255a"
+checksum = "645c6eb2e7321bcba2a78c8294d4bfb02c3630fb319ab854245337683d9ffadb"
 dependencies = [
  "bhttp",
  "bitcoin",
@@ -1882,6 +1882,7 @@ dependencies = [
  "serde_json",
  "tracing",
  "url",
+ "web-time",
 ]
 
 [[package]]
