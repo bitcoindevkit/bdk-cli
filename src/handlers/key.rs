@@ -1,5 +1,7 @@
 use crate::commands::KeySubCommand;
 use crate::error::BDKCliError as Error;
+use crate::handlers::types::KeyResult;
+use crate::utils::output::FormatOutput;
 use bdk_wallet::bip39::{Language, Mnemonic};
 use bdk_wallet::bitcoin::bip32::KeySource;
 use bdk_wallet::bitcoin::key::Secp256k1;
@@ -8,8 +10,6 @@ use bdk_wallet::keys::bip39::WordCount;
 use bdk_wallet::keys::{DerivableKey, GeneratableKey};
 use bdk_wallet::keys::{DescriptorKey, DescriptorKey::Secret, ExtendedKey, GeneratedKey};
 use bdk_wallet::miniscript::{self, Segwitv0};
-use cli_table::{Cell, Style, Table};
-use serde_json::json;
 
 /// Handle a key sub-command
 ///
@@ -44,24 +44,15 @@ pub(crate) fn handle_key_subcommand(
                 .fold("".to_string(), |phrase, w| phrase + w + " ")
                 .trim()
                 .to_string();
-            if pretty {
-                let table = vec![
-                    vec![
-                        "Fingerprint".cell().bold(true),
-                        fingerprint.to_string().cell(),
-                    ],
-                    vec!["Mnemonic".cell().bold(true), mnemonic.to_string().cell()],
-                    vec!["Xprv".cell().bold(true), xprv.to_string().cell()],
-                ]
-                .table()
-                .display()
-                .map_err(|e| Error::Generic(e.to_string()))?;
-                Ok(format!("{table}"))
-            } else {
-                Ok(serde_json::to_string_pretty(
-                    &json!({ "mnemonic": phrase, "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }),
-                )?)
-            }
+
+            let result = KeyResult {
+                xprv: xprv.to_string(),
+                mnemonic: Some(phrase),
+                fingerprint: Some(fingerprint.to_string()),
+                xpub: None,
+            };
+
+            result.format(pretty)
         }
         KeySubCommand::Restore { mnemonic, password } => {
             let mnemonic = Mnemonic::parse_in(Language::English, mnemonic)?;
@@ -70,24 +61,14 @@ pub(crate) fn handle_key_subcommand(
                 Error::Generic("Privatekey info not found (should not happen)".to_string())
             })?;
             let fingerprint = xprv.fingerprint(&secp);
-            if pretty {
-                let table = vec![
-                    vec![
-                        "Fingerprint".cell().bold(true),
-                        fingerprint.to_string().cell(),
-                    ],
-                    vec!["Mnemonic".cell().bold(true), mnemonic.to_string().cell()],
-                    vec!["Xprv".cell().bold(true), xprv.to_string().cell()],
-                ]
-                .table()
-                .display()
-                .map_err(|e| Error::Generic(e.to_string()))?;
-                Ok(format!("{table}"))
-            } else {
-                Ok(serde_json::to_string_pretty(
-                    &json!({ "xprv": xprv.to_string(), "fingerprint": fingerprint.to_string() }),
-                )?)
-            }
+
+            let result = KeyResult {
+                xprv: xprv.to_string(),
+                mnemonic: Some(mnemonic.to_string()),
+                fingerprint: Some(fingerprint.to_string()),
+                xpub: None,
+            };
+            result.format(pretty)
         }
         KeySubCommand::Derive { xprv, path } => {
             if xprv.network != network.into() {
@@ -102,22 +83,18 @@ pub(crate) fn handle_key_subcommand(
 
             if let Secret(desc_seckey, _, _) = derived_xprv_desc_key {
                 let desc_pubkey = desc_seckey.to_public(&secp)?;
-                if pretty {
-                    let table = vec![
-                        vec!["Xpub".cell().bold(true), desc_pubkey.to_string().cell()],
-                        vec!["Xprv".cell().bold(true), xprv.to_string().cell()],
-                    ]
-                    .table()
-                    .display()
-                    .map_err(|e| Error::Generic(e.to_string()))?;
-                    Ok(format!("{table}"))
-                } else {
-                    Ok(serde_json::to_string_pretty(
-                        &json!({"xpub": desc_pubkey.to_string(), "xprv": desc_seckey.to_string()}),
-                    )?)
-                }
+
+                let result = KeyResult {
+                    xprv: desc_seckey.to_string(),
+                    xpub: Some(desc_pubkey.to_string()),
+                    mnemonic: None,
+                    fingerprint: None,
+                };
+                result.format(pretty)
             } else {
-                Err(Error::Generic("Invalid key variant".to_string()))
+                Err(Error::Generic(
+                    "Derived key is not a secret key".to_string(),
+                ))
             }
         }
     }

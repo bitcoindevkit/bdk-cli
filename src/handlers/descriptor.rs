@@ -11,14 +11,14 @@ use crate::{
 
 #[cfg(feature = "compiler")]
 use {
+    crate::handlers::types::DescriptorResult,
+    crate::utils::output::FormatOutput,
     bdk_wallet::{
         bitcoin::XOnlyPublicKey,
         miniscript::{
             Descriptor, Legacy, Miniscript, Segwitv0, Tap, descriptor::TapTree, policy::Concrete,
         },
     },
-    cli_table::{Cell, Style, Table},
-    serde_json::json,
     std::{str::FromStr, sync::Arc},
 };
 
@@ -93,18 +93,12 @@ pub(crate) fn handle_compile_subcommand(
             ));
         }
     }?;
-    if pretty {
-        let table = vec![vec![
-            "Descriptor".cell().bold(true),
-            descriptor.to_string().cell(),
-        ]]
-        .table()
-        .display()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-        Ok(format!("{table}"))
-    } else {
-        Ok(serde_json::to_string_pretty(
-            &json!({"descriptor": descriptor.to_string()}),
-        )?)
-    }
+    let result = DescriptorResult {
+        descriptor: Some(descriptor.to_string()),
+        multipath_descriptor: None,
+        public_descriptors: None,
+        private_descriptors: None,
+        mnemonic: None,
+    };
+    result.format(pretty)
 }

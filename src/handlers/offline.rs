@@ -2,13 +2,12 @@ use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::{CliOpts, OfflineWalletSubCommand, WalletOpts};
 use crate::error::BDKCliError as Error;
 use crate::handlers::types::{
-    AddressResult, BalanceResult, PoliciesResult, PsbtResult, PublicDescriptorResult, RawPsbt,
-    TransactionDetails, TransactionListResult, UnspentDetails, UnspentListResult,
+    AddressResult, BalanceResult, KeychainPair, PsbtResult, RawPsbt, TransactionDetails,
+    TransactionListResult, UnspentDetails, UnspentListResult,
 };
 use crate::utils::output::FormatOutput;
 use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
-use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
 use bdk_wallet::bitcoin::{Amount, FeeRate, Psbt, Sequence, Txid};
 use bdk_wallet::{KeychainKind, SignOptions, Wallet};
@@ -150,7 +149,7 @@ pub fn handle_offline_wallet_subcommand(
 
             let psbt = tx_builder.finish()?;
 
-            let result = PsbtResult::with_details(&psbt, wallet_opts.verbose);
+            let result = PsbtResult::new(&psbt, wallet_opts.verbose, None);
             result.format(pretty)
         }
         BumpFee {
@@ -187,24 +186,24 @@ pub fn handle_offline_wallet_subcommand(
 
             let psbt = tx_builder.finish()?;
 
-            let result = PsbtResult::with_details(&psbt, wallet_opts.verbose);
+            let result = PsbtResult::new(&psbt, wallet_opts.verbose, None);
             result.format(pretty)
         }
         Policies => {
             let external_policy = wallet.policies(KeychainKind::External)?;
             let internal_policy = wallet.policies(KeychainKind::Internal)?;
-            let result = PoliciesResult {
+            let result = KeychainPair::<serde_json::Value> {
                 external: serde_json::to_value(&external_policy).unwrap_or(json!(null)),
                 internal: serde_json::to_value(&internal_policy).unwrap_or(json!(null)),
             };
-            result.format(pretty)
+            result.format(cli_opts.pretty)
         }
         PublicDescriptor => {
-            let result = PublicDescriptorResult {
+            let result = KeychainPair::<String> {
                 external: wallet.public_descriptor(KeychainKind::External).to_string(),
                 internal: wallet.public_descriptor(KeychainKind::Internal).to_string(),
             };
-            result.format(pretty)
+            result.format(cli_opts.pretty)
         }
         Sign {
             psbt,
@@ -220,7 +219,7 @@ pub fn handle_offline_wallet_subcommand(
             };
             let finalized = wallet.sign(&mut psbt, signopt)?;
 
-            let result = PsbtResult::with_status_and_details(&psbt, finalized, wallet_opts.verbose);
+            let result = PsbtResult::new(&psbt, wallet_opts.verbose, Some(finalized));
             result.format(pretty)
         }
         ExtractPsbt { psbt } => {
@@ -245,7 +244,7 @@ pub fn handle_offline_wallet_subcommand(
             };
             let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
 
-            let result = PsbtResult::with_status_and_details(&psbt, finalized, wallet_opts.verbose);
+            let result = PsbtResult::new(&psbt, wallet_opts.verbose, Some(finalized));
             result.format(pretty)
         }
         CombinePsbt { psbt } => {
@@ -267,7 +266,7 @@ pub fn handle_offline_wallet_subcommand(
                     Ok(acc)
                 },
             )?;
-            let result = PsbtResult::new(&final_psbt);
+            let result = PsbtResult::new(&final_psbt, wallet_opts.verbose, None);
             result.format(pretty)
         }
     }
