@@ -1,11 +1,12 @@
-use crate::utils::output::FormatOutput;
+use std::collections::HashMap;
+
+use crate::config::WalletConfigInner;
+use crate::utils::output::{FormatOutput, simple_table};
 use crate::{error::BDKCliError as Error, utils::shorten};
-use bdk_wallet::bitcoin::base64::Engine;
-use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
-use bdk_wallet::bitcoin::consensus::encode::serialize_hex;
-use bdk_wallet::bitcoin::{Address, Network, Psbt, Transaction};
-use bdk_wallet::chain::ChainPosition;
-use bdk_wallet::{AddressInfo, Balance, LocalOutput};
+use bdk_wallet::bitcoin::{
+    Address, Network, Psbt, Transaction, base64::Engine, consensus::encode::serialize_hex,
+};
+use bdk_wallet::{AddressInfo, Balance, LocalOutput, chain::ChainPosition};
 use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
 use serde::Serialize;
 use serde_json::json;
@@ -29,15 +30,16 @@ impl From<AddressInfo> for AddressResult {
 /// pretty presentation for address
 impl FormatOutput for AddressResult {
     fn to_table(&self) -> Result<String, Error> {
-        let table = vec![
-            vec!["Address".cell().bold(true), self.address.clone().cell()],
-            vec!["Index".cell().bold(true), self.index.cell()],
-        ]
-        .table()
-        .display()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-
-        Ok(format!("{table}"))
+        simple_table(
+            vec![
+                vec!["Address".cell().bold(true), self.address.clone().cell()],
+                vec![
+                    "Index".cell().bold(true),
+                    self.index.cell().justify(Justify::Right),
+                ],
+            ],
+            None,
+        )
     }
 }
 
@@ -122,37 +124,34 @@ impl From<Balance> for BalanceResult {
 
 impl FormatOutput for BalanceResult {
     fn to_table(&self) -> Result<String, Error> {
-        let table = vec![
+        simple_table(
             vec![
-                "Total".cell().bold(true),
-                self.total.cell().justify(Justify::Right),
+                vec![
+                    "Total".cell().bold(true),
+                    self.total.cell().justify(Justify::Right),
+                ],
+                vec![
+                    "Confirmed".cell().bold(true),
+                    self.confirmed.cell().justify(Justify::Right),
+                ],
+                vec![
+                    "Trusted Pending".cell().bold(true),
+                    self.trusted_pending.cell().justify(Justify::Right),
+                ],
+                vec![
+                    "Untrusted Pending".cell().bold(true),
+                    self.untrusted_pending.cell().justify(Justify::Right),
+                ],
+                vec![
+                    "Immature".cell().bold(true),
+                    self.immature.cell().justify(Justify::Right),
+                ],
             ],
-            vec![
-                "Confirmed".cell().bold(true),
-                self.confirmed.cell().justify(Justify::Right),
-            ],
-            vec![
-                "Trusted Pending".cell().bold(true),
-                self.trusted_pending.cell().justify(Justify::Right),
-            ],
-            vec![
-                "Untrusted Pending".cell().bold(true),
-                self.untrusted_pending.cell().justify(Justify::Right),
-            ],
-            vec![
-                "Immature".cell().bold(true),
-                self.immature.cell().justify(Justify::Right),
-            ],
-        ]
-        .table()
-        .title(vec![
-            "Status".cell().bold(true),
-            "Amount (sat)".cell().bold(true),
-        ])
-        .display()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-
-        Ok(format!("{table}"))
+            Some(vec![
+                "Status".cell().bold(true),
+                "Amount (sat)".cell().bold(true),
+            ]),
+        )
     }
 }
 
@@ -272,32 +271,12 @@ pub struct PsbtResult {
 }
 
 impl PsbtResult {
-    pub fn new(psbt: &Psbt) -> Self {
+    pub fn new(psbt: &Psbt, verbose: bool, finalized: Option<bool>) -> Self {
         Self {
-            psbt: BASE64_STANDARD.encode(psbt.serialize()),
-            is_finalized: None,
-            details: None,
-        }
-    }
-
-    pub fn with_details(psbt: &Psbt, verbose: bool) -> Self {
-        Self {
-            psbt: BASE64_STANDARD.encode(psbt.serialize()),
-            is_finalized: None,
+            psbt: bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD.encode(psbt.serialize()),
+            is_finalized: finalized,
             details: if verbose {
-                Some(serde_json::to_value(psbt).unwrap_or(json!({})))
-            } else {
-                None
-            },
-        }
-    }
-
-    pub fn with_status_and_details(psbt: &Psbt, is_finalized: bool, verbose: bool) -> Self {
-        Self {
-            psbt: BASE64_STANDARD.encode(psbt.serialize()),
-            is_finalized: Some(is_finalized),
-            details: if verbose {
-                Some(serde_json::to_value(psbt).unwrap_or(json!({})))
+                Some(serde_json::to_value(psbt).unwrap_or_default())
             } else {
                 None
             },
@@ -331,58 +310,6 @@ impl FormatOutput for PsbtResult {
     }
 }
 
-/// Policies representation
-#[derive(Serialize)]
-pub struct PoliciesResult {
-    pub external: serde_json::Value,
-    pub internal: serde_json::Value,
-}
-
-impl FormatOutput for PoliciesResult {
-    fn to_table(&self) -> Result<String, Error> {
-        let ext_str = serde_json::to_string_pretty(&self.external)
-            .map_err(|e| Error::Generic(e.to_string()))?;
-        let int_str = serde_json::to_string_pretty(&self.internal)
-            .map_err(|e| Error::Generic(e.to_string()))?;
-
-        let table = vec![
-            vec!["External".cell().bold(true), ext_str.cell()],
-            vec!["Internal".cell().bold(true), int_str.cell()],
-        ]
-        .table()
-        .display()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-
-        Ok(format!("{table}"))
-    }
-}
-
-#[derive(Serialize)]
-pub struct PublicDescriptorResult {
-    pub external: String,
-    pub internal: String,
-}
-
-impl FormatOutput for PublicDescriptorResult {
-    fn to_table(&self) -> Result<String, Error> {
-        let table = vec![
-            vec![
-                "External Descriptor".cell().bold(true),
-                self.external.clone().cell(),
-            ],
-            vec![
-                "Internal Descriptor".cell().bold(true),
-                self.internal.clone().cell(),
-            ],
-        ]
-        .table()
-        .display()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-
-        Ok(format!("{table}"))
-    }
-}
-
 #[derive(Serialize)]
 pub struct RawPsbt {
     pub raw_tx: String,
@@ -407,5 +334,113 @@ impl FormatOutput for RawPsbt {
         .map_err(|e| Error::Generic(e.to_string()))?;
 
         Ok(format!("{table}"))
+    }
+}
+
+#[derive(Serialize)]
+pub struct KeychainPair<T> {
+    pub external: T,
+    pub internal: T,
+}
+
+// Table formatting for string pairs (used by PublicDescriptor)
+impl FormatOutput for KeychainPair<String> {
+    fn to_table(&self) -> Result<String, Error> {
+        let rows = vec![
+            vec!["External".cell().bold(true), self.external.clone().cell()],
+            vec!["Internal".cell().bold(true), self.internal.clone().cell()],
+        ];
+        simple_table(rows, None)
+    }
+}
+
+// Table formatting for JSON value pairs (used by Policies)
+impl FormatOutput for KeychainPair<serde_json::Value> {
+    fn to_table(&self) -> Result<String, Error> {
+        let ext_str = serde_json::to_string_pretty(&self.external)
+            .map_err(|e| Error::Generic(e.to_string()))?;
+        let int_str = serde_json::to_string_pretty(&self.internal)
+            .map_err(|e| Error::Generic(e.to_string()))?;
+
+        let rows = vec![
+            vec!["External".cell().bold(true), ext_str.cell()],
+            vec!["Internal".cell().bold(true), int_str.cell()],
+        ];
+        simple_table(rows, None)
+    }
+}
+#[derive(Serialize)]
+pub struct KeyResult {
+    pub xprv: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub xpub: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mnemonic: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
+}
+
+impl FormatOutput for KeyResult {
+    fn to_table(&self) -> Result<String, Error> {
+        let mut rows: Vec<Vec<CellStruct>> = vec![];
+
+        if let Some(mnemonic) = &self.mnemonic {
+            rows.push(vec!["Mnemonic".cell().bold(true), mnemonic.clone().cell()]);
+        }
+        if let Some(xpub) = &self.xpub {
+            rows.push(vec!["Xpub".cell().bold(true), xpub.clone().cell()]);
+        }
+
+        rows.push(vec!["Xprv".cell().bold(true), self.xprv.clone().cell()]);
+
+        if let Some(fingerprint) = &self.fingerprint {
+            rows.push(vec![
+                "Fingerprint".cell().bold(true),
+                fingerprint.clone().cell(),
+            ]);
+        }
+
+        simple_table(rows, None)
+    }
+}
+
+
+#[derive(Serialize)]
+#[serde(transparent)]
+pub struct WalletsListResult(pub HashMap<String, WalletConfigInner>);
+
+impl FormatOutput for WalletsListResult {
+    fn to_table(&self) -> Result<String, Error> {
+        if self.0.is_empty() {
+            return Ok("No wallets configured yet.".to_string());
+        }
+
+        let mut rows: Vec<Vec<CellStruct>> = vec![];
+        for (name, inner) in &self.0 {
+            let desc: String = inner.ext_descriptor.chars().take(30).collect();
+            let desc_display = if inner.ext_descriptor.len() > 30 {
+                format!("{}...", desc)
+            } else {
+                desc
+            };
+
+            rows.push(vec![
+                name.clone().cell(),
+                inner.network.clone().cell(),
+                desc_display.cell(),
+            ]);
+        }
+
+        simple_table(
+            rows,
+            Some(vec![
+                "Wallet Name".cell().bold(true),
+                "Network".cell().bold(true),
+                "External Descriptor".cell().bold(true),
+            ]),
+        )
     }
 }
