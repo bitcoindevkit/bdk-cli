@@ -17,12 +17,15 @@ use bdk_wallet::{
     },
     template::DescriptorTemplate,
 };
-use cli_table::{Cell, CellStruct, Style, Table};
-use serde_json::{Value, json};
 
 use crate::error::BDKCliError as Error;
+use crate::handlers::types::{DescriptorResult, KeychainPair};
 
-pub fn generate_descriptors(desc_type: &str, key: &str, network: Network) -> Result<Value, Error> {
+pub fn generate_descriptors(
+    desc_type: &str,
+    key: &str,
+    network: Network,
+) -> Result<DescriptorResult, Error> {
     let is_private = key.starts_with("xprv") || key.starts_with("tprv");
 
     if is_private {
@@ -49,7 +52,7 @@ fn generate_private_descriptors(
     desc_type: &str,
     key: &str,
     network: Network,
-) -> Result<Value, Error> {
+) -> Result<DescriptorResult, Error> {
     use bdk_wallet::template::{Bip44, Bip49, Bip84, Bip86};
 
     let secp = Secp256k1::new();
@@ -85,17 +88,20 @@ fn generate_private_descriptors(
     let internal_priv = internal_desc.to_string_with_secret(&internal_keymap);
     let internal_pub = internal_desc.to_string();
 
-    Ok(json!({
-        "public_descriptors": {
-            "external": external_pub,
-            "internal": internal_pub
-        },
-        "private_descriptors": {
-            "external": external_priv,
-            "internal": internal_priv
-        },
-        "fingerprint": fingerprint.to_string()
-    }))
+    Ok(DescriptorResult {
+        descriptor: None,
+        multipath_descriptor: None,
+        public_descriptors: Some(KeychainPair {
+            external: external_pub,
+            internal: internal_pub,
+        }),
+        private_descriptors: Some(KeychainPair {
+            external: external_priv,
+            internal: internal_priv,
+        }),
+        mnemonic: None,
+        fingerprint: Some(fingerprint.to_string()),
+    })
 }
 
 /// Generate descriptors from public key (xpub/tpub)
@@ -103,7 +109,7 @@ pub fn generate_public_descriptors(
     desc_type: &str,
     key: &str,
     derivation_path: &DerivationPath,
-) -> Result<Value, Error> {
+) -> Result<DescriptorResult, Error> {
     let xpub: Xpub = key.parse()?;
     let fingerprint = xpub.fingerprint();
 
@@ -122,14 +128,17 @@ pub fn generate_public_descriptors(
 
     let external_pub = build_descriptor("0")?;
     let internal_pub = build_descriptor("1")?;
-
-    Ok(json!({
-        "public_descriptors": {
-            "external": external_pub,
-            "internal": internal_pub
-        },
-        "fingerprint": fingerprint.to_string()
-    }))
+    Ok(DescriptorResult {
+        descriptor: None,
+        multipath_descriptor: None,
+        public_descriptors: Some(KeychainPair {
+            external: external_pub,
+            internal: internal_pub,
+        }),
+        private_descriptors: None,
+        mnemonic: None,
+        fingerprint: Some(fingerprint.to_string()),
+    })
 }
 
 /// Build a descriptor from a public key
@@ -158,7 +167,7 @@ pub fn build_public_descriptor(
 pub fn generate_descriptor_with_mnemonic(
     network: Network,
     desc_type: &str,
-) -> Result<serde_json::Value, Error> {
+) -> Result<DescriptorResult, Error> {
     let mnemonic: GeneratedKey<Mnemonic, Segwitv0> =
         Mnemonic::generate((WordCount::Words12, Language::English)).map_err(Error::BIP39Error)?;
 
@@ -166,7 +175,7 @@ pub fn generate_descriptor_with_mnemonic(
     let xprv = Xpriv::new_master(network, &seed)?;
 
     let mut result = generate_descriptors(desc_type, &xprv.to_string(), network)?;
-    result["mnemonic"] = json!(mnemonic.to_string());
+    result.mnemonic = Some(mnemonic.to_string());
     Ok(result)
 }
 
@@ -175,91 +184,12 @@ pub fn generate_descriptor_from_mnemonic(
     mnemonic_str: &str,
     network: Network,
     desc_type: &str,
-) -> Result<serde_json::Value, Error> {
+) -> Result<DescriptorResult, Error> {
     let mnemonic = Mnemonic::parse_in(Language::English, mnemonic_str)?;
     let seed = mnemonic.to_seed("");
     let xprv = Xpriv::new_master(network, &seed)?;
 
     let mut result = generate_descriptors(desc_type, &xprv.to_string(), network)?;
-    result["mnemonic"] = json!(mnemonic_str);
+    result.mnemonic = Some(mnemonic_str.to_string());
     Ok(result)
-}
-
-pub fn format_descriptor_output(result: &Value, pretty: bool) -> Result<String, Error> {
-    if !pretty {
-        return Ok(serde_json::to_string_pretty(result)?);
-    }
-
-    let mut rows: Vec<Vec<CellStruct>> = vec![];
-
-    if let Some(desc_type) = result.get("type") {
-        rows.push(vec![
-            "Type".cell().bold(true),
-            desc_type.as_str().unwrap_or("N/A").cell(),
-        ]);
-    }
-
-    if let Some(finger_print) = result.get("fingerprint") {
-        rows.push(vec![
-            "Fingerprint".cell().bold(true),
-            finger_print.as_str().unwrap_or("N/A").cell(),
-        ]);
-    }
-
-    if let Some(network) = result.get("network") {
-        rows.push(vec![
-            "Network".cell().bold(true),
-            network.as_str().unwrap_or("N/A").cell(),
-        ]);
-    }
-    if let Some(multipath_desc) = result.get("multipath_descriptor") {
-        rows.push(vec![
-            "Multipart Descriptor".cell().bold(true),
-            multipath_desc.as_str().unwrap_or("N/A").cell(),
-        ]);
-    }
-    if let Some(pub_descs) = result.get("public_descriptors").and_then(|v| v.as_object()) {
-        if let Some(ext) = pub_descs.get("external") {
-            rows.push(vec![
-                "External Public".cell().bold(true),
-                ext.as_str().unwrap_or("N/A").cell(),
-            ]);
-        }
-        if let Some(int) = pub_descs.get("internal") {
-            rows.push(vec![
-                "Internal Public".cell().bold(true),
-                int.as_str().unwrap_or("N/A").cell(),
-            ]);
-        }
-    }
-    if let Some(priv_descs) = result
-        .get("private_descriptors")
-        .and_then(|v| v.as_object())
-    {
-        if let Some(ext) = priv_descs.get("external") {
-            rows.push(vec![
-                "External Private".cell().bold(true),
-                ext.as_str().unwrap_or("N/A").cell(),
-            ]);
-        }
-        if let Some(int) = priv_descs.get("internal") {
-            rows.push(vec![
-                "Internal Private".cell().bold(true),
-                int.as_str().unwrap_or("N/A").cell(),
-            ]);
-        }
-    }
-    if let Some(mnemonic) = result.get("mnemonic") {
-        rows.push(vec![
-            "Mnemonic".cell().bold(true),
-            mnemonic.as_str().unwrap_or("N/A").cell(),
-        ]);
-    }
-
-    let table = rows
-        .table()
-        .display()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-
-    Ok(format!("{table}"))
 }

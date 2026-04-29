@@ -2,17 +2,17 @@ use crate::{
     error::BDKCliError as Error,
     utils::{
         descriptors::{
-            format_descriptor_output, generate_descriptor_from_mnemonic,
-            generate_descriptor_with_mnemonic, generate_descriptors,
+            generate_descriptor_from_mnemonic, generate_descriptor_with_mnemonic,
+            generate_descriptors,
         },
         is_mnemonic,
+        output::FormatOutput,
     },
 };
 
 #[cfg(feature = "compiler")]
 use {
     crate::handlers::types::DescriptorResult,
-    crate::utils::output::FormatOutput,
     bdk_wallet::{
         bitcoin::XOnlyPublicKey,
         miniscript::{
@@ -48,7 +48,7 @@ pub fn handle_descriptor_command(
         // Generate new mnemonic and descriptors
         None => generate_descriptor_with_mnemonic(network, &desc_type),
     }?;
-    format_descriptor_output(&result, pretty)
+    result.format(pretty)
 }
 
 /// Handle the miniscript compiler sub-command
@@ -99,6 +99,7 @@ pub(crate) fn handle_compile_subcommand(
         public_descriptors: None,
         private_descriptors: None,
         mnemonic: None,
+        fingerprint: None,
     };
     result.format(pretty)
 }

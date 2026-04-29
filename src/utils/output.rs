@@ -19,10 +19,11 @@ pub trait FormatOutput: Serialize {
 }
 
 /// Helper for building simple tables
-pub fn simple_table(
-    rows: Vec<Vec<CellStruct>>,
-    title: Option<Vec<CellStruct>>,
-) -> Result<String, Error> {
+pub fn simple_table<R, C>(rows: R, title: Option<Vec<CellStruct>>) -> Result<String, Error>
+where
+    R: IntoIterator<Item = C>,
+    C: IntoIterator<Item = CellStruct>,
+{
     let mut table = rows.table();
     if let Some(title) = title {
         table = table.title(title);
