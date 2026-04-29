@@ -70,29 +70,28 @@ pub struct TransactionListResult(pub Vec<TransactionDetails>);
 
 impl FormatOutput for TransactionListResult {
     fn to_table(&self) -> Result<String, Error> {
-        let mut rows: Vec<Vec<CellStruct>> = vec![];
-
-        for tx in &self.0 {
-            rows.push(vec![
+        let rows = self.0.iter().map(|tx| {
+            vec![
                 tx.txid.clone().cell(),
                 tx.version_display.clone().cell().justify(Justify::Right),
                 tx.is_rbf.to_string().cell().justify(Justify::Center),
                 tx.input_count.to_string().cell().justify(Justify::Right),
                 tx.output_count.to_string().cell().justify(Justify::Right),
                 tx.total_value.to_string().cell().justify(Justify::Right),
-            ]);
-        }
+            ]
+        });
 
-        let title = vec![
-            "Txid".cell().bold(true),
-            "Version".cell().bold(true),
-            "Is RBF".cell().bold(true),
-            "Input Count".cell().bold(true),
-            "Output Count".cell().bold(true),
-            "Total Value (sat)".cell().bold(true),
-        ];
-
-        simple_table(rows, Some(title))
+        simple_table(
+            rows,
+            Some(vec![
+                "Txid".cell().bold(true),
+                "Version".cell().bold(true),
+                "Is RBF".cell().bold(true),
+                "Input Count".cell().bold(true),
+                "Output Count".cell().bold(true),
+                "Total Value (sat)".cell().bold(true),
+            ]),
+        )
     }
 }
 
@@ -400,8 +399,7 @@ impl FormatOutput for WalletsListResult {
             return Ok("No wallets configured yet.".to_string());
         }
 
-        let mut rows: Vec<Vec<CellStruct>> = vec![];
-        for (name, inner) in &self.0 {
+        let rows = self.0.iter().map(|(name, inner)| {
             let desc: String = inner.ext_descriptor.chars().take(30).collect();
             let desc_display = if inner.ext_descriptor.len() > 30 {
                 format!("{}...", desc)
@@ -409,12 +407,12 @@ impl FormatOutput for WalletsListResult {
                 desc
             };
 
-            rows.push(vec![
+            vec![
                 name.clone().cell(),
                 inner.network.clone().cell(),
                 desc_display.cell(),
-            ]);
-        }
+            ]
+        });
 
         simple_table(
             rows,
@@ -427,45 +425,66 @@ impl FormatOutput for WalletsListResult {
     }
 }
 
-
 #[derive(Serialize)]
 pub struct DescriptorResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub descriptor: Option<String>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub multipath_descriptor: Option<String>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public_descriptors: Option<KeychainPair<String>>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub private_descriptors: Option<KeychainPair<String>>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mnemonic: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
 }
 
 impl FormatOutput for DescriptorResult {
     fn to_table(&self) -> Result<String, Error> {
         let mut rows: Vec<Vec<CellStruct>> = vec![];
-        
+
         if let Some(desc) = &self.descriptor {
             rows.push(vec!["Descriptor".cell().bold(true), desc.clone().cell()]);
         }
         if let Some(desc) = &self.multipath_descriptor {
-            rows.push(vec!["Multipath Descriptor".cell().bold(true), desc.clone().cell()]);
+            rows.push(vec![
+                "Multipath Descriptor".cell().bold(true),
+                desc.clone().cell(),
+            ]);
         }
         if let Some(pub_desc) = &self.public_descriptors {
-            rows.push(vec!["External Public".cell().bold(true), pub_desc.external.clone().cell()]);
-            rows.push(vec!["Internal Public".cell().bold(true), pub_desc.internal.clone().cell()]);
+            rows.push(vec![
+                "External Public".cell().bold(true),
+                pub_desc.external.clone().cell(),
+            ]);
+            rows.push(vec![
+                "Internal Public".cell().bold(true),
+                pub_desc.internal.clone().cell(),
+            ]);
         }
         if let Some(priv_desc) = &self.private_descriptors {
-            rows.push(vec!["External Private".cell().bold(true), priv_desc.external.clone().cell()]);
-            rows.push(vec!["Internal Private".cell().bold(true), priv_desc.internal.clone().cell()]);
+            rows.push(vec![
+                "External Private".cell().bold(true),
+                priv_desc.external.clone().cell(),
+            ]);
+            rows.push(vec![
+                "Internal Private".cell().bold(true),
+                priv_desc.internal.clone().cell(),
+            ]);
         }
         if let Some(mnemonic) = &self.mnemonic {
             rows.push(vec!["Mnemonic".cell().bold(true), mnemonic.clone().cell()]);
+        }
+
+        if let Some(fp) = &self.fingerprint {
+            rows.push(vec!["Fingerprint".cell().bold(true), fp.clone().cell()]);
         }
 
         simple_table(rows, None)
