@@ -1,4 +1,6 @@
 use crate::{commands::WalletOpts, config::WalletConfig, error::BDKCliError as Error};
+#[cfg(feature = "bip322")]
+use bdk_bip322::SignatureFormat;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{Info, Receiver, UnboundedReceiver, Warning};
 #[cfg(any(
@@ -189,4 +191,19 @@ pub fn load_wallet_config(
     }?;
 
     Ok((wallet_opts, network))
+}
+
+/// Function to parse the signature format from a string
+#[cfg(feature = "bip322")]
+pub(crate) fn parse_signature_format(format_str: &str) -> Result<SignatureFormat, Error> {
+    match format_str.to_lowercase().as_str() {
+        "legacy" => Ok(SignatureFormat::Legacy),
+        "simple" => Ok(SignatureFormat::Simple),
+        "full" => Ok(SignatureFormat::Full),
+        "fullproofoffunds" => Ok(SignatureFormat::FullProofOfFunds),
+        _ => Err(Error::Generic(
+            "Invalid signature format. Use 'legacy', 'simple', 'full', or 'fullproofoffunds'"
+                .to_string(),
+        )),
+    }
 }

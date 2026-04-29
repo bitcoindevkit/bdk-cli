@@ -7,7 +7,7 @@ use bdk_wallet::bitcoin::{
     Address, Network, Psbt, Transaction, base64::Engine, consensus::encode::serialize_hex,
 };
 use bdk_wallet::{AddressInfo, Balance, LocalOutput, chain::ChainPosition};
-use cli_table::{Cell, CellStruct, Style, Table, format::Justify};
+use cli_table::{Cell, CellStruct, Style, format::Justify};
 use serde::Serialize;
 use serde_json::json;
 
@@ -83,20 +83,16 @@ impl FormatOutput for TransactionListResult {
             ]);
         }
 
-        let table = rows
-            .table()
-            .title(vec![
-                "Txid".cell().bold(true),
-                "Version".cell().bold(true),
-                "Is RBF".cell().bold(true),
-                "Input Count".cell().bold(true),
-                "Output Count".cell().bold(true),
-                "Total Value (sat)".cell().bold(true),
-            ])
-            .display()
-            .map_err(|e| Error::Generic(e.to_string()))?;
+        let title = vec![
+            "Txid".cell().bold(true),
+            "Version".cell().bold(true),
+            "Is RBF".cell().bold(true),
+            "Input Count".cell().bold(true),
+            "Output Count".cell().bold(true),
+            "Total Value (sat)".cell().bold(true),
+        ];
 
-        Ok(format!("{table}"))
+        simple_table(rows, Some(title))
     }
 }
 
@@ -240,22 +236,17 @@ impl FormatOutput for UnspentListResult {
             ]);
         }
 
-        let table = rows
-            .table()
-            .title(vec![
-                "Outpoint".cell().bold(true),
-                "Output (sat)".cell().bold(true),
-                "Output Address".cell().bold(true),
-                "Keychain".cell().bold(true),
-                "Is Spent".cell().bold(true),
-                "Index".cell().bold(true),
-                "Block Height".cell().bold(true),
-                "Block Hash".cell().bold(true),
-            ])
-            .display()
-            .map_err(|e| Error::Generic(e.to_string()))?;
-
-        Ok(format!("{table}"))
+        let title = vec![
+            "Outpoint".cell().bold(true),
+            "Output (sat)".cell().bold(true),
+            "Output Address".cell().bold(true),
+            "Keychain".cell().bold(true),
+            "Is Spent".cell().bold(true),
+            "Index".cell().bold(true),
+            "Block Height".cell().bold(true),
+            "Block Hash".cell().bold(true),
+        ];
+        simple_table(rows, Some(title))
     }
 }
 
@@ -302,11 +293,7 @@ impl FormatOutput for PsbtResult {
             ]);
         }
 
-        let table = rows
-            .table()
-            .display()
-            .map_err(|e| Error::Generic(e.to_string()))?;
-        Ok(format!("{table}"))
+        simple_table(rows, None)
     }
 }
 
@@ -325,15 +312,11 @@ impl RawPsbt {
 
 impl FormatOutput for RawPsbt {
     fn to_table(&self) -> Result<String, Error> {
-        let table = vec![vec![
+        let rows = vec![vec![
             "Raw Transaction".cell().bold(true),
             self.raw_tx.clone().cell(),
-        ]]
-        .table()
-        .display()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-
-        Ok(format!("{table}"))
+        ]];
+        simple_table(rows, None)
     }
 }
 
@@ -407,7 +390,6 @@ impl FormatOutput for KeyResult {
     }
 }
 
-
 #[derive(Serialize)]
 #[serde(transparent)]
 pub struct WalletsListResult(pub HashMap<String, WalletConfigInner>);
@@ -442,5 +424,50 @@ impl FormatOutput for WalletsListResult {
                 "External Descriptor".cell().bold(true),
             ]),
         )
+    }
+}
+
+
+#[derive(Serialize)]
+pub struct DescriptorResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub descriptor: Option<String>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub multipath_descriptor: Option<String>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public_descriptors: Option<KeychainPair<String>>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub private_descriptors: Option<KeychainPair<String>>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mnemonic: Option<String>,
+}
+
+impl FormatOutput for DescriptorResult {
+    fn to_table(&self) -> Result<String, Error> {
+        let mut rows: Vec<Vec<CellStruct>> = vec![];
+        
+        if let Some(desc) = &self.descriptor {
+            rows.push(vec!["Descriptor".cell().bold(true), desc.clone().cell()]);
+        }
+        if let Some(desc) = &self.multipath_descriptor {
+            rows.push(vec!["Multipath Descriptor".cell().bold(true), desc.clone().cell()]);
+        }
+        if let Some(pub_desc) = &self.public_descriptors {
+            rows.push(vec!["External Public".cell().bold(true), pub_desc.external.clone().cell()]);
+            rows.push(vec!["Internal Public".cell().bold(true), pub_desc.internal.clone().cell()]);
+        }
+        if let Some(priv_desc) = &self.private_descriptors {
+            rows.push(vec!["External Private".cell().bold(true), priv_desc.external.clone().cell()]);
+            rows.push(vec!["Internal Private".cell().bold(true), priv_desc.internal.clone().cell()]);
+        }
+        if let Some(mnemonic) = &self.mnemonic {
+            rows.push(vec!["Mnemonic".cell().bold(true), mnemonic.clone().cell()]);
+        }
+
+        simple_table(rows, None)
     }
 }
