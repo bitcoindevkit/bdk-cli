@@ -20,9 +20,10 @@ use bdk_wallet::bitcoin::{
 use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
 use clap_complete::Shell;
 
+use crate::utils::{parse_address, parse_outpoint, parse_recipient};
+
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
-use crate::utils::{parse_address, parse_outpoint, parse_recipient};
 
 /// The BDK Command Line Wallet App
 ///
