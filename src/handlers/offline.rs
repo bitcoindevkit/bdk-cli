@@ -14,6 +14,12 @@ use bdk_wallet::{KeychainKind, SignOptions, Wallet};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::str::FromStr;
+#[cfg(feature = "bip322")]
+use {
+    crate::utils::{parse_address, parse_signature_format},
+    bdk_bip322::{BIP322, MessageProof, MessageVerificationResult},
+    bdk_wallet::bitcoin::Address,
+};
 
 /// Execute an offline wallet sub-command
 ///
@@ -268,6 +274,47 @@ pub fn handle_offline_wallet_subcommand(
             )?;
             let result = PsbtResult::new(&final_psbt, wallet_opts.verbose, None);
             result.format(pretty)
+        }
+        #[cfg(feature = "bip322")]
+        SignMessage {
+            message,
+            signature_type,
+            address,
+            utxos,
+        } => {
+            let address: Address = parse_address(&address)?;
+            let signature_format = parse_signature_format(&signature_type)?;
+
+            if !wallet.is_mine(address.script_pubkey()) {
+                return Err(Error::Generic(format!(
+                    "Address {} does not belong to this wallet.",
+                    address
+                )));
+            }
+
+            let proof: MessageProof =
+                wallet.sign_message(message.as_str(), signature_format, &address, utxos)?;
+
+            Ok(json!({"proof": proof.to_base64()}).to_string())
+        }
+        #[cfg(feature = "bip322")]
+        VerifyMessage {
+            proof,
+            message,
+            address,
+        } => {
+            let address: Address = parse_address(&address)?;
+            let parsed_proof: MessageProof = MessageProof::from_base64(&proof)
+                .map_err(|e| Error::Generic(format!("Invalid proof: {e}")))?;
+
+            let is_valid: MessageVerificationResult =
+                wallet.verify_message(&parsed_proof, &message, &address)?;
+
+            Ok(json!({
+                "valid": is_valid.valid,
+                "proven_amount": is_valid.proven_amount.map(|a| a.to_sat()) // optional field
+            })
+            .to_string())
         }
     }
 }

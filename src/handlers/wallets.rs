@@ -1,6 +1,6 @@
+use crate::error::BDKCliError as Error;
 use crate::utils::output::FormatOutput;
 use crate::{config::WalletConfig, handlers::types::WalletsListResult};
-use crate::error::BDKCliError as Error;
 use std::path::Path;
 
 /// Handle the top-level `wallets` command (lists all saved wallets)
