@@ -1983,12 +1983,6 @@ pub fn handle_descriptor_command(
     format_descriptor_output(&result, pretty)
 }
 
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "cbf",
-    feature = "rpc"
-))]
 #[cfg(test)]
 mod test {
     #[cfg(any(
