@@ -490,3 +490,84 @@ impl FormatOutput for DescriptorResult {
         simple_table(rows, None)
     }
 }
+
+#[derive(Serialize, Debug, Default)]
+pub struct MessageResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proof: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub valid: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proven_amount: Option<u64>,
+}
+
+impl FormatOutput for MessageResult {
+    fn to_table(&self) -> Result<String, Error> {
+        let mut rows = vec![];
+
+        if let Some(proof) = &self.proof {
+            rows.push(vec!["Proof".cell().bold(true), proof.cell()]);
+        }
+        if let Some(valid) = self.valid {
+            rows.push(vec!["Is Valid".cell().bold(true), valid.to_string().cell()]);
+        }
+        if let Some(amount) = self.proven_amount {
+            rows.push(vec![
+                "Proven Amount (sats)".cell().bold(true),
+                amount.cell(),
+            ]);
+        }
+
+        let title = vec!["Property".cell().bold(true), "Value".cell().bold(true)];
+
+        simple_table(rows, Some(title))
+    }
+}
+
+#[derive(Serialize, Debug)]
+pub struct StatusResult {
+    pub message: String,
+}
+
+impl StatusResult {
+    pub fn new(msg: &str) -> Self {
+        Self {
+            message: msg.to_string(),
+        }
+    }
+}
+
+impl FormatOutput for StatusResult {
+    fn to_table(&self) -> Result<String, Error> {
+        Ok(self.message.clone())
+    }
+}
+
+#[derive(Serialize, Debug)]
+pub struct TransactionResult {
+    pub txid: String,
+}
+
+impl FormatOutput for TransactionResult {
+    fn to_table(&self) -> Result<String, Error> {
+        simple_table(
+            vec![vec!["TXID".cell().bold(true), self.txid.clone().cell()]],
+            None,
+        )
+    }
+}
+
+#[derive(Serialize, Debug)]
+pub struct ConfigResult {
+    pub wallet_name: String,
+    pub path: String,
+    pub message: String,
+}
+
+impl FormatOutput for ConfigResult {
+    fn to_table(&self) -> Result<String, Error> {
+        Ok(format!("{} saved to {}", self.message, self.path))
+    }
+}

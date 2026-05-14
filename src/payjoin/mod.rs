@@ -5,10 +5,7 @@
     feature = "cbf"
 ))]
 
-use crate::{
-    backend::BlockchainClient,
-    handlers::online::{broadcast_transaction, sync_wallet},
-};
+use crate::client::BlockchainClient;
 use bdk_wallet::{
     SignOptions, Wallet,
     bitcoin::{FeeRate, Psbt, Txid, consensus::encode::serialize_hex},
@@ -120,12 +117,12 @@ impl<'a> PayjoinManager<'a> {
         Ok(to_string_pretty(&json!({}))?)
     }
 
-    #[cfg(any(
-        feature = "electrum",
-        feature = "esplora",
-        feature = "rpc",
-        feature = "cbf"
-    ))]
+    // #[cfg(any(
+    //     feature = "electrum",
+    //     feature = "esplora",
+    //     feature = "rpc",
+    //     feature = "cbf"
+    // ))]
     pub async fn send_payjoin(
         &mut self,
         uri: String,
@@ -612,7 +609,7 @@ impl<'a> PayjoinManager<'a> {
             let mut sync_timer = tokio::time::interval(sync_interval);
             poll_timer.tick().await;
             sync_timer.tick().await;
-            sync_wallet(blockchain_client, self.wallet).await?;
+            blockchain_client.sync_wallet(self.wallet).await?;
 
             loop {
                 tokio::select! {
@@ -653,7 +650,7 @@ impl<'a> PayjoinManager<'a> {
                     }
                     _ = sync_timer.tick() => {
                         // Time to sync wallet
-                        sync_wallet(blockchain_client, self.wallet).await?;
+                        blockchain_client.sync_wallet(self.wallet).await?;
                     }
                 }
             }
@@ -809,7 +806,9 @@ impl<'a> PayjoinManager<'a> {
             ));
         }
 
-        broadcast_transaction(blockchain_client, psbt.extract_tx_fee_rate_limit()?).await
+        blockchain_client
+            .broadcast(psbt.extract_tx_fee_rate_limit()?)
+            .await
     }
 
     async fn send_payjoin_post_request(

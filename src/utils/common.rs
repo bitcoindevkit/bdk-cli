@@ -76,7 +76,7 @@ pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
     Ok((addr.script_pubkey(), val))
 }
 
-#[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+// #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 /// Parse the proxy (Socket:Port) argument from the cli input.
 pub(crate) fn parse_proxy_auth(s: &str) -> Result<(String, String), Error> {
     let parts: Vec<_> = s.split(':').collect();

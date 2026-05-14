@@ -1,77 +1,87 @@
-use bdk_bitcoind_rpc::{Emitter, bitcoincore_rpc::RpcApi};
+use crate::error::BDKCliError as Error;
+#[cfg(feature = "esplora")]
 use bdk_esplora::EsploraAsyncExt;
 use bdk_wallet::{
     bitcoin::{Transaction, Txid},
     chain::CanonicalizationParams,
 };
-// #[cfg(any(
-//     feature = "electrum",
-//     feature = "esplora",
-//     feature = "rpc",
-//     feature = "cbf"
-// ))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf"
+))]
 use {
     crate::commands::{ClientType, WalletOpts},
-    crate::error::BDKCliError as Error,
+  
     bdk_wallet::Wallet,
     std::path::PathBuf,
 };
+#[cfg(feature = "rpc")]
+use bdk_bitcoind_rpc::{Emitter, bitcoincore_rpc::RpcApi};
 
-// #[cfg(feature = "cbf")]
+
+#[cfg(feature = "cbf")]
 use {
     crate::utils::trace_logger,
     bdk_kyoto::{BuilderExt, LightClient},
 };
 
-// #[cfg(any(
-//     feature = "electrum",
-//     feature = "esplora",
-//     feature = "rpc",
-//     feature = "cbf"
-// ))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf"
+))]
 pub(crate) enum BlockchainClient {
-    // #[cfg(feature = "electrum")]
+    #[cfg(feature = "electrum")]
     Electrum {
         client: Box<bdk_electrum::BdkElectrumClient<bdk_electrum::electrum_client::Client>>,
         batch_size: usize,
     },
-    // #[cfg(feature = "esplora")]
+    #[cfg(feature = "esplora")]
     Esplora {
         client: Box<bdk_esplora::esplora_client::AsyncClient>,
         parallel_requests: usize,
     },
-    // #[cfg(feature = "rpc")]
+    #[cfg(feature = "rpc")]
     RpcClient {
         client: Box<bdk_bitcoind_rpc::bitcoincore_rpc::Client>,
     },
 
-    // #[cfg(feature = "cbf")]
+    #[cfg(feature = "cbf")]
     KyotoClient {
         client: Box<KyotoClientHandle>,
     },
 }
 
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf"
+))]
 impl BlockchainClient {
     pub async fn broadcast(&self, tx: Transaction) -> Result<Txid, Error> {
         match self {
-            // #[cfg(feature = "electrum")]
+            #[cfg(feature = "electrum")]
             Self::Electrum { client, .. } => client
                 .transaction_broadcast(&tx)
                 .map_err(|e| Error::Generic(e.to_string())),
 
-            // #[cfg(feature = "esplora")]
+            #[cfg(feature = "esplora")]
             Self::Esplora { client, .. } => client
                 .broadcast(&tx)
                 .await
                 .map(|()| tx.compute_txid())
                 .map_err(|e| Error::Generic(e.to_string())),
 
-            // #[cfg(feature = "rpc")]
+            #[cfg(feature = "rpc")]
             Self::RpcClient { client } => client
                 .send_raw_transaction(&tx)
                 .map_err(|e| Error::Generic(e.to_string())),
 
-            // #[cfg(feature = "cbf")]
+            #[cfg(feature = "cbf")]
             Self::KyotoClient { client } => {
                 // ... (Kyoto broadcast logic from your online.rs) ...
                 Ok(tx.compute_txid())
@@ -166,28 +176,28 @@ impl BlockchainClient {
 
 /// Handle for the Kyoto client after the node has been started.
 /// Contains only the components needed for sync and broadcast operations.
-// #[cfg(feature = "cbf")]
+#[cfg(feature = "cbf")]
 pub struct KyotoClientHandle {
     pub requester: bdk_kyoto::Requester,
     pub update_subscriber: tokio::sync::Mutex<bdk_kyoto::UpdateSubscriber>,
 }
 
-// #[cfg(any(
-//     feature = "electrum",
-//     feature = "esplora",
-//     feature = "rpc",
-//     feature = "cbf",
-// ))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf",
+))]
 /// Create a new blockchain from the wallet configuration options.
 pub(crate) fn new_blockchain_client(
     wallet_opts: &WalletOpts,
     _wallet: &Wallet,
     _datadir: PathBuf,
 ) -> Result<BlockchainClient, Error> {
-    // #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+    #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
     let url = &wallet_opts.url;
     let client = match wallet_opts.client_type {
-        // #[cfg(feature = "electrum")]
+        #[cfg(feature = "electrum")]
         ClientType::Electrum => {
             let client = bdk_electrum::electrum_client::Client::new(url)
                 .map(bdk_electrum::BdkElectrumClient::new)?;
@@ -196,7 +206,7 @@ pub(crate) fn new_blockchain_client(
                 batch_size: wallet_opts.batch_size,
             }
         }
-        // #[cfg(feature = "esplora")]
+        #[cfg(feature = "esplora")]
         ClientType::Esplora => {
             let client = bdk_esplora::esplora_client::Builder::new(url).build_async()?;
             BlockchainClient::Esplora {
@@ -205,7 +215,7 @@ pub(crate) fn new_blockchain_client(
             }
         }
 
-        // #[cfg(feature = "rpc")]
+        #[cfg(feature = "rpc")]
         ClientType::Rpc => {
             let auth = match &wallet_opts.cookie {
                 Some(cookie) => bdk_bitcoind_rpc::bitcoincore_rpc::Auth::CookieFile(cookie.into()),
@@ -221,7 +231,7 @@ pub(crate) fn new_blockchain_client(
             }
         }
 
-        // #[cfg(feature = "cbf")]
+        #[cfg(feature = "cbf")]
         ClientType::Cbf => {
             let scan_type = bdk_kyoto::ScanType::Sync;
             let builder = bdk_kyoto::builder::Builder::new(_wallet.network());
@@ -259,7 +269,7 @@ pub(crate) fn new_blockchain_client(
 }
 
 // Handle Kyoto Client sync
-// #[cfg(feature = "cbf")]
+#[cfg(feature = "cbf")]
 pub async fn sync_kyoto_client(
     wallet: &mut Wallet,
     handle: &KyotoClientHandle,
