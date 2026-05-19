@@ -148,6 +148,31 @@ cargo run --features rpc -- wallet --wallet payjoin_wallet2 sync
 cargo run --features rpc -- wallet --wallet payjoin_wallet2 balance
 
 cargo run --features rpc -- wallet --wallet payjoin_wallet2 send_payjoin --ohttp_relay "https://pj.bobspacebkk.com" --ohttp_relay "https://pj.benalleng.com" --fee_rate 1 --uri "<URI>"
+
+#### Silent payments
+
+> [!WARNING]
+> This tool does not support silent payment scanning, nor the `silent_payment_code`
+> command has any control on the public keys provided. If you don't have access
+> to a silent payment scanner with the keys you provided, you are not going to
+> be able to discover any funds, and if you do not control the private keys,
+> you are not going to be able to spend the funds. We do not recommend the use
+> of any of the silent payment features with real funds.
+
+To experiment with silent payments, you can get two public keys in compressed or uncompressed format, `A1` and `A2`, and produce a silent payment code by calling:
+```shell
+cargo run --features sp -- --network signet silent_payment_code --scan_public_key '<A1>' --spend_public_key '<A2>'
+```
+
+Once you have a silent payment code, `SP_CODE_1` and an amount `AMOUNT_1` to send, you can create a valid transaction locking funds to a silent payment code derived address with the following command:
+
+```shell
+cargo run --features electrum,sp -- --network testnet4 wallet --wallet sample_wallet --ext-descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" --database-type sqlite --client-type electrum --url "ssl://mempool.space:40002" create_sp_tx --to-sp <SP_CODE_1>:<AMOUNT_1>
+```
+
+It's also possible to drain all balance to a silent payment wallet by using the `--send_all` flag:
+```shell
+cargo run --features electrum,sp -- --network testnet4 wallet --wallet sample_wallet --ext-descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" --database-type sqlite --client-type electrum --url "ssl://mempool.space:40002" create_sp_tx --send_all --to-sp <SP_CODE_1>:0
 ```
 
 ## Justfile
