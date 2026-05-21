@@ -1,10 +1,7 @@
-use crate::error::BDKCliError as Error;
+#[cfg(feature = "rpc")]
+use bdk_bitcoind_rpc::{Emitter, bitcoincore_rpc::RpcApi};
 #[cfg(feature = "esplora")]
 use bdk_esplora::EsploraAsyncExt;
-use bdk_wallet::{
-    bitcoin::{Transaction, Txid},
-    chain::CanonicalizationParams,
-};
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -12,20 +9,40 @@ use bdk_wallet::{
     feature = "cbf"
 ))]
 use {
-    crate::commands::{ClientType, WalletOpts},
-  
-    bdk_wallet::Wallet,
+    crate::commands::WalletOpts,
+    crate::error::BDKCliError as Error,
+    bdk_wallet::{
+        Wallet,
+        bitcoin::{Transaction, Txid},
+        chain::CanonicalizationParams,
+    },
+    clap::ValueEnum,
     std::path::PathBuf,
 };
-#[cfg(feature = "rpc")]
-use bdk_bitcoind_rpc::{Emitter, bitcoincore_rpc::RpcApi};
-
 
 #[cfg(feature = "cbf")]
 use {
     crate::utils::trace_logger,
     bdk_kyoto::{BuilderExt, LightClient},
 };
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf"
+))]
+#[derive(Clone, ValueEnum, Debug, Eq, PartialEq)]
+pub enum ClientType {
+    #[cfg(feature = "electrum")]
+    Electrum,
+    #[cfg(feature = "esplora")]
+    Esplora,
+    #[cfg(feature = "rpc")]
+    Rpc,
+    #[cfg(feature = "cbf")]
+    Cbf,
+}
 
 #[cfg(any(
     feature = "electrum",
@@ -50,9 +67,7 @@ pub(crate) enum BlockchainClient {
     },
 
     #[cfg(feature = "cbf")]
-    KyotoClient {
-        client: Box<KyotoClientHandle>,
-    },
+    KyotoClient { client: Box<KyotoClientHandle> },
 }
 
 #[cfg(any(
@@ -83,14 +98,23 @@ impl BlockchainClient {
 
             #[cfg(feature = "cbf")]
             Self::KyotoClient { client } => {
-                // ... (Kyoto broadcast logic from your online.rs) ...
-                Ok(tx.compute_txid())
+                let txid = tx.compute_txid();
+                let wtxid = client
+                    .requester
+                    .broadcast_random(tx.clone())
+                    .await
+                    .map_err(|_| {
+                        tracing::warn!("Broadcast was unsuccessful");
+                        Error::Generic("Transaction broadcast timed out after 30 seconds".into())
+                    })?;
+                tracing::info!("Successfully broadcast WTXID: {wtxid}");
+                Ok(txid)
             }
         }
     }
 
     pub async fn sync_wallet(&self, wallet: &mut Wallet) -> Result<(), Error> {
-        // #[cfg(any(feature = "electrum", feature = "esplora"))]
+        #[cfg(any(feature = "electrum", feature = "esplora"))]
         let request = wallet
             .start_sync_with_revealed_spks()
             .inspect(|item, progress| {
@@ -98,7 +122,7 @@ impl BlockchainClient {
                 eprintln!("[ SCANNING {pc:03.0}% ] {item}");
             });
         match self {
-            // #[cfg(feature = "electrum")]
+            #[cfg(feature = "electrum")]
             Self::Electrum { client, batch_size } => {
                 // Populate the electrum client's transaction cache so it doesn't re-download transaction we
                 // already have.
@@ -109,7 +133,7 @@ impl BlockchainClient {
                     .apply_update(update)
                     .map_err(|e| Error::Generic(e.to_string()))
             }
-            // #[cfg(feature = "esplora")]
+            #[cfg(feature = "esplora")]
             Self::Esplora {
                 client,
                 parallel_requests,
@@ -122,7 +146,7 @@ impl BlockchainClient {
                     .apply_update(update)
                     .map_err(|e| Error::Generic(e.to_string()))
             }
-            // #[cfg(feature = "rpc")]
+            #[cfg(feature = "rpc")]
             Self::RpcClient { client } => {
                 let blockchain_info = client.get_blockchain_info()?;
                 let wallet_cp = wallet.latest_checkpoint();
@@ -166,7 +190,7 @@ impl BlockchainClient {
                 wallet.apply_unconfirmed_txs(mempool_txs.update);
                 Ok(())
             }
-            // #[cfg(feature = "cbf")]
+            #[cfg(feature = "cbf")]
             Self::KyotoClient { client } => sync_kyoto_client(wallet, client)
                 .await
                 .map_err(|e| Error::Generic(e.to_string())),
