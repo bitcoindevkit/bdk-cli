@@ -1,12 +1,57 @@
+#[cfg(any(feature = "sqlite", feature = "redb"))]
 use crate::commands::WalletOpts;
 use crate::error::BDKCliError as Error;
-use bdk_wallet::Wallet;
-use bdk_wallet::bitcoin::Network;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
-use bdk_wallet::{KeychainKind, PersistedWallet, WalletPersister};
+use bdk_wallet::{KeychainKind, PersistedWallet, bitcoin::Network};
+use bdk_wallet::{Wallet, WalletPersister};
+use clap::ValueEnum;
 
+#[derive(Clone, ValueEnum, Debug, Eq, PartialEq)]
+pub enum DatabaseType {
+    /// Sqlite database
+    #[cfg(feature = "sqlite")]
+    Sqlite,
+    /// Redb database
+    #[cfg(feature = "redb")]
+    Redb,
+}
+
+// Types of Persistence backends supported by bdk-cli
 #[cfg(any(feature = "sqlite", feature = "redb"))]
-pub mod persister;
+pub(crate) enum Persister {
+    #[cfg(feature = "sqlite")]
+    Connection(bdk_wallet::rusqlite::Connection),
+    #[cfg(feature = "redb")]
+    RedbStore(bdk_redb::Store),
+}
+
+impl WalletPersister for Persister {
+    type Error = Error;
+
+    fn initialize(persister: &mut Self) -> Result<bdk_wallet::ChangeSet, Self::Error> {
+        match persister {
+            #[cfg(feature = "sqlite")]
+            Persister::Connection(connection) => {
+                WalletPersister::initialize(connection).map_err(Error::from)
+            }
+            #[cfg(feature = "redb")]
+            Persister::RedbStore(store) => WalletPersister::initialize(store).map_err(Error::from),
+        }
+    }
+
+    fn persist(persister: &mut Self, changeset: &bdk_wallet::ChangeSet) -> Result<(), Self::Error> {
+        match persister {
+            #[cfg(feature = "sqlite")]
+            Persister::Connection(connection) => {
+                WalletPersister::persist(connection, changeset).map_err(Error::from)
+            }
+            #[cfg(feature = "redb")]
+            Persister::RedbStore(store) => {
+                WalletPersister::persist(store, changeset).map_err(Error::from)
+            }
+        }
+    }
+}
 
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 pub(crate) fn new_persisted_wallet<P: WalletPersister>(
