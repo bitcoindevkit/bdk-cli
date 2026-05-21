@@ -1,105 +1,114 @@
+use crate::utils::types::DescriptorResult;
 use crate::{
     error::BDKCliError as Error,
+    handlers::{AppCommand, AppContext},
     utils::{
         descriptors::{
             generate_descriptor_from_mnemonic, generate_descriptor_with_mnemonic,
             generate_descriptors,
         },
         is_mnemonic,
-        output::FormatOutput,
     },
 };
-
+use clap::Parser;
 #[cfg(feature = "compiler")]
 use {
-    crate::handlers::types::DescriptorResult,
     bdk_wallet::{
         bitcoin::XOnlyPublicKey,
-        miniscript::{
-            Descriptor, Legacy, Miniscript, Segwitv0, Tap, descriptor::TapTree, policy::Concrete,
-        },
+        miniscript::{Descriptor, Miniscript, descriptor::TapTree, policy::Concrete},
     },
     std::{str::FromStr, sync::Arc},
 };
-
-use bdk_wallet::bitcoin::Network;
 
 #[cfg(feature = "compiler")]
 const NUMS_UNSPENDABLE_KEY_HEX: &str =
     "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
 
-/// Handle the top-level `descriptor` command
-pub fn handle_descriptor_command(
-    network: Network,
-    desc_type: String,
+#[derive(Parser, Debug, Clone, PartialEq)]
+pub struct DescriptorCommand {
+    /// Descriptor type (script type)
+    #[arg(
+            long = "type",
+            short = 't',
+            value_parser = ["pkh", "wpkh", "sh", "wsh", "tr"],
+            default_value = "wsh"
+        )]
+    pub(crate) desc_type: String,
+
+    /// Optional key: xprv, xpub, or mnemonic phrase
     key: Option<String>,
-    pretty: bool,
-) -> Result<String, Error> {
-    let result = match key {
-        Some(key) => {
-            if is_mnemonic(&key) {
-                // User provided mnemonic
-                generate_descriptor_from_mnemonic(&key, network, &desc_type)
-            } else {
-                // User provided xprv/xpub
-                generate_descriptors(&desc_type, &key, network)
+}
+impl AppCommand for DescriptorCommand {
+    type Output = DescriptorResult;
+
+    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
+        match &self.key {
+            Some(key) => {
+                if is_mnemonic(key) {
+                    generate_descriptor_from_mnemonic(key, ctx.network, &self.desc_type)
+                } else {
+                    generate_descriptors(&self.desc_type, key, ctx.network)
+                }
             }
+            None => generate_descriptor_with_mnemonic(ctx.network, &self.desc_type),
         }
-        // Generate new mnemonic and descriptors
-        None => generate_descriptor_with_mnemonic(network, &desc_type),
-    }?;
-    result.format(pretty)
+    }
 }
 
-/// Handle the miniscript compiler sub-command
-///
-/// Compiler options are described in [`CliSubCommand::Compile`].
 #[cfg(feature = "compiler")]
-pub(crate) fn handle_compile_subcommand(
-    _network: Network,
+#[derive(Parser, Debug, Clone, PartialEq)]
+pub struct CompileCommand {
+    /// Sets the spending policy to compile.
+    #[arg(env = "POLICY", required = true, index = 1)]
     policy: String,
+    /// Sets the script type used to embed the compiled policy.
+    #[arg(env = "TYPE", short = 't', long = "type", default_value = "wsh", value_parser = ["sh","wsh", "sh-wsh", "tr"]
+        )]
     script_type: String,
-    pretty: bool,
-) -> Result<String, Error> {
-    let policy = Concrete::<String>::from_str(policy.as_str())?;
-    let legacy_policy: Miniscript<String, Legacy> = policy
-        .compile()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-    let segwit_policy: Miniscript<String, Segwitv0> = policy
-        .compile()
-        .map_err(|e| Error::Generic(e.to_string()))?;
-    let taproot_policy: Miniscript<String, Tap> = policy
-        .compile()
-        .map_err(|e| Error::Generic(e.to_string()))?;
+}
 
-    let descriptor = match script_type.as_str() {
-        "sh" => Descriptor::new_sh(legacy_policy),
-        "wsh" => Descriptor::new_wsh(segwit_policy),
-        "sh-wsh" => Descriptor::new_sh_wsh(segwit_policy),
-        "tr" => {
-            // For tr descriptors, we use a well-known unspendable key (NUMS point).
-            // This ensures the key path is effectively disabled and only script path can be used.
-            // See https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#constructing-and-spending-taproot-outputs
+#[cfg(feature = "compiler")]
+impl AppCommand for CompileCommand {
+    type Output = DescriptorResult;
 
-            let xonly_public_key = XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)
-                .map_err(|e| Error::Generic(format!("Invalid NUMS key: {e}")))?;
+    fn execute(&self, _ctx: &mut AppContext) -> Result<Self::Output, Error> {
+        let policy: Concrete<String> = Concrete::from_str(&self.policy)
+            .map_err(|e| Error::Generic(format!("Invalid policy: {e}")))?;
 
-            let tree = TapTree::Leaf(Arc::new(taproot_policy));
-            Descriptor::new_tr(xonly_public_key.to_string(), Some(tree))
-        }
-        _ => {
-            return Err(Error::Generic(
-                "Invalid script type. Supported types: sh, wsh, sh-wsh, tr".to_string(),
-            ));
-        }
-    }?;
-    let result = DescriptorResult {
-        descriptor: Some(descriptor.to_string()),
-        multipath_descriptor: None,
-        public_descriptors: None,
-        private_descriptors: None,
-        mnemonic: None,
-        fingerprint: None,
-    };
-    result.format(pretty)
+        let legacy_policy: Miniscript<String, bdk_wallet::miniscript::Legacy> = policy
+            .compile()
+            .map_err(|e| Error::Generic(e.to_string()))?;
+        let segwit_policy: Miniscript<String, bdk_wallet::miniscript::Segwitv0> = policy
+            .compile()
+            .map_err(|e| Error::Generic(e.to_string()))?;
+        let taproot_policy: Miniscript<String, bdk_wallet::miniscript::Tap> = policy
+            .compile()
+            .map_err(|e| Error::Generic(e.to_string()))?;
+
+        let descriptor = match self.script_type.as_str() {
+            "sh" => Descriptor::new_sh(legacy_policy),
+            "wsh" => Descriptor::new_wsh(segwit_policy),
+            "sh-wsh" => Descriptor::new_sh_wsh(segwit_policy),
+            "tr" => {
+                let xonly_public_key = XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)
+                    .map_err(|e| Error::Generic(format!("Invalid NUMS key: {e}")))?;
+                let tree = TapTree::Leaf(Arc::new(taproot_policy));
+                Descriptor::new_tr(xonly_public_key.to_string(), Some(tree))
+            }
+            _ => {
+                return Err(Error::Generic(
+                    "Invalid script type. Supported: sh, wsh, sh-wsh, tr".into(),
+                ));
+            }
+        }?;
+
+        Ok(DescriptorResult {
+            descriptor: Some(descriptor.to_string()),
+            mnemonic: None,
+            multipath_descriptor: None,
+            public_descriptors: None,
+            private_descriptors: None,
+            fingerprint: None,
+        })
+    }
 }
