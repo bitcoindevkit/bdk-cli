@@ -14,8 +14,6 @@ use bdk_wallet::keys::{DescriptorKey, ExtendedKey, GeneratedKey};
 use bdk_wallet::miniscript::{self, Segwitv0};
 use clap::Parser;
 
-
-
 impl KeySubCommand {
     pub fn execute(&self, ctx: &mut AppContext) -> Result<(), Error> {
         match self {

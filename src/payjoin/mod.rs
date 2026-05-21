@@ -117,12 +117,12 @@ impl<'a> PayjoinManager<'a> {
         Ok(to_string_pretty(&json!({}))?)
     }
 
-    // #[cfg(any(
-    //     feature = "electrum",
-    //     feature = "esplora",
-    //     feature = "rpc",
-    //     feature = "cbf"
-    // ))]
+    #[cfg(any(
+        feature = "electrum",
+        feature = "esplora",
+        feature = "rpc",
+        feature = "cbf"
+    ))]
     pub async fn send_payjoin(
         &mut self,
         uri: String,

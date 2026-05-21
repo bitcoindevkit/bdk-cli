@@ -19,7 +19,8 @@ use bdk_wallet::{
 };
 
 use crate::error::BDKCliError as Error;
-use crate::handlers::types::{DescriptorResult, KeychainPair};
+use crate::utils::types::DescriptorResult;
+use crate::utils::types::KeychainPair;
 
 pub fn generate_descriptors(
     desc_type: &str,

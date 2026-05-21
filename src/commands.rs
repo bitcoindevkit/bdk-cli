@@ -24,9 +24,6 @@ use crate::handlers::{
         FinalizePsbtCommand, NewAddressCommand, PoliciesCommand, PublicDescriptorCommand,
         SignCommand, TransactionsCommand, UnspentCommand, UnusedAddressCommand,
     },
-    online::{
-        BroadcastCommand, FullScanCommand, ReceivePayjoinCommand, SendPayjoinCommand, SyncCommand,
-    },
 };
 
 #[cfg(any(
@@ -35,7 +32,12 @@ use crate::handlers::{
     feature = "rpc",
     feature = "cbf"
 ))]
-use crate::client::ClientType;
+use crate::{
+    client::ClientType,
+    online::{
+        BroadcastCommand, FullScanCommand, ReceivePayjoinCommand, SendPayjoinCommand, SyncCommand,
+    },
+};
 
 #[cfg(feature = "compiler")]
 use crate::handlers::descriptor::CompileCommand;
@@ -46,7 +48,7 @@ use bdk_wallet::bitcoin::Network;
 use clap::{Args, Parser, Subcommand, value_parser};
 use clap_complete::Shell;
 
-// #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
 
 /// The BDK Command Line Wallet App
@@ -197,8 +199,8 @@ pub enum WalletSubCommand {
     #[cfg(any(
         feature = "electrum",
         feature = "esplora",
-        feature = "rpc",
-        feature = "cbf"
+        feature = "cbf",
+        feature = "rpc"
     ))]
     #[command(flatten)]
     OnlineWalletSubCommand(OnlineWalletSubCommand),
@@ -269,7 +271,7 @@ pub struct WalletOpts {
 }
 
 /// Options to configure a SOCKS5 proxy for a blockchain client connection.
-// #[cfg(any(feature = "electrum", feature = "esplora"))]
+#[cfg(any(feature = "electrum", feature = "esplora"))]
 #[derive(Debug, Args, Clone, PartialEq, Eq)]
 pub struct ProxyOpts {
     /// Sets the SOCKS5 proxy for a blockchain client.
@@ -295,7 +297,7 @@ pub struct ProxyOpts {
 }
 
 /// Options to configure a BIP157 Compact Filter backend.
-// #[cfg(feature = "cbf")]
+#[cfg(feature = "cbf")]
 #[derive(Debug, Args, Clone, PartialEq, Eq)]
 pub struct CompactFilterOpts {
     /// Sets the number of parallel node connections.
@@ -336,46 +338,21 @@ pub enum OfflineWalletSubCommand {
     CombinePsbt(CombinePsbtCommand),
     /// Sign a message using BIP322
     #[cfg(feature = "bip322")]
-    // SignMessage {
-    //     /// The message to sign
-    //     #[arg(long)]
-    //     message: String,
-    //     /// The signature format (e.g., Legacy, Simple, Full)
-    //     #[arg(long, default_value = "simple")]
-    //     signature_type: String,
-    //     /// Address to sign
-    //     #[arg(long)]
-    //     address: String,
-    //     /// Optional list of specific UTXOs for proof-of-funds (only for `FullWithProofOfFunds`)
-    //     #[arg(long)]
-    //     utxos: Option<Vec<OutPoint>>,
-    // },
     SignMessage(SignMessageCommand),
     /// Verify a BIP322 signature
     #[cfg(feature = "bip322")]
-    // VerifyMessage {
-    //     /// The signature proof to verify
-    //     #[arg(long)]
-    //     proof: String,
-    //     /// The message that was signed
-    //     #[arg(long)]
-    //     message: String,
-    //     /// The address associated with the signature
-    //     #[arg(long)]
-    //     address: String,
-    // },
     VerifyMessage(VerifyMessageCommand),
 }
 
 /// Wallet subcommands that needs a blockchain backend.
 #[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
 #[command(rename_all = "snake")]
-// #[cfg(any(
-//     feature = "electrum",
-//     feature = "esplora",
-//     feature = "cbf",
-//     feature = "rpc"
-// ))]
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
 pub enum OnlineWalletSubCommand {
     /// Full Scan with the chosen blockchain server.
     FullScan(FullScanCommand),
@@ -384,41 +361,8 @@ pub enum OnlineWalletSubCommand {
     /// Broadcasts a transaction to the network. Takes either a raw transaction or a PSBT to extract.
     Broadcast(BroadcastCommand),
     /// Generates a Payjoin receive URI and processes the sender's Payjoin proposal.
-    // ReceivePayjoin {
-    //     /// Amount to be received in sats.
-    //     #[arg(env = "PAYJOIN_AMOUNT", long = "amount", required = true)]
-    //     amount: u64,
-    //     /// Payjoin directory which will be used to store the PSBTs which are pending action
-    //     /// from one of the parties.
-    //     #[arg(env = "PAYJOIN_DIRECTORY", long = "directory", required = true)]
-    //     directory: String,
-    //     /// URL of the Payjoin OHTTP relay. Can be repeated multiple times to attempt the
-    //     /// operation with multiple relays for redundancy.
-    //     #[arg(env = "PAYJOIN_OHTTP_RELAY", long = "ohttp_relay", required = true)]
-    //     ohttp_relay: Vec<String>,
-    //     /// Maximum effective fee rate the receiver is willing to pay for their own input/output contributions.
-    //     #[arg(env = "PAYJOIN_RECEIVER_MAX_FEE_RATE", long = "max_fee_rate")]
-    //     max_fee_rate: Option<u64>,
-    // },
     ReceivePayjoin(ReceivePayjoinCommand),
     /// Sends an original PSBT to a BIP 21 URI and broadcasts the returned Payjoin PSBT.
-    // SendPayjoin {
-    //     /// BIP 21 URI for the Payjoin.
-    //     #[arg(env = "PAYJOIN_URI", long = "uri", required = true)]
-    //     uri: String,
-    //     /// URL of the Payjoin OHTTP relay. Can be repeated multiple times to attempt the
-    //     /// operation with multiple relays for redundancy.
-    //     #[arg(env = "PAYJOIN_OHTTP_RELAY", long = "ohttp_relay", required = true)]
-    //     ohttp_relay: Vec<String>,
-    //     /// Fee rate to use in sat/vbyte.
-    //     #[arg(
-    //         env = "PAYJOIN_SENDER_FEE_RATE",
-    //         short = 'f',
-    //         long = "fee_rate",
-    //         required = true
-    //     )]
-    //     fee_rate: u64,
-    // },
     SendPayjoin(SendPayjoinCommand),
 }
 

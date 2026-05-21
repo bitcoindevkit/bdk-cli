@@ -1,11 +1,13 @@
+use clap::Parser;
+
 #[cfg(feature = "electrum")]
-use crate::backend::BlockchainClient::Electrum;
-#[cfg(feature = "cbf")]
-use crate::backend::BlockchainClient::KyotoClient;
+use crate::client::BlockchainClient::Electrum;
 #[cfg(feature = "rpc")]
-use crate::backend::BlockchainClient::RpcClient;
+use crate::client::BlockchainClient::RpcClient;
+#[cfg(feature = "cbf")]
+use crate::client::{BlockchainClient::KyotoClient, sync_kyoto_client};
 #[cfg(feature = "esplora")]
-use {crate::backend::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
+use {crate::client::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
 #[cfg(feature = "rpc")]
 use {
     bdk_bitcoind_rpc::{Emitter, NO_EXPECTED_MEMPOOL_TXS, bitcoincore_rpc::RpcApi},
@@ -21,168 +23,52 @@ use {bdk_wallet::KeychainKind, std::collections::HashSet, std::io::Write};
     feature = "rpc"
 ))]
 use {
-    crate::backend::{BlockchainClient, sync_kyoto_client},
-    crate::commands::OnlineWalletSubCommand::*,
+    crate::commands::OnlineWalletSubCommand,
     crate::error::BDKCliError as Error,
-    crate::payjoin::PayjoinManager,
-    crate::payjoin::ohttp::RelayManager,
+    crate::handlers::{AppContext, AsyncCommand},
+    crate::payjoin::{PayjoinManager, ohttp::RelayManager},
     crate::utils::is_final,
-    bdk_wallet::Wallet,
+    crate::utils::output::FormatOutput,
+    crate::utils::types::{StatusResult, TransactionResult},
     bdk_wallet::bitcoin::{
-        Psbt, Transaction, Txid, base64::Engine, base64::prelude::BASE64_STANDARD,
-        consensus::Decodable, hex::FromHex,
+        Psbt, Transaction, base64::Engine, base64::prelude::BASE64_STANDARD, consensus::Decodable,
+        hex::FromHex,
     },
-    serde_json::json,
     std::sync::{Arc, Mutex},
 };
-
-/// Execute an online wallet sub-command
-///
-/// Online wallet sub-commands are described in [`OnlineWalletSubCommand`].
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
     feature = "cbf",
     feature = "rpc"
 ))]
-pub(crate) async fn handle_online_wallet_subcommand(
-    wallet: &mut Wallet,
-    client: &BlockchainClient,
-    online_subcommand: crate::commands::OnlineWalletSubCommand,
-) -> Result<String, Error> {
-    match online_subcommand {
-        FullScan {
-            stop_gap: _stop_gap,
-        } => {
-            #[cfg(any(feature = "electrum", feature = "esplora"))]
-            let request = wallet.start_full_scan().inspect({
-                let mut stdout = std::io::stdout();
-                let mut once = HashSet::<KeychainKind>::new();
-                move |k, spk_i, _| {
-                    if once.insert(k) {
-                        print!("\nScanning keychain [{k:?}]");
-                    }
-                    print!(" {spk_i:<3}");
-                    stdout.flush().expect("must flush");
-                }
-            });
-            match client {
-                #[cfg(feature = "electrum")]
-                Electrum { client, batch_size } => {
-                    // Populate the electrum client's transaction cache so it doesn't re-download transaction we
-                    // already have.
-                    client
-                        .populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
-
-                    let update = client.full_scan(request, _stop_gap, *batch_size, false)?;
-                    wallet.apply_update(update)?;
-                }
-                #[cfg(feature = "esplora")]
-                Esplora {
-                    client,
-                    parallel_requests,
-                } => {
-                    let update = client
-                        .full_scan(request, _stop_gap, *parallel_requests)
-                        .await
-                        .map_err(|e| *e)?;
-                    wallet.apply_update(update)?;
-                }
-
-                #[cfg(feature = "rpc")]
-                RpcClient { client } => {
-                    let blockchain_info = client.get_blockchain_info()?;
-
-                    let genesis_block =
-                        bdk_wallet::bitcoin::constants::genesis_block(wallet.network());
-                    let genesis_cp = CheckPoint::new(BlockId {
-                        height: 0,
-                        hash: genesis_block.block_hash(),
-                    });
-                    let mut emitter = Emitter::new(
-                        client.as_ref(),
-                        genesis_cp.clone(),
-                        genesis_cp.height(),
-                        NO_EXPECTED_MEMPOOL_TXS,
-                    );
-
-                    while let Some(block_event) = emitter.next_block()? {
-                        if block_event.block_height() % 10_000 == 0 {
-                            let percent_done = f64::from(block_event.block_height())
-                                / f64::from(blockchain_info.headers as u32)
-                                * 100f64;
-                            println!(
-                                "Applying block at height: {}, {:.2}% done.",
-                                block_event.block_height(),
-                                percent_done
-                            );
-                        }
-
-                        wallet.apply_block_connected_to(
-                            &block_event.block,
-                            block_event.block_height(),
-                            block_event.connected_to(),
-                        )?;
-                    }
-
-                    let mempool_txs = emitter.mempool()?;
-                    wallet.apply_unconfirmed_txs(mempool_txs.update);
-                }
-                #[cfg(feature = "cbf")]
-                KyotoClient { client } => {
-                    sync_kyoto_client(wallet, client).await?;
-                }
+impl OnlineWalletSubCommand {
+    pub async fn execute(&self, ctx: &mut AppContext<'_>) -> Result<(), Error> {
+        match self {
+            OnlineWalletSubCommand::FullScan(full_scan_command) => {
+                full_scan_command.execute(ctx).await?.print()
             }
-            Ok(serde_json::to_string_pretty(&json!({}))?)
-        }
-        Sync => {
-            sync_wallet(client, wallet).await?;
-            Ok(serde_json::to_string_pretty(&json!({}))?)
-        }
-        Broadcast { psbt, tx } => {
-            let tx = match (psbt, tx) {
-                (Some(psbt), None) => {
-                    let psbt = BASE64_STANDARD
-                        .decode(psbt)
-                        .map_err(|e| Error::Generic(e.to_string()))?;
-                    let psbt: Psbt = Psbt::deserialize(&psbt)?;
-                    is_final(&psbt)?;
-                    psbt.extract_tx()?
-                }
-                (None, Some(tx)) => {
-                    let tx_bytes = Vec::<u8>::from_hex(&tx)?;
-                    Transaction::consensus_decode(&mut tx_bytes.as_slice())?
-                }
-                (Some(_), Some(_)) => panic!("Both `psbt` and `tx` options not allowed"),
-                (None, None) => panic!("Missing `psbt` and `tx` option"),
-            };
-            let txid = broadcast_transaction(client, tx).await?;
-            Ok(serde_json::to_string_pretty(&json!({ "txid": txid }))?)
-        }
-        ReceivePayjoin {
-            amount,
-            directory,
-            ohttp_relay,
-            max_fee_rate,
-        } => {
-            let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
-            let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);
-            return payjoin_manager
-                .receive_payjoin(amount, directory, max_fee_rate, ohttp_relay, client)
-                .await;
-        }
-        SendPayjoin {
-            uri,
-            ohttp_relay,
-            fee_rate,
-        } => {
-            let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
-            let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);
-            return payjoin_manager
-                .send_payjoin(uri, fee_rate, ohttp_relay, client)
-                .await;
+            OnlineWalletSubCommand::Sync(sync_command) => sync_command.execute(ctx).await?.print(),
+            OnlineWalletSubCommand::Broadcast(broadcast_command) => {
+                broadcast_command.execute(ctx).await?.print()
+            }
+            OnlineWalletSubCommand::ReceivePayjoin(receive_payjoin_command) => {
+                receive_payjoin_command.execute(ctx).await?.print()
+            }
+            OnlineWalletSubCommand::SendPayjoin(send_payjoin_command) => {
+                send_payjoin_command.execute(ctx).await?.print()
+            }
         }
     }
+}
+
+#[derive(Parser, Debug, PartialEq, Clone, Eq)]
+pub struct FullScanCommand {
+    /// Stop searching addresses for transactions after finding an unused gap of this length.
+    #[arg(env = "STOP_GAP", long = "scan-stop-gap", default_value = "20")]
+    stop_gap: usize,
+    // #[clap(long, default_value = "5")]
+    // pub parallel_request: usize,
 }
 
 #[cfg(any(
@@ -191,89 +77,220 @@ pub(crate) async fn handle_online_wallet_subcommand(
     feature = "cbf",
     feature = "rpc"
 ))]
-/// Syncs a given wallet using the blockchain client.
-pub async fn sync_wallet(client: &BlockchainClient, wallet: &mut Wallet) -> Result<(), Error> {
-    // #[cfg(any(feature = "electrum", feature = "esplora"))]
-    let request = wallet
-        .start_sync_with_revealed_spks()
-        .inspect(|item, progress| {
-            let pc = (100 * progress.consumed()) as f32 / progress.total() as f32;
-            eprintln!("[ SCANNING {pc:03.0}% ] {item}");
+impl AsyncCommand for FullScanCommand {
+    type Output = StatusResult;
+
+    async fn execute(&self, ctx: &mut AppContext<'_>) -> Result<Self::Output, Error> {
+        let wallet = ctx
+            .wallet
+            .as_deref_mut()
+            .ok_or(Error::Generic("Wallet required".into()))?;
+        let client = ctx
+            .client
+            .ok_or(Error::Generic("Online client required".into()))?;
+
+        #[cfg(any(feature = "electrum", feature = "esplora"))]
+        let request = wallet.start_full_scan().inspect({
+            let mut stdout = std::io::stdout();
+            let mut once = HashSet::<KeychainKind>::new();
+            move |k, spk_i, _| {
+                if once.insert(k) {
+                    print!("\nScanning keychain [{k:?}]");
+                }
+                print!(" {spk_i:<3}");
+                stdout.flush().expect("must flush");
+            }
         });
-    match client {
-        #[cfg(feature = "electrum")]
-        Electrum { client, batch_size } => {
-            // Populate the electrum client's transaction cache so it doesn't re-download transaction we
-            // already have.
-            client.populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
 
-            let update = client.sync(request, *batch_size, false)?;
-            wallet
-                .apply_update(update)
-                .map_err(|e| Error::Generic(e.to_string()))
-        }
-        #[cfg(feature = "esplora")]
-        Esplora {
-            client,
-            parallel_requests,
-        } => {
-            let update = client
-                .sync(request, *parallel_requests)
-                .await
-                .map_err(|e| *e)?;
-            wallet
-                .apply_update(update)
-                .map_err(|e| Error::Generic(e.to_string()))
-        }
-        #[cfg(feature = "rpc")]
-        RpcClient { client } => {
-            let blockchain_info = client.get_blockchain_info()?;
-            let wallet_cp = wallet.latest_checkpoint();
-
-            // reload the last 200 blocks in case of a reorg
-            let emitter_height = wallet_cp.height().saturating_sub(200);
-            let mut emitter = Emitter::new(
-                client.as_ref(),
-                wallet_cp,
-                emitter_height,
-                wallet
-                    .tx_graph()
-                    .list_canonical_txs(
-                        wallet.local_chain(),
-                        wallet.local_chain().tip().block_id(),
-                        CanonicalizationParams::default(),
-                    )
-                    .filter(|tx| tx.chain_position.is_unconfirmed()),
-            );
-
-            while let Some(block_event) = emitter.next_block()? {
-                if block_event.block_height() % 10_000 == 0 {
-                    let percent_done = f64::from(block_event.block_height())
-                        / f64::from(blockchain_info.headers as u32)
-                        * 100f64;
-                    println!(
-                        "Applying block at height: {}, {:.2}% done.",
-                        block_event.block_height(),
-                        percent_done
-                    );
-                }
-
-                wallet.apply_block_connected_to(
-                    &block_event.block,
-                    block_event.block_height(),
-                    block_event.connected_to(),
-                )?;
+        match client {
+            #[cfg(feature = "electrum")]
+            Electrum { client, batch_size } => {
+                client.populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
+                let update = client.full_scan(request, self.stop_gap, *batch_size, false)?;
+                wallet.apply_update(update)?;
             }
 
-            let mempool_txs = emitter.mempool()?;
-            wallet.apply_unconfirmed_txs(mempool_txs.update);
-            Ok(())
+            #[cfg(feature = "esplora")]
+            Esplora {
+                client,
+                parallel_requests,
+            } => {
+                let update = client
+                    .full_scan(request, self.stop_gap, *parallel_requests)
+                    .await
+                    .map_err(|e| *e)?;
+                wallet.apply_update(update)?;
+            }
+            #[cfg(feature = "rpc")]
+            RpcClient { client } => {
+                let blockchain_info = client.get_blockchain_info()?;
+
+                let genesis_block = bdk_wallet::bitcoin::constants::genesis_block(wallet.network());
+                let genesis_cp = CheckPoint::new(BlockId {
+                    height: 0,
+                    hash: genesis_block.block_hash(),
+                });
+                let mut emitter = Emitter::new(
+                    client.as_ref(),
+                    genesis_cp.clone(),
+                    genesis_cp.height(),
+                    NO_EXPECTED_MEMPOOL_TXS,
+                );
+
+                while let Some(block_event) = emitter.next_block()? {
+                    if block_event.block_height() % 10_000 == 0 {
+                        let percent_done = f64::from(block_event.block_height())
+                            / f64::from(blockchain_info.headers as u32)
+                            * 100f64;
+                        println!(
+                            "Applying block at height: {}, {:.2}% done.",
+                            block_event.block_height(),
+                            percent_done
+                        );
+                    }
+
+                    wallet.apply_block_connected_to(
+                        &block_event.block,
+                        block_event.block_height(),
+                        block_event.connected_to(),
+                    )?;
+                }
+
+                let mempool_txs = emitter.mempool()?;
+                wallet.apply_unconfirmed_txs(mempool_txs.update);
+            }
+
+            #[cfg(feature = "cbf")]
+            KyotoClient { client } => {
+                sync_kyoto_client(wallet, client).await?;
+            }
         }
-        #[cfg(feature = "cbf")]
-        KyotoClient { client } => sync_kyoto_client(wallet, client)
-            .await
-            .map_err(|e| Error::Generic(e.to_string())),
+        Ok(StatusResult::new("Full scan completed successfully."))
     }
+}
+
+#[derive(Parser, Debug, PartialEq, Eq, Clone)]
+pub struct SyncCommand {}
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+impl AsyncCommand for SyncCommand {
+    type Output = StatusResult;
+
+    async fn execute(&self, ctx: &mut AppContext<'_>) -> Result<Self::Output, Error> {
+        let wallet = ctx
+            .wallet
+            .as_deref_mut()
+            .ok_or(Error::Generic("Wallet required".to_string()))?;
+        let client = ctx
+            .client
+            .ok_or(Error::Generic("Client is required".to_string()))?;
+        #[cfg(any(feature = "electrum", feature = "esplora"))]
+        let request = wallet
+            .start_sync_with_revealed_spks()
+            .inspect(|item, progress| {
+                let pc = (100 * progress.consumed()) as f32 / progress.total() as f32;
+                eprintln!("[ SCANNING {pc:03.0}% ] {item}");
+            });
+
+        match client {
+            #[cfg(feature = "electrum")]
+            Electrum { client, batch_size } => {
+                // Populate the electrum client's transaction cache so it doesn't re-download transaction we
+                // already have.
+                client.populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
+
+                let update = client.sync(request, *batch_size, false)?;
+                wallet
+                    .apply_update(update)
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+            }
+            #[cfg(feature = "esplora")]
+            Esplora {
+                client,
+                parallel_requests,
+            } => {
+                let update = client
+                    .sync(request, *parallel_requests)
+                    .await
+                    .map_err(|e| *e)?;
+                wallet
+                    .apply_update(update)
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+            }
+            #[cfg(feature = "rpc")]
+            RpcClient { client } => {
+                let blockchain_info = client.get_blockchain_info()?;
+                let wallet_cp = wallet.latest_checkpoint();
+
+                let emitter_height = wallet_cp.height().saturating_sub(200);
+                let mut emitter = Emitter::new(
+                    client.as_ref(),
+                    wallet_cp,
+                    emitter_height,
+                    wallet
+                        .tx_graph()
+                        .list_canonical_txs(
+                            wallet.local_chain(),
+                            wallet.local_chain().tip().block_id(),
+                            CanonicalizationParams::default(),
+                        )
+                        .filter(|tx| tx.chain_position.is_unconfirmed()),
+                );
+
+                while let Some(block_event) = emitter.next_block()? {
+                    if block_event.block_height() % 10_000 == 0 {
+                        let percent_done = f64::from(block_event.block_height())
+                            / f64::from(blockchain_info.headers as u32)
+                            * 100f64;
+                        println!(
+                            "Applying block at height: {}, {:.2}% done.",
+                            block_event.block_height(),
+                            percent_done
+                        );
+                    }
+
+                    wallet.apply_block_connected_to(
+                        &block_event.block,
+                        block_event.block_height(),
+                        block_event.connected_to(),
+                    )?;
+                }
+
+                let mempool_txs = emitter.mempool()?;
+                wallet.apply_unconfirmed_txs(mempool_txs.update);
+            }
+            #[cfg(feature = "cbf")]
+            KyotoClient { client } => sync_kyoto_client(wallet, client)
+                .await
+                .map_err(|e| Error::Generic(e.to_string()))?,
+        }
+        Ok(StatusResult::new("Wallet synced successfully."))
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq, Eq)]
+pub struct BroadcastCommand {
+    /// Sets the PSBT to sign.
+    #[arg(
+        env = "BASE64_PSBT",
+        long = "psbt",
+        required_unless_present = "tx",
+        conflicts_with = "tx"
+    )]
+    psbt: Option<String>,
+    /// Sets the raw transaction to broadcast.
+    #[arg(
+        env = "RAWTX",
+        long = "tx",
+        required_unless_present = "psbt",
+        conflicts_with = "psbt"
+    )]
+    tx: Option<String>,
 }
 
 #[cfg(any(
@@ -282,46 +299,169 @@ pub async fn sync_wallet(client: &BlockchainClient, wallet: &mut Wallet) -> Resu
     feature = "cbf",
     feature = "rpc"
 ))]
-/// Broadcasts a given transaction using the blockchain client.
-pub async fn broadcast_transaction(
-    client: &BlockchainClient,
-    tx: Transaction,
-) -> Result<Txid, Error> {
-    match client {
-        #[cfg(feature = "electrum")]
-        Electrum {
-            client,
-            batch_size: _,
-        } => client
-            .transaction_broadcast(&tx)
-            .map_err(|e| Error::Generic(e.to_string())),
-        #[cfg(feature = "esplora")]
-        Esplora {
-            client,
-            parallel_requests: _,
-        } => client
-            .broadcast(&tx)
-            .await
-            .map(|()| tx.compute_txid())
-            .map_err(|e| Error::Generic(e.to_string())),
-        #[cfg(feature = "rpc")]
-        RpcClient { client } => client
-            .send_raw_transaction(&tx)
-            .map_err(|e| Error::Generic(e.to_string())),
 
-        #[cfg(feature = "cbf")]
-        KyotoClient { client } => {
-            let txid = tx.compute_txid();
-            let wtxid = client
-                .requester
-                .broadcast_random(tx.clone())
-                .await
-                .map_err(|_| {
-                    tracing::warn!("Broadcast was unsuccessful");
-                    Error::Generic("Transaction broadcast timed out after 30 seconds".into())
-                })?;
-            tracing::info!("Successfully broadcast WTXID: {wtxid}");
-            Ok(txid)
-        }
+impl AsyncCommand for BroadcastCommand {
+    type Output = TransactionResult;
+
+    async fn execute(&self, ctx: &mut AppContext<'_>) -> Result<Self::Output, Error> {
+        let client = ctx
+            .client
+            .ok_or(Error::Generic("Online client required".into()))?;
+
+        let tx = match (&self.psbt, &self.tx) {
+            (Some(psbt), None) => {
+                let psbt = BASE64_STANDARD
+                    .decode(psbt)
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+                let psbt: Psbt = Psbt::deserialize(&psbt)?;
+                is_final(&psbt)?;
+                psbt.extract_tx()?
+            }
+            (None, Some(tx)) => {
+                let tx_bytes = Vec::<u8>::from_hex(&tx)?;
+                Transaction::consensus_decode(&mut tx_bytes.as_slice())?
+            }
+            (Some(_), Some(_)) => {
+                return Err(Error::Generic(
+                    "Both `psbt` and `tx` options are not allowed".into(),
+                ));
+            }
+            (None, None) => {
+                return Err(Error::Generic(
+                    "Must provide either a `psbt` or `tx` to broadcast".into(),
+                ));
+            }
+        };
+
+        let txid = client.broadcast(tx).await?;
+
+        Ok(TransactionResult {
+            txid: txid.to_string(),
+        })
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq, Eq)]
+pub struct ReceivePayjoinCommand {
+    // /// The amount to receive in satoshis.
+    // pub amount: u64,
+
+    // /// The payjoin directory URL.
+    // #[clap(long)]
+    // pub directory: String,
+
+    // /// Optional OHTTP relay URLs for privacy.
+    // #[clap(long)]
+    // pub ohttp_relays: Vec<String>,
+
+    // /// Maximum fee rate in sat/vB to pay for the payjoin transaction.
+    // #[clap(long)]
+    // pub max_fee_rate: u64,
+    /// Amount to be received in sats.
+    #[arg(env = "PAYJOIN_AMOUNT", long = "amount", required = true)]
+    amount: u64,
+    /// Payjoin directory which will be used to store the PSBTs which are pending action
+    /// from one of the parties.
+    #[arg(env = "PAYJOIN_DIRECTORY", long = "directory", required = true)]
+    directory: String,
+    /// URL of the Payjoin OHTTP relay. Can be repeated multiple times to attempt the
+    /// operation with multiple relays for redundancy.
+    #[arg(env = "PAYJOIN_OHTTP_RELAY", long = "ohttp_relay", required = true)]
+    ohttp_relay: Vec<String>,
+    /// Maximum effective fee rate the receiver is willing to pay for their own input/output contributions.
+    #[arg(env = "PAYJOIN_RECEIVER_MAX_FEE_RATE", long = "max_fee_rate")]
+    max_fee_rate: Option<u64>,
+}
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+impl AsyncCommand for ReceivePayjoinCommand {
+    type Output = StatusResult;
+
+    async fn execute(&self, ctx: &mut AppContext<'_>) -> Result<Self::Output, Error> {
+        let wallet = ctx
+            .wallet
+            .as_deref_mut()
+            .ok_or(Error::Generic("Wallet required".into()))?;
+        let client = ctx
+            .client
+            .ok_or(Error::Generic("Online client required".into()))?;
+
+        let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
+        let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);
+        let result = payjoin_manager
+            .receive_payjoin(
+                self.amount,
+                self.directory.clone(),
+                self.max_fee_rate,
+                self.ohttp_relay.clone(),
+                client,
+            )
+            .await?;
+
+        Ok(StatusResult { message: result })
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq, Eq)]
+pub struct SendPayjoinCommand {
+    // /// The Payjoin URI string to send to.
+    // pub uri: String,
+
+    // /// Optional OHTTP relay URLs for privacy.
+    // #[clap(long)]
+    // pub ohttp_relays: Vec<String>,
+
+    // /// Fee rate in sat/vB for the transaction.
+    // #[clap(long, short)]
+    // pub fee_rate: u64,
+    /// BIP 21 URI for the Payjoin.
+    #[arg(env = "PAYJOIN_URI", long = "uri", required = true)]
+    uri: String,
+    /// URL of the Payjoin OHTTP relay. Can be repeated multiple times to attempt the
+    /// operation with multiple relays for redundancy.
+    #[arg(env = "PAYJOIN_OHTTP_RELAY", long = "ohttp_relay", required = true)]
+    ohttp_relay: Vec<String>,
+    /// Fee rate to use in sat/vbyte.
+    #[arg(
+        env = "PAYJOIN_SENDER_FEE_RATE",
+        short = 'f',
+        long = "fee_rate",
+        required = true
+    )]
+    fee_rate: u64,
+}
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+impl AsyncCommand for SendPayjoinCommand {
+    type Output = StatusResult;
+
+    async fn execute(&self, ctx: &mut AppContext<'_>) -> Result<Self::Output, Error> {
+        let wallet = ctx
+            .wallet
+            .as_deref_mut()
+            .ok_or(Error::Generic("Wallet required".into()))?;
+        let client = ctx.client.ok_or(Error::Generic("client required".into()))?;
+
+        let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
+        let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);
+        let result = payjoin_manager
+            .send_payjoin(
+                self.uri.clone(),
+                self.fee_rate,
+                self.ohttp_relay.clone(),
+                client,
+            )
+            .await?;
+
+        Ok(StatusResult { message: result })
     }
 }

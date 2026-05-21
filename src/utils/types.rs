@@ -65,7 +65,6 @@ pub struct UnspentDetails {
     pub is_spent: bool,
     pub derivation_index: u32,
     pub chain_position: serde_json::Value,
-
 }
 
 impl UnspentDetails {
@@ -196,15 +195,12 @@ pub struct TransactionResult {
 
 impl FormatOutput for TransactionResult {}
 
-
-
 /// Return type definition
 #[derive(Serialize)]
 #[serde(transparent)]
 pub struct WalletsListResult(pub HashMap<String, WalletConfigInner>);
 
 impl FormatOutput for WalletsListResult {}
-
 
 /// return type
 #[derive(Serialize)]
@@ -245,7 +241,6 @@ pub struct KeyResult {
 }
 
 impl FormatOutput for KeyResult {}
-
 
 /// Balance representation
 #[derive(Serialize)]

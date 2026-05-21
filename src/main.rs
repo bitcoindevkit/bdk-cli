@@ -169,7 +169,7 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
         }
         CliSubCommand::Repl { wallet: _ } => todo!(),
         CliSubCommand::Completions { shell } => {
-        shell;
+            shell;
         }
         #[cfg(feature = "compiler")]
         CliSubCommand::Compile(cmd) => {
