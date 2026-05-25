@@ -389,7 +389,7 @@ pub enum OfflineWalletSubCommand {
         dns_recipients: Vec<(String, u64)>,
         #[cfg(feature = "dns_payment")]
         /// Custom resolver DNS IP to be used for resolution.
-        #[arg(long = "dns_resolver", default_value = "8.8.8.8:53")]
+        #[arg(long = "dns_resolver", default_value = "8.8.8.8")]
         dns_resolver: String,
         /// Sends all the funds (or all the selected utxos). Requires only one recipient with value 0.
         #[arg(long = "send_all", short = 'a')]

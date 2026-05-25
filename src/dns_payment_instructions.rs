@@ -3,115 +3,58 @@ use bitcoin_payment_instructions::{
     FixedAmountPaymentInstructions, ParseError, PaymentInstructions, PaymentMethod,
     PaymentMethodType, amount, dns_resolver::DNSHrnResolver,
 };
-use cli_table::{Cell, Style, Table, format::Justify};
 use core::{net::SocketAddr, str::FromStr};
 
 use crate::{error::BDKCliError as Error, utils::shorten};
 
 #[derive(Debug)]
-pub struct Payment {
+pub struct ResolvedPaymentInfo {
+    pub hrn: String,
     pub payment_methods: Vec<PaymentMethod>,
+    pub description: Option<String>,
     pub min_amount: Option<Amount>,
     pub max_amount: Option<Amount>,
-    pub description: Option<String>,
-    pub expected_amount: Option<Amount>,
-    pub receiving_addr: Option<Address>,
-    pub hrn: String,
     pub notes: String,
 }
 
-impl Payment {
-    pub fn display(&self, pretty: bool) -> Result<String, Error> {
-        let mut methods: Vec<String> = Vec::new();
-        self.payment_methods.iter().for_each(|pm| match pm {
-            bitcoin_payment_instructions::PaymentMethod::LightningBolt11(bolt11) => {
-                methods.push(format!("Bolt 11 invoice ({})", shorten(bolt11, 20, 15)))
-            }
-            bitcoin_payment_instructions::PaymentMethod::LightningBolt12(offer) => {
-                methods.push(format!("Bolt 12 invoice ({})", shorten(offer, 20, 15)))
-            }
-            bitcoin_payment_instructions::PaymentMethod::OnChain(address) => {
-                methods.push(format!("On chain ({})", address))
-            }
-            bitcoin_payment_instructions::PaymentMethod::Cashu(csh) => {
-                methods.push(format!("Cashu payment ({})", shorten(csh, 20, 15)))
-            }
-        });
+impl ResolvedPaymentInfo {
+    pub fn display(&self) -> Result<String, Error> {
+        let methods: Vec<String> = self
+            .payment_methods
+            .iter()
+            .map(|pm| match pm {
+                PaymentMethod::LightningBolt11(bolt11) => {
+                    format!("Bolt 11 invoice ({})", shorten(bolt11, 20, 15))
+                }
+                PaymentMethod::LightningBolt12(offer) => format!("Bolt 12 invoice ({})", offer),
+                PaymentMethod::OnChain(address) => format!("On chain ({})", address),
+                PaymentMethod::Cashu(csh) => format!("Cashu payment ({})", csh),
+            })
+            .collect();
 
-        if pretty {
-            let mut table = vec![vec![
-                "HRN".cell().bold(true),
-                self.hrn.to_string().cell().justify(Justify::Right),
-            ]];
-
-            if let Some(min_amnt) = self.min_amount {
-                table.push(vec![
-                    "Min amount".cell().bold(true),
-                    min_amnt.to_string().cell().justify(Justify::Right),
-                ]);
-            }
-
-            if let Some(max_amnt) = self.max_amount {
-                table.push(vec![
-                    "Max amount".cell().bold(true),
-                    max_amnt.to_string().cell().justify(Justify::Right),
-                ]);
-            }
-
-            if let Some(send_amnt) = self.expected_amount {
-                table.push(vec![
-                    "Expected Amount to send".cell().bold(true),
-                    send_amnt.to_string().cell().justify(Justify::Right),
-                ]);
-            }
-
-            if let Some(descr) = &self.description {
-                table.push(vec![
-                    "Description".cell().bold(true),
-                    descr.cell().justify(Justify::Right),
-                ]);
-            }
-
-            table.push(vec![
-                "Accepted methods".cell().bold(true),
-                methods.join(", ").cell().justify(Justify::Right),
-            ]);
-            table.push(vec![
-                "Notes".cell().bold(true),
-                self.notes.clone().cell().justify(Justify::Right),
-            ]);
-
-            let table = table
-                .table()
-                .display()
-                .map_err(|e| Error::Generic(e.to_string()))?;
-
-            Ok(format!("{table}"))
-        } else {
-            Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "hrn": self.hrn,
-                    "payment_methods": methods,
-                    "description": self.description,
-                    "min_amount": self.min_amount,
-                    "max_amount": self.max_amount,
-                    "expected_amount_to_send": self.expected_amount,
-                    "notes": self.notes
-            }))?)
-        }
+        Ok(serde_json::to_string_pretty(&serde_json::json!({
+                "hrn": self.hrn,
+                "payment_methods": methods,
+                "description": self.description,
+                "min_amount": self.min_amount,
+                "max_amount": self.max_amount,
+                "notes": self.notes
+        }))?)
     }
 }
+
 pub(crate) async fn parse_dns_instructions(
     hrn: &str,
     network: Network,
-    resolver_ip: String,
+    dns_resolver: &str,
 ) -> Result<(DNSHrnResolver, PaymentInstructions), ParseError> {
-    let ip_address = if resolver_ip.contains(':') {
-        resolver_ip
+    let ip_address = if dns_resolver.contains(':') {
+        dns_resolver
     } else {
-        format!("{resolver_ip}:53")
+        &format!("{dns_resolver}:53")
     };
 
-    let sock_addr = SocketAddr::from_str(&ip_address).map_err(|_| {
+    let sock_addr = SocketAddr::from_str(ip_address).map_err(|_| {
         ParseError::HrnResolutionError("Unable to create socket from provided address")
     })?;
     let resolver = DNSHrnResolver(sock_addr);
@@ -148,7 +91,7 @@ pub async fn process_instructions(
     amount_to_send: Amount,
     payment_instructions: &PaymentInstructions,
     resolver: DNSHrnResolver,
-) -> Result<Payment, Error> {
+) -> Result<(Address, Amount), Error> {
     match payment_instructions {
         PaymentInstructions::ConfigurableAmount(instructions) => {
             // Look for on chain payment method as it's the only one we can support
@@ -200,34 +143,10 @@ pub async fn process_instructions(
 
             let onchain_details = get_onchain_info(&fixed_instructions)?;
 
-            Ok(Payment {
-                payment_methods: vec![PaymentMethod::OnChain(onchain_details.clone().0)],
-                min_amount,
-                max_amount,
-                description: instructions.recipient_description().map(|s| s.to_string()),
-                expected_amount: Some(onchain_details.1),
-                receiving_addr: Some(onchain_details.0.clone()),
-                hrn: instructions.human_readable_name().unwrap().to_string(),
-                notes: "".to_string(),
-            })
+            Ok((onchain_details.0.clone(), onchain_details.1))
         }
 
-        PaymentInstructions::FixedAmount(instructions) => {
-            let onchain_info = get_onchain_info(instructions)?;
-
-            Ok(Payment {
-                payment_methods: vec![PaymentMethod::OnChain(onchain_info.clone().0)],
-                min_amount: None,
-                max_amount: instructions
-                    .max_amount()
-                    .map(|amnt| Amount::from_sat(amnt.milli_sats())),
-                description: instructions.recipient_description().map(|s| s.to_string()),
-                expected_amount: Some(onchain_info.1),
-                receiving_addr: Some(onchain_info.0),
-                notes: "".to_string(),
-                hrn: instructions.human_readable_name().unwrap().to_string(),
-            })
-        }
+        PaymentInstructions::FixedAmount(instructions) => Ok(get_onchain_info(instructions)?),
     }
 }
 
@@ -235,9 +154,9 @@ pub async fn process_instructions(
 pub async fn resolve_dns_recipient(
     hrn: &str,
     network: Network,
-    ip: String,
-) -> Result<Payment, ParseError> {
-    let (resolver, instructions) = parse_dns_instructions(hrn, network, ip).await?;
+    dns_resolver: &str,
+) -> Result<ResolvedPaymentInfo, ParseError> {
+    let (resolver, instructions) = parse_dns_instructions(hrn, network, dns_resolver).await?;
 
     match instructions {
         PaymentInstructions::ConfigurableAmount(ix) => {
@@ -251,15 +170,13 @@ pub async fn resolve_dns_recipient(
                 .await
                 .map_err(ParseError::InvalidInstructions)?;
 
-            let payment = Payment {
+            let payment = ResolvedPaymentInfo {
                 min_amount,
                 max_amount,
                 payment_methods: fixed_instructions.methods().into(),
                 description,
-                expected_amount: None,
-                receiving_addr: None,
                 hrn: hrn.to_string(),
-                notes: "This is configurable payment instructions. You must send an amount between min_amount and max_amount if set.".to_string()
+                notes: "This is configurable payment instructions. You must send an amount between min_amount and max_amount if set.".to_string(),
             };
 
             Ok(payment)
@@ -270,15 +187,13 @@ pub async fn resolve_dns_recipient(
                 .max_amount()
                 .map(|amnt| Amount::from_sat(amnt.milli_sats()));
 
-            let payment = Payment {
+            let payment = ResolvedPaymentInfo {
                 min_amount: None,
                 max_amount,
                 payment_methods: ix.methods().into(),
                 description: ix.recipient_description().map(|s| s.to_string()),
-                expected_amount: None,
-                receiving_addr: None,
                 hrn: hrn.to_string(),
-                notes: "This is a fixed payment instructions. You must send exactly the amount specified in max_amount.".to_string()
+                notes: "This is a fixed payment instructions. You must send exactly the amount specified in max_amount.".to_string(),
             };
 
             Ok(payment)

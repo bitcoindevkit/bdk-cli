@@ -13,7 +13,9 @@ use crate::commands::OfflineWalletSubCommand::*;
 use crate::commands::*;
 use crate::config::{WalletConfig, WalletConfigInner};
 #[cfg(feature = "dns_payment")]
-use crate::dns_payment_instructions::resolve_dns_recipient;
+use crate::dns_payment_instructions::{
+    parse_dns_instructions, process_instructions, resolve_dns_recipient,
+};
 use crate::error::BDKCliError as Error;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 use crate::persister::Persister;
@@ -563,20 +565,14 @@ pub async fn handle_offline_wallet_subcommand(
 
                 #[cfg(feature = "dns_payment")]
                 for recipient in dns_recipients {
-                    use crate::dns_payment_instructions::{
-                        parse_dns_instructions, process_instructions,
-                    };
                     let amount = Amount::from_sat(recipient.1);
-                    let (resolver, instructions) = parse_dns_instructions(
-                        &recipient.0,
-                        cli_opts.network,
-                        dns_resolver.clone(),
-                    )
-                    .await
-                    .map_err(|e| Error::Generic(format!("Parsing error occured {e:#?}")))?;
+                    let (resolver, instructions) =
+                        parse_dns_instructions(&recipient.0, cli_opts.network, &dns_resolver)
+                            .await
+                            .map_err(|e| Error::Generic(format!("Parsing error occured {e:#?}")))?;
                     let payment = process_instructions(amount, &instructions, resolver).await?;
 
-                    recipients.push((payment.receiving_addr.unwrap().into(), amount));
+                    recipients.push((payment.0.into(), payment.1));
                 }
 
                 tx_builder.set_recipients(recipients);
@@ -1396,16 +1392,15 @@ pub(crate) fn handle_compile_subcommand(
 
 #[cfg(feature = "dns_payment")]
 pub(crate) async fn handle_resolve_dns_recipient_command(
-    pretty: bool,
     hrn: &str,
-    resolver: String,
+    resolver: &str,
     network: Network,
 ) -> Result<String, Error> {
     let resolved = resolve_dns_recipient(hrn, network, resolver)
         .await
         .map_err(|e| Error::Generic(format!("{:?}", e)))?;
 
-    resolved.display(pretty)
+    resolved.display()
 }
 
 /// Handle wallets command to show all saved wallet configurations
@@ -1803,13 +1798,8 @@ pub(crate) async fn handle_command(cli_opts: CliOpts) -> Result<String, Error> {
 
         #[cfg(feature = "dns_payment")]
         CliSubCommand::ResolveDnsRecipient { hrn, resolver } => {
-            let res = handle_resolve_dns_recipient_command(
-                cli_opts.pretty,
-                &hrn,
-                resolver,
-                cli_opts.network,
-            )
-            .await?;
+            let res =
+                handle_resolve_dns_recipient_command(&hrn, &resolver, cli_opts.network).await?;
             Ok(res)
         }
     };
