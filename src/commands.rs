@@ -16,7 +16,6 @@
 #[cfg(feature = "silent-payments")]
 use {crate::utils::parse_sp_code_value_pairs, bdk_sp::encoding::SilentPaymentCode};
 
-
 use bdk_wallet::bitcoin::{
     Address, Network, OutPoint, ScriptBuf,
     bip32::{DerivationPath, Xpriv},

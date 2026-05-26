@@ -25,7 +25,6 @@ use crate::utils::*;
 #[cfg(feature = "redb")]
 use bdk_redb::Store as RedbStore;
 use bdk_wallet::bip39::{Language, Mnemonic};
-use bdk_wallet::bitcoin::ScriptBuf;
 use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::{
@@ -558,13 +557,14 @@ pub async fn handle_offline_wallet_subcommand(
                 }
             } else {
                 #[allow(unused_mut)]
-                let mut recipients: Vec<(ScriptBuf, Amount)> = recipients
+                let mut recipients: Vec<_> = recipients
                     .into_iter()
                     .map(|(script, amount)| (script, Amount::from_sat(amount)))
                     .collect();
 
                 #[cfg(feature = "dns_payment")]
                 for recipient in dns_recipients {
+                    println!("Resolving DNS instructions for recipient {}", recipient.0);
                     let amount = Amount::from_sat(recipient.1);
                     let (resolver, instructions) =
                         parse_dns_instructions(&recipient.0, cli_opts.network, &dns_resolver)
