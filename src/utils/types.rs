@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use crate::config::WalletConfigInner;
-use crate::utils::output::FormatOutput;
 use crate::utils::shorten;
 use bdk_wallet::Balance;
 use bdk_wallet::bitcoin::{
@@ -27,8 +26,6 @@ impl From<AddressInfo> for AddressResult {
     }
 }
 
-impl FormatOutput for AddressResult {}
-
 /// Represents the data for a single transaction
 #[derive(Serialize)]
 pub struct TransactionDetails {
@@ -48,13 +45,6 @@ pub struct TransactionDetails {
     #[serde(skip)]
     pub total_value: u64,
 }
-
-/// A wrapper type for a list of transactions.
-#[derive(Serialize)]
-#[serde(transparent)]
-pub struct TransactionListResult(pub Vec<TransactionDetails>);
-
-impl FormatOutput for TransactionListResult {}
 
 /// single UTXO
 #[derive(Serialize)]
@@ -99,13 +89,6 @@ impl UnspentDetails {
     }
 }
 
-/// Wrapper for the list of UTXOs
-#[derive(Serialize)]
-#[serde(transparent)]
-pub struct UnspentListResult(pub Vec<UnspentDetails>);
-
-impl FormatOutput for UnspentListResult {}
-
 #[derive(Serialize)]
 pub struct PsbtResult {
     pub psbt: String,
@@ -131,8 +114,6 @@ impl PsbtResult {
     }
 }
 
-impl FormatOutput for PsbtResult {}
-
 #[derive(Serialize)]
 pub struct RawPsbt {
     pub raw_tx: String,
@@ -146,18 +127,11 @@ impl RawPsbt {
     }
 }
 
-impl FormatOutput for RawPsbt {}
-
 #[derive(Serialize)]
 pub struct KeychainPair<T> {
     pub external: T,
     pub internal: T,
 }
-
-impl FormatOutput for KeychainPair<String> {}
-
-// Table formatting for JSON value pairs (used by Policies)
-impl FormatOutput for KeychainPair<serde_json::Value> {}
 
 #[derive(Serialize, Debug, Default)]
 pub struct MessageResult {
@@ -170,8 +144,6 @@ pub struct MessageResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proven_amount: Option<u64>,
 }
-
-impl FormatOutput for MessageResult {}
 
 #[derive(Serialize, Debug)]
 pub struct StatusResult {
@@ -186,21 +158,15 @@ impl StatusResult {
     }
 }
 
-impl FormatOutput for StatusResult {}
-
 #[derive(Serialize, Debug)]
 pub struct TransactionResult {
     pub txid: String,
 }
 
-impl FormatOutput for TransactionResult {}
-
 /// Return type definition
 #[derive(Serialize)]
 #[serde(transparent)]
 pub struct WalletsListResult(pub HashMap<String, WalletConfigInner>);
-
-impl FormatOutput for WalletsListResult {}
 
 /// return type
 #[derive(Serialize)]
@@ -224,8 +190,6 @@ pub struct DescriptorResult {
     pub fingerprint: Option<String>,
 }
 
-impl FormatOutput for DescriptorResult {}
-
 #[derive(Serialize)]
 pub struct KeyResult {
     pub xprv: String,
@@ -239,8 +203,6 @@ pub struct KeyResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fingerprint: Option<String>,
 }
-
-impl FormatOutput for KeyResult {}
 
 /// Balance representation
 #[derive(Serialize)]
@@ -263,5 +225,3 @@ impl From<Balance> for BalanceResult {
         }
     }
 }
-
-impl FormatOutput for BalanceResult {}

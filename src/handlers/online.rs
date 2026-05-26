@@ -46,17 +46,24 @@ impl OnlineWalletSubCommand {
     pub async fn execute(&self, ctx: &mut AppContext<'_>) -> Result<(), Error> {
         match self {
             OnlineWalletSubCommand::FullScan(full_scan_command) => {
-                full_scan_command.execute(ctx).await?.print()
+                let response: StatusResult = full_scan_command.execute(ctx).await?;
+                response.write_out(std::io::stdout())
             }
-            OnlineWalletSubCommand::Sync(sync_command) => sync_command.execute(ctx).await?.print(),
+            OnlineWalletSubCommand::Sync(sync_command) => {
+                let response: StatusResult = sync_command.execute(ctx).await?;
+                response.write_out(std::io::stdout())
+            }
             OnlineWalletSubCommand::Broadcast(broadcast_command) => {
-                broadcast_command.execute(ctx).await?.print()
+                let response: TransactionResult = broadcast_command.execute(ctx).await?;
+                response.write_out(std::io::stdout())
             }
             OnlineWalletSubCommand::ReceivePayjoin(receive_payjoin_command) => {
-                receive_payjoin_command.execute(ctx).await?.print()
+                let response: StatusResult = receive_payjoin_command.execute(ctx).await?;
+                response.write_out(std::io::stdout())
             }
             OnlineWalletSubCommand::SendPayjoin(send_payjoin_command) => {
-                send_payjoin_command.execute(ctx).await?.print()
+                let response: StatusResult = send_payjoin_command.execute(ctx).await?;
+                response.write_out(std::io::stdout())
             }
         }
     }
@@ -299,7 +306,6 @@ pub struct BroadcastCommand {
     feature = "cbf",
     feature = "rpc"
 ))]
-
 impl AsyncCommand for BroadcastCommand {
     type Output = TransactionResult;
 

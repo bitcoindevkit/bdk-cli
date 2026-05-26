@@ -17,13 +17,15 @@ use clap::Parser;
 impl KeySubCommand {
     pub fn execute(&self, ctx: &mut AppContext) -> Result<(), Error> {
         match self {
-            KeySubCommand::Generate(generate_key_command) => {
-                generate_key_command.execute(ctx)?.print()
-            }
-            KeySubCommand::Restore(restore_key_command) => {
-                restore_key_command.execute(ctx)?.print()
-            }
-            KeySubCommand::Derive(derive_key_command) => derive_key_command.execute(ctx)?.print(),
+            KeySubCommand::Generate(generate_key_command) => generate_key_command
+                .execute(ctx)?
+                .write_out(std::io::stdout()),
+            KeySubCommand::Restore(restore_key_command) => restore_key_command
+                .execute(ctx)?
+                .write_out(std::io::stdout()),
+            KeySubCommand::Derive(derive_key_command) => derive_key_command
+                .execute(ctx)?
+                .write_out(std::io::stdout()),
         }
     }
 }

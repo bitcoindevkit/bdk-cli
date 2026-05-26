@@ -1,11 +1,11 @@
 use crate::commands::OfflineWalletSubCommand;
 use crate::error::BDKCliError as Error;
 use crate::handlers::{AppCommand, AppContext};
-use crate::utils::output::FormatOutput;
+use crate::utils::output::{FormatOutput, ListResult};
 use crate::utils::parse_address;
 use crate::utils::types::{
     AddressResult, BalanceResult, KeychainPair, PsbtResult, RawPsbt, TransactionDetails,
-    TransactionListResult, UnspentDetails, UnspentListResult,
+    UnspentDetails,
 };
 use crate::utils::{parse_outpoint, parse_recipient};
 use bdk_wallet::bitcoin::base64::Engine;
@@ -27,31 +27,47 @@ use {
 impl OfflineWalletSubCommand {
     pub fn execute(&self, ctx: &mut AppContext<'_>) -> Result<(), Error> {
         match self {
-            Self::NewAddress(new_address) => new_address.execute(ctx)?.print(),
-            Self::Balance(balance) => balance.execute(ctx)?.print(),
-            Self::UnusedAddress(unused_address_command) => {
-                unused_address_command.execute(ctx)?.print()
+            Self::NewAddress(new_address) => new_address.execute(ctx)?.write_out(std::io::stdout()),
+            Self::Balance(balance) => balance.execute(ctx)?.write_out(std::io::stdout()),
+            Self::UnusedAddress(unused_address_command) => unused_address_command
+                .execute(ctx)?
+                .write_out(std::io::stdout()),
+            Self::Unspent(unspent_command) => {
+                unspent_command.execute(ctx)?.write_out(std::io::stdout())
             }
-            Self::Unspent(unspent_command) => unspent_command.execute(ctx)?.print(),
-            Self::Transactions(transactions_command) => transactions_command.execute(ctx)?.print(),
-            Self::CreateTx(createtx_command) => createtx_command.execute(ctx)?.print(),
-            Self::BumpFee(bumpfee_command) => bumpfee_command.execute(ctx)?.print(),
-            Self::Policies(policies_command) => policies_command.execute(ctx)?.print(),
-            Self::PublicDescriptor(public_descriptor_command) => {
-                public_descriptor_command.execute(ctx)?.print()
+            Self::Transactions(transactions_command) => transactions_command
+                .execute(ctx)?
+                .write_out(std::io::stdout()),
+            Self::CreateTx(createtx_command) => {
+                createtx_command.execute(ctx)?.write_out(std::io::stdout())
             }
-            Self::Sign(sign_command) => sign_command.execute(ctx)?.print(),
-            Self::ExtractPsbt(extract_psbt_command) => extract_psbt_command.execute(ctx)?.print(),
-            Self::FinalizePsbt(finalize_psbt_command) => {
-                finalize_psbt_command.execute(ctx)?.print()
+            Self::BumpFee(bumpfee_command) => {
+                bumpfee_command.execute(ctx)?.write_out(std::io::stdout())
             }
-            Self::CombinePsbt(combine_psbt_command) => combine_psbt_command.execute(ctx)?.print(),
+            Self::Policies(policies_command) => {
+                policies_command.execute(ctx)?.write_out(std::io::stdout())
+            }
+            Self::PublicDescriptor(public_descriptor_command) => public_descriptor_command
+                .execute(ctx)?
+                .write_out(std::io::stdout()),
+            Self::Sign(sign_command) => sign_command.execute(ctx)?.write_out(std::io::stdout()),
+            Self::ExtractPsbt(extract_psbt_command) => extract_psbt_command
+                .execute(ctx)?
+                .write_out(std::io::stdout()),
+            Self::FinalizePsbt(finalize_psbt_command) => finalize_psbt_command
+                .execute(ctx)?
+                .write_out(std::io::stdout()),
+            Self::CombinePsbt(combine_psbt_command) => combine_psbt_command
+                .execute(ctx)?
+                .write_out(std::io::stdout()),
             #[cfg(feature = "bip322")]
-            Self::SignMessage(sign_message_command) => sign_message_command.execute(ctx)?.print(),
+            Self::SignMessage(sign_message_command) => sign_message_command
+                .execute(ctx)?
+                .write_out(std::io::stdout()),
             #[cfg(feature = "bip322")]
-            Self::VerifyMessage(verify_message_command) => {
-                verify_message_command.execute(ctx)?.print()
-            }
+            Self::VerifyMessage(verify_message_command) => verify_message_command
+                .execute(ctx)?
+                .write_out(std::io::stdout()),
         }
     }
 }
@@ -92,7 +108,7 @@ impl AppCommand for UnusedAddressCommand {
 pub struct UnspentCommand {}
 
 impl AppCommand for UnspentCommand {
-    type Output = UnspentListResult;
+    type Output = ListResult<UnspentDetails>;
 
     fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
         let wallet = ctx
@@ -104,7 +120,7 @@ impl AppCommand for UnspentCommand {
             .map(|utxo| UnspentDetails::from_local_output(&utxo, ctx.network))
             .collect();
 
-        Ok(UnspentListResult(utxos))
+        Ok(ListResult::new(utxos))
     }
 }
 
@@ -112,7 +128,7 @@ impl AppCommand for UnspentCommand {
 pub struct TransactionsCommand {}
 
 impl AppCommand for TransactionsCommand {
-    type Output = TransactionListResult;
+    type Output = ListResult<TransactionDetails>;
 
     fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
         let wallet = ctx
@@ -147,7 +163,7 @@ impl AppCommand for TransactionsCommand {
             })
             .collect();
 
-        Ok(TransactionListResult(txns))
+        Ok(ListResult::new(txns))
     }
 }
 

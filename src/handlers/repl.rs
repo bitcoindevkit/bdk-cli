@@ -1,6 +1,6 @@
 use bdk_wallet::{Wallet, bitcoin::Network};
 
-// #[cfg(feature = "repl")]
+#[cfg(feature = "repl")]
 use crate::handlers::{AppCommand, AppContext};
 use crate::utils::output::FormatOutput;
 
@@ -56,17 +56,20 @@ pub(crate) async fn respond(
             }
             WalletSubCommand::Config(config_cmd) => {
                 let mut ctx = AppContext::new(network, datadir);
-                let res = config_cmd
+                let _ = config_cmd
                     .execute(&mut ctx)
                     .map_err(|e| e.to_string())?
-                    .print();
+                    .write_out(std::io::stdout());
                 Some(())
             }
         },
 
         // Assuming your REPL Descriptor command is an inline struct based on commands.rs
         ReplSubCommand::Descriptor(cmd) => {
-            let value = cmd.execute(&mut ctx).map_err(|e| e.to_string())?.print();
+            let value = cmd
+                .execute(&mut ctx)
+                .map_err(|e| e.to_string())?
+                .write_out(std::io::stdout());
             Some(())
         }
 

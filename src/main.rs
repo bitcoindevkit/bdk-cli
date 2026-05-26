@@ -151,7 +151,7 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
 
                 let mut ctx = AppContext::new(cli_opts.network, home_dir);
 
-                config_cmd.execute(&mut ctx)?.print()?;
+                config_cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
             }
         },
 
@@ -161,11 +161,13 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
         }
         CliSubCommand::Descriptor(descriptor_command) => {
             let mut ctx = AppContext::new(cli_opts.network, home_dir);
-            descriptor_command.execute(&mut ctx)?.print()?;
+            descriptor_command
+                .execute(&mut ctx)?
+                .write_out(std::io::stdout())?;
         }
         CliSubCommand::Wallets(cmd) => {
             let mut ctx = AppContext::new(cli_opts.network, home_dir);
-            cmd.execute(&mut ctx)?.print()?;
+            cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
         }
         CliSubCommand::Repl { wallet: _ } => todo!(),
         CliSubCommand::Completions { shell } => {
@@ -174,7 +176,7 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
         #[cfg(feature = "compiler")]
         CliSubCommand::Compile(cmd) => {
             let mut ctx = AppContext::new(cli_opts.network, home_dir);
-            cmd.execute(&mut ctx)?.print()?;
+            cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
         }
     };
 

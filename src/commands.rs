@@ -34,7 +34,7 @@ use crate::handlers::{
 ))]
 use crate::{
     client::ClientType,
-    online::{
+    handlers::online::{
         BroadcastCommand, FullScanCommand, ReceivePayjoinCommand, SendPayjoinCommand, SyncCommand,
     },
 };
