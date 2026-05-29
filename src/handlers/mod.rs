@@ -17,66 +17,93 @@ use std::path::PathBuf;
 use crate::{error::BDKCliError as Error, utils::output::FormatOutput};
 use bdk_wallet::{Wallet, bitcoin::Network};
 
-/// The shared environment for all commands
-pub struct AppContext<'a> {
-    pub network: Network,
-    pub datadir: PathBuf,
-    pub wallet: Option<&'a mut Wallet>,
-    #[cfg(any(
-        feature = "electrum",
-        feature = "esplora",
-        feature = "rpc",
-        feature = "cbf"
-    ))]
-    pub client: Option<&'a BlockchainClient>,
+// The state for no wallet, no client.
+pub struct Init;
+
+/// Offline wallet operations.
+/// Requires only a wallet.
+pub struct OfflineOperations<'a> {
+    pub wallet: &'a mut Wallet,
 }
 
-impl<'a> AppContext<'a> {
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf"
+))]
+/// Online wallet operations.
+/// Requires a wallet and a client.
+pub struct OnlineOperations<'a> {
+    pub wallet: &'a mut Wallet,
+    pub client: &'a BlockchainClient,
+}
+
+/// The generic context
+pub struct AppContext<S> {
+    pub network: Network,
+    pub datadir: PathBuf,
+    pub state: S,
+}
+
+/// Construct for a specific state.
+impl AppContext<Init> {
     pub fn new(network: Network, datadir: PathBuf) -> Self {
         Self {
             network,
             datadir,
-            wallet: None,
-            #[cfg(any(
-                feature = "electrum",
-                feature = "esplora",
-                feature = "rpc",
-                feature = "cbf"
-            ))]
-            client: None,
+            state: Init,
         }
     }
+}
 
-    /// Attach a mutable wallet reference to the context.
-    pub fn with_wallet(mut self, wallet: &'a mut Wallet) -> Self {
-        self.wallet = Some(wallet);
-        self
-    }
-
-    /// Attach a client reference to the context.
-    #[cfg(any(
-        feature = "electrum",
-        feature = "esplora",
-        feature = "rpc",
-        feature = "cbf"
-    ))]
-    pub fn with_client(mut self, client: &'a BlockchainClient) -> Self {
-        self.client = Some(client);
-        self
+impl<'a> AppContext<OfflineOperations<'a>> {
+    pub fn new_offline_wallet(network: Network, datadir: PathBuf, wallet: &'a mut Wallet) -> Self {
+        Self {
+            network,
+            datadir,
+            state: OfflineOperations { wallet },
+        }
     }
 }
 
-pub trait AsyncCommand {
-    type Output: FormatOutput;
-    async fn execute(&self, ctx: &mut AppContext<'_>) -> Result<Self::Output, Error>;
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf"
+))]
+impl<'a> AppContext<OnlineOperations<'a>> {
+    pub fn new_online_wallet(
+        network: Network,
+        datadir: PathBuf,
+        wallet: &'a mut Wallet,
+        client: &'a BlockchainClient,
+    ) -> Self {
+        Self {
+            network,
+            datadir,
+            state: OnlineOperations { wallet, client },
+        }
+    }
 }
 
-/// The command trait
-pub trait AppCommand {
+pub trait AppCommand<C> {
     type Output: FormatOutput;
 
-    /// The execution logic
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error>;
+    fn execute(&self, ctx: &mut C) -> Result<Self::Output, Error>;
+}
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf"
+))]
+pub trait AsyncAppCommand<C> {
+    type Output: FormatOutput;
+    
+    async fn execute(&self, ctx: &mut C) -> Result<Self::Output, Error>;
 }
 
 // context for online and online

@@ -79,7 +79,7 @@ pub(crate) enum BlockchainClient {
 impl BlockchainClient {
     pub async fn broadcast(&self, tx: Transaction) -> Result<Txid, Error> {
         match self {
-            #[cfg(feature = "electrum")]
+            // #[cfg(feature = "electrum")]
             Self::Electrum { client, .. } => client
                 .transaction_broadcast(&tx)
                 .map_err(|e| Error::Generic(e.to_string())),

@@ -15,7 +15,6 @@ use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 use bdk_sp::encoding::SilentPaymentCode;
 
 use std::{
-    fmt::Display,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -48,18 +47,6 @@ pub(crate) fn is_final(psbt: &Psbt) -> Result<(), Error> {
         ));
     }
     Ok(())
-}
-
-pub(crate) fn shorten(displayable: impl Display, start: u8, end: u8) -> String {
-    let displayable = displayable.to_string();
-
-    if displayable.len() <= (start + end) as usize {
-        return displayable;
-    }
-
-    let start_str: &str = &displayable[0..start as usize];
-    let end_str: &str = &displayable[displayable.len() - end as usize..];
-    format!("{start_str}...{end_str}")
 }
 
 /// Parse the recipient (Address,Amount) argument from cli input.

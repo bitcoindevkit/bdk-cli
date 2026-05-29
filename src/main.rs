@@ -110,9 +110,8 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
 
                 let client = new_blockchain_client(&wallet_opts, &wallet, database_path)?;
 
-                let mut ctx = AppContext::new(network, home_dir)
-                    .with_wallet(&mut wallet)
-                    .with_client(&client);
+                let mut ctx =
+                    AppContext::new_online_wallet(network, home_dir, &mut wallet, &client);
 
                 online_cmd.execute(&mut ctx).await?;
             }
@@ -142,7 +141,7 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
 
                 let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
 
-                let mut ctx = AppContext::new(network, home_dir).with_wallet(&mut wallet);
+                let mut ctx = AppContext::new_offline_wallet(network, home_dir, &mut wallet);
 
                 offline_cmd.execute(&mut ctx)?;
             }
@@ -169,7 +168,86 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
             let mut ctx = AppContext::new(cli_opts.network, home_dir);
             cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
         }
-        CliSubCommand::Repl { wallet: _ } => todo!(),
+        CliSubCommand::Repl {
+            wallet: wallet_name,
+        } => {
+            #[cfg(feature = "repl")]
+            {
+                let (wallet_opts, network) = load_wallet_config(&home_dir, &wallet_name)?;
+                let database_path = prepare_wallet_db_dir(&home_dir, &wallet_name)?;
+
+                #[cfg(any(feature = "sqlite", feature = "redb"))]
+                let mut persister: Persister = match &wallet_opts.database_type {
+                    #[cfg(feature = "sqlite")]
+                    crate::persister::DatabaseType::Sqlite => {
+                        let db_file = database_path.join("wallet.sqlite");
+                        let connection = bdk_wallet::rusqlite::Connection::open(db_file)?;
+                        Persister::Connection(connection)
+                    }
+                    #[cfg(feature = "redb")]
+                    crate::persister::DatabaseType::Redb => {
+                        use crate::persister::Persister;
+                        let db = std::sync::Arc::new(bdk_redb::redb::Database::create(
+                            home_dir.join("wallet.redb"),
+                        )?);
+                        let store = RedbStore::new(db, wallet_name.clone())?;
+                        Persister::RedbStore(store)
+                    }
+                };
+
+                let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
+
+                #[cfg(any(
+                    feature = "electrum",
+                    feature = "esplora",
+                    feature = "rpc",
+                    feature = "cbf"
+                ))]
+                let client = Some(new_blockchain_client(&wallet_opts, &wallet, database_path)?);
+
+                println!(
+                    "Entering REPL mode for wallet '{}'. Type 'exit' to quit.",
+                    wallet_name
+                );
+
+                loop {
+                    let line = crate::handlers::repl::readline()?;
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+
+                    // Pass it to our newly refactored respond function
+                    let should_exit = crate::handlers::repl::respond(
+                        network,
+                        &mut wallet,
+                        #[cfg(any(
+                            feature = "electrum",
+                            feature = "esplora",
+                            feature = "rpc",
+                            feature = "cbf"
+                        ))]
+                        client.as_ref(), 
+                        &line,
+                        home_dir.clone(),
+                        &cli_opts,
+                    )
+                    .await
+                    .map_err(Error::Generic)?; 
+
+                    // Break the loop if the user typed `exit`
+                    if should_exit {
+                        break;
+                    }
+                }
+            }
+
+            #[cfg(not(feature = "repl"))]
+            {
+                return Err(Error::Generic(
+                    "The 'repl' feature is not enabled in this build.".into(),
+                ));
+            }
+        }
         CliSubCommand::Completions { shell } => {
             shell;
         }

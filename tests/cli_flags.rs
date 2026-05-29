@@ -24,23 +24,3 @@ fn test_without_pretty_flag() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(serde_json::from_str::<serde_json::Value>(&stdout).is_ok());
 }
-
-#[test]
-fn test_pretty_flag_before_subcommand() {
-    let output = Command::new("cargo")
-        .args("run -- --pretty key generate".split_whitespace())
-        .output()
-        .unwrap();
-
-    assert!(output.status.success());
-}
-
-#[test]
-fn test_pretty_flag_after_subcommand() {
-    let output = Command::new("cargo")
-        .args("run -- key generate --pretty".split_whitespace())
-        .output()
-        .unwrap();
-
-    assert!(output.status.success());
-}

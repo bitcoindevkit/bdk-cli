@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
 use crate::config::WalletConfigInner;
-use crate::utils::shorten;
 use bdk_wallet::Balance;
 use bdk_wallet::bitcoin::{
-    Address, Network, Psbt, Transaction, base64::Engine, consensus::encode::serialize_hex,
+    Network, Psbt, Transaction, base64::Engine, consensus::encode::serialize_hex,
 };
-use bdk_wallet::{AddressInfo, LocalOutput, chain::ChainPosition};
+use bdk_wallet::{AddressInfo, LocalOutput};
 use serde::Serialize;
 use serde_json::json;
 
@@ -58,24 +57,7 @@ pub struct UnspentDetails {
 }
 
 impl UnspentDetails {
-    pub fn from_local_output(utxo: &LocalOutput, network: Network) -> Self {
-        let height = utxo.chain_position.confirmation_height_upper_bound();
-        let height_display = height
-            .map(|h| h.to_string())
-            .unwrap_or_else(|| "Pending".to_string());
-
-        let (_, block_hash_display) = match &utxo.chain_position {
-            ChainPosition::Confirmed { anchor, .. } => {
-                let hash = anchor.block_id.hash.to_string();
-                (Some(hash.clone()), shorten(&hash, 8, 8))
-            }
-            ChainPosition::Unconfirmed { .. } => (None, "Unconfirmed".to_string()),
-        };
-
-        let address = Address::from_script(&utxo.txout.script_pubkey, network)
-            .map(|a| a.to_string())
-            .unwrap_or_else(|_| "Unknown Script".to_string());
-
+    pub fn from_local_output(utxo: &LocalOutput, _network: Network) -> Self {
         let outpoint_str = utxo.outpoint.to_string();
 
         Self {
@@ -133,6 +115,7 @@ pub struct KeychainPair<T> {
     pub internal: T,
 }
 
+#[cfg(feature = "bip322")]
 #[derive(Serialize, Debug, Default)]
 pub struct MessageResult {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -158,6 +141,12 @@ impl StatusResult {
     }
 }
 
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
 #[derive(Serialize, Debug)]
 pub struct TransactionResult {
     pub txid: String,
