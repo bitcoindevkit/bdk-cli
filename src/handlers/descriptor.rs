@@ -1,3 +1,4 @@
+use crate::handlers::Init;
 use crate::utils::types::DescriptorResult;
 use crate::{
     error::BDKCliError as Error,
@@ -38,10 +39,10 @@ pub struct DescriptorCommand {
     /// Optional key: xprv, xpub, or mnemonic phrase
     key: Option<String>,
 }
-impl AppCommand for DescriptorCommand {
+impl AppCommand<AppContext<Init>> for DescriptorCommand {
     type Output = DescriptorResult;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
+    fn execute(&self, ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
         match &self.key {
             Some(key) => {
                 if is_mnemonic(key) {
@@ -68,10 +69,10 @@ pub struct CompileCommand {
 }
 
 #[cfg(feature = "compiler")]
-impl AppCommand for CompileCommand {
+impl AppCommand<AppContext<Init>> for CompileCommand {
     type Output = DescriptorResult;
 
-    fn execute(&self, _ctx: &mut AppContext) -> Result<Self::Output, Error> {
+    fn execute(&self, _ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
         let policy: Concrete<String> = Concrete::from_str(&self.policy)
             .map_err(|e| Error::Generic(format!("Invalid policy: {e}")))?;
 

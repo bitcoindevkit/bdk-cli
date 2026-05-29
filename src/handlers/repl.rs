@@ -1,12 +1,21 @@
 use bdk_wallet::{Wallet, bitcoin::Network};
 
 #[cfg(feature = "repl")]
-use crate::handlers::{AppCommand, AppContext};
-use crate::utils::output::FormatOutput;
+use crate::handlers::AppCommand;
+#[cfg(feature = "repl")]
+use crate::{handlers::AppContext, utils::output::FormatOutput};
 
-#[cfg(feature = "sqlite")]
+#[cfg(feature = "repl")]
 use crate::commands::ReplSubCommand;
 use clap::Parser;
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf"
+))]
+use crate::client::BlockchainClient;
 #[cfg(feature = "repl")]
 use std::io::Write;
 use {
@@ -18,9 +27,16 @@ use {
 pub(crate) async fn respond(
     network: Network,
     wallet: &mut Wallet,
+    #[cfg(any(
+        feature = "electrum",
+        feature = "esplora",
+        feature = "rpc",
+        feature = "cbf"
+    ))]
+    client: Option<&BlockchainClient>,
     line: &str,
     datadir: std::path::PathBuf,
-    cli_opts: &CliOpts,
+    _cli_opts: &CliOpts,
 ) -> Result<bool, String> {
     let args = shlex::split(line).ok_or("error: Invalid quoting".to_string())?;
 
@@ -35,12 +51,14 @@ pub(crate) async fn respond(
         }
     };
 
-    let mut ctx = AppContext::new(network, datadir.clone()).with_wallet(&mut *wallet);
-
     let response = match repl_subcommand {
         ReplSubCommand::Wallet { subcommand } => match subcommand {
             WalletSubCommand::OfflineWalletSubCommand(cmd) => {
-                cmd.execute(&mut ctx).map_err(|e| e.to_string())?;
+                let mut ctx = AppContext::new_offline_wallet(network, datadir, wallet);
+                cmd.execute(&mut ctx)
+                    .map_err(|e| e.to_string())?
+                    .write_out(std::io::stdout())
+                    .map_err(|e| e.to_string())?;
                 Some(())
             }
             #[cfg(any(
@@ -50,35 +68,47 @@ pub(crate) async fn respond(
                 feature = "rpc"
             ))]
             WalletSubCommand::OnlineWalletSubCommand(cmd) => {
-                let value = cmd.execute(&mut ctx).await.map_err(|e| e.to_string())?;
+                let client_ref = client.ok_or("Online commands require a client.".to_string())?;
+                let mut ctx = AppContext::new_online_wallet(network, datadir, wallet, client_ref);
+
+                cmd.execute(&mut ctx)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .write_out(std::io::stdout())
+                    .map_err(|e| e.to_string())?;
                 Some(())
-                // Some(value)
             }
             WalletSubCommand::Config(config_cmd) => {
                 let mut ctx = AppContext::new(network, datadir);
-                let _ = config_cmd
+                config_cmd
                     .execute(&mut ctx)
                     .map_err(|e| e.to_string())?
-                    .write_out(std::io::stdout());
+                    .write_out(std::io::stdout())
+                    .map_err(|e| e.to_string())?;
                 Some(())
             }
         },
 
-        // Assuming your REPL Descriptor command is an inline struct based on commands.rs
         ReplSubCommand::Descriptor(cmd) => {
-            let value = cmd
-                .execute(&mut ctx)
+            let mut ctx = AppContext::new(network, datadir);
+            cmd.execute(&mut ctx)
                 .map_err(|e| e.to_string())?
-                .write_out(std::io::stdout());
+                .write_out(std::io::stdout())
+                .map_err(|e| e.to_string())?;
+            Some(())
+        }
+
+        ReplSubCommand::Key { subcommand } => {
+            let mut ctx = AppContext::new(network, datadir);
+            subcommand.execute(&mut ctx).map_err(|e| e.to_string())?;
             Some(())
         }
 
         ReplSubCommand::Exit => None,
-        _ => todo!(),
+        // _ => todo!(), // Handled specifically depending on your ReplSubCommand definitions
     };
 
-    if let Some(value) = response {
-        // writeln!(std::io::stdout(), "{value}").map_err(|e| e.to_string())?;
+    if response.is_some() {
         std::io::stdout().flush().map_err(|e| e.to_string())?;
         Ok(false)
     } else {

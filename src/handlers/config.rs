@@ -10,6 +10,7 @@ use crate::client::ClientType;
 use crate::commands::WalletOpts;
 use crate::config::{WalletConfig, WalletConfigInner};
 use crate::error::BDKCliError as Error;
+use crate::handlers::Init;
 use crate::handlers::{AppCommand, AppContext};
 #[cfg(feature = "sqlite")]
 use crate::persister::DatabaseType;
@@ -27,10 +28,10 @@ pub struct SaveConfigCommand {
     pub(crate) wallet_opts: WalletOpts,
 }
 
-impl AppCommand for SaveConfigCommand {
+impl AppCommand<AppContext<Init>> for SaveConfigCommand {
     type Output = StatusResult;
 
-    fn execute(&self, ctx: &mut AppContext<'_>) -> Result<Self::Output, Error> {
+    fn execute(&self, ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
         if ctx.network == Network::Bitcoin {
             eprintln!("WARNING: Configuring for Bitcoin MAINNET. Experimental software!");
         }
@@ -144,10 +145,10 @@ impl AppCommand for SaveConfigCommand {
 #[derive(Args, Debug, Clone, PartialEq)]
 pub struct ListWalletsCommand {}
 
-impl AppCommand for ListWalletsCommand {
+impl AppCommand<AppContext<Init>> for ListWalletsCommand {
     type Output = WalletsListResult;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
+    fn execute(&self, ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
         let config = match WalletConfig::load(&ctx.datadir)? {
             Some(cfg) => cfg,
             None => return Err(Error::Generic("No wallets configured yet.".into())),

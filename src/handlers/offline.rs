@@ -1,6 +1,6 @@
 use crate::commands::OfflineWalletSubCommand;
 use crate::error::BDKCliError as Error;
-use crate::handlers::{AppCommand, AppContext};
+use crate::handlers::{AppCommand, AppContext, OfflineOperations};
 use crate::utils::output::{FormatOutput, ListResult};
 use crate::utils::parse_address;
 use crate::utils::types::{
@@ -25,7 +25,7 @@ use {
 };
 
 impl OfflineWalletSubCommand {
-    pub fn execute(&self, ctx: &mut AppContext<'_>) -> Result<(), Error> {
+    pub fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<(), Error> {
         match self {
             Self::NewAddress(new_address) => new_address.execute(ctx)?.write_out(std::io::stdout()),
             Self::Balance(balance) => balance.execute(ctx)?.write_out(std::io::stdout()),
@@ -75,14 +75,11 @@ impl OfflineWalletSubCommand {
 #[derive(Parser, Debug, Clone, PartialEq)]
 pub struct NewAddressCommand {}
 
-impl AppCommand for NewAddressCommand {
+impl AppCommand<AppContext<OfflineOperations<'_>>> for NewAddressCommand {
     type Output = AddressResult;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or(Error::Generic("Wallet required".to_string()))?;
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let wallet = &mut ctx.state.wallet;
         let address_info = wallet.reveal_next_address(KeychainKind::External);
         Ok(AddressResult::from(address_info))
     }
@@ -91,14 +88,11 @@ impl AppCommand for NewAddressCommand {
 #[derive(Parser, Debug, PartialEq, Clone)]
 pub struct UnusedAddressCommand {}
 
-impl AppCommand for UnusedAddressCommand {
+impl AppCommand<AppContext<OfflineOperations<'_>>> for UnusedAddressCommand {
     type Output = AddressResult;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or(Error::Generic("wallet is required".to_string()))?;
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let wallet = &mut ctx.state.wallet;
         let address_info = wallet.next_unused_address(KeychainKind::External);
         Ok(AddressResult::from(address_info))
     }
@@ -107,14 +101,11 @@ impl AppCommand for UnusedAddressCommand {
 #[derive(Parser, Debug, PartialEq, Clone)]
 pub struct UnspentCommand {}
 
-impl AppCommand for UnspentCommand {
+impl AppCommand<AppContext<OfflineOperations<'_>>> for UnspentCommand {
     type Output = ListResult<UnspentDetails>;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or(Error::Generic("Wallet is required".to_string()))?;
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let wallet = &mut ctx.state.wallet;
         let utxos = wallet
             .list_unspent()
             .map(|utxo| UnspentDetails::from_local_output(&utxo, ctx.network))
@@ -127,16 +118,11 @@ impl AppCommand for UnspentCommand {
 #[derive(Parser, Debug, PartialEq, Clone)]
 pub struct TransactionsCommand {}
 
-impl AppCommand for TransactionsCommand {
+impl AppCommand<AppContext<OfflineOperations<'_>>> for TransactionsCommand {
     type Output = ListResult<TransactionDetails>;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or(Error::Generic("wallet required".to_string()))?;
-
-        let transactions = wallet.transactions();
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let transactions = &mut ctx.state.wallet.transactions();
 
         let txns: Vec<TransactionDetails> = transactions
             .map(|tx| {
@@ -170,15 +156,11 @@ impl AppCommand for TransactionsCommand {
 #[derive(Parser, Debug, PartialEq, Clone)]
 pub struct BalanceCommand {}
 
-impl AppCommand for BalanceCommand {
+impl AppCommand<AppContext<OfflineOperations<'_>>> for BalanceCommand {
     type Output = BalanceResult;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or_else(|| Error::Generic("Wallet required".into()))?;
-        let balance = wallet.balance();
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let balance = ctx.state.wallet.balance();
         Ok(BalanceResult::from(balance))
     }
 }
@@ -239,16 +221,11 @@ pub struct CreateTxCommand {
     pub add_data: Option<String>,
 }
 
-impl AppCommand for CreateTxCommand {
+impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
     type Output = PsbtResult;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or_else(|| Error::Generic("Wallet required".into()))?;
-
-        let mut tx_builder = wallet.build_tx();
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let mut tx_builder = ctx.state.wallet.build_tx();
 
         if self.send_all {
             tx_builder
@@ -348,14 +325,11 @@ pub struct BumpFeeCommand {
     pub fee_rate: f32,
 }
 
-impl AppCommand for BumpFeeCommand {
+impl AppCommand<AppContext<OfflineOperations<'_>>> for BumpFeeCommand {
     type Output = PsbtResult;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or_else(|| Error::Generic("Wallet required".into()))?;
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let wallet = &mut ctx.state.wallet;
 
         let txid = Txid::from_str(self.txid.as_str())?;
 
@@ -392,14 +366,11 @@ impl AppCommand for BumpFeeCommand {
 #[derive(Parser, Debug, PartialEq, Clone)]
 pub struct PoliciesCommand {}
 
-impl AppCommand for PoliciesCommand {
+impl AppCommand<AppContext<OfflineOperations<'_>>> for PoliciesCommand {
     type Output = KeychainPair<serde_json::Value>;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or(Error::Generic("Wallet required".into()))?;
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let wallet = &mut ctx.state.wallet;
         let external_policy = wallet.policies(KeychainKind::External)?;
         let internal_policy = wallet.policies(KeychainKind::Internal)?;
 
@@ -413,14 +384,11 @@ impl AppCommand for PoliciesCommand {
 #[derive(Parser, Debug, PartialEq, Clone)]
 pub struct PublicDescriptorCommand {}
 
-impl AppCommand for PublicDescriptorCommand {
+impl AppCommand<AppContext<OfflineOperations<'_>>> for PublicDescriptorCommand {
     type Output = KeychainPair<String>;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or(Error::Generic("Wallet required".into()))?;
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let wallet = &mut ctx.state.wallet;
         Ok(KeychainPair {
             external: wallet.public_descriptor(KeychainKind::External).to_string(),
             internal: wallet.public_descriptor(KeychainKind::Internal).to_string(),
@@ -443,14 +411,11 @@ pub struct SignCommand {
     pub trust_witness_utxo: Option<bool>,
 }
 
-impl AppCommand for SignCommand {
+impl AppCommand<AppContext<OfflineOperations<'_>>> for SignCommand {
     type Output = PsbtResult;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or(Error::Generic("Wallet required".into()))?;
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let wallet = &mut ctx.state.wallet;
         let psbt_bytes = BASE64_STANDARD
             .decode(&self.psbt)
             .map_err(|e| Error::Generic(e.to_string()))?;
@@ -473,10 +438,10 @@ pub struct ExtractPsbtCommand {
     pub psbt: String,
 }
 
-impl AppCommand for ExtractPsbtCommand {
+impl AppCommand<AppContext<OfflineOperations<'_>>> for ExtractPsbtCommand {
     type Output = RawPsbt;
 
-    fn execute(&self, _ctx: &mut AppContext) -> Result<Self::Output, Error> {
+    fn execute(&self, _ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
         let psbt_serialized = BASE64_STANDARD.decode(self.psbt.clone())?;
         let psbt = Psbt::deserialize(&psbt_serialized)?;
         let raw_tx = psbt.extract_tx()?;
@@ -500,14 +465,11 @@ pub struct FinalizePsbtCommand {
     pub trust_witness_utxo: Option<bool>,
 }
 
-impl AppCommand for FinalizePsbtCommand {
+impl AppCommand<AppContext<OfflineOperations<'_>>> for FinalizePsbtCommand {
     type Output = PsbtResult;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or(Error::Generic("Wallet required".into()))?;
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let wallet = &mut ctx.state.wallet;
         let psbt_bytes = BASE64_STANDARD
             .decode(&self.psbt)
             .map_err(|e| Error::Generic(e.to_string()))?;
@@ -532,10 +494,10 @@ pub struct CombinePsbtCommand {
     pub psbt: Vec<String>,
 }
 
-impl AppCommand for CombinePsbtCommand {
+impl AppCommand<AppContext<OfflineOperations<'_>>> for CombinePsbtCommand {
     type Output = PsbtResult;
 
-    fn execute(&self, _ctx: &mut AppContext) -> Result<Self::Output, Error> {
+    fn execute(&self, _ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
         let mut psbts = self
             .psbt
             .iter()
@@ -560,7 +522,7 @@ impl AppCommand for CombinePsbtCommand {
     }
 }
 
-#[cfg(feature = "bip322")]
+// #[cfg(feature = "bip322")]
 #[derive(Debug, Parser, Clone, PartialEq)]
 pub struct SignMessageCommand {
     /// The message to sign
@@ -581,14 +543,11 @@ pub struct SignMessageCommand {
 }
 
 #[cfg(feature = "bip322")]
-impl AppCommand for SignMessageCommand {
+impl AppCommand<AppContext<OfflineOperations<'_>>> for SignMessageCommand {
     type Output = MessageResult;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or(Error::Generic("Wallet required".into()))?;
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let wallet = &mut ctx.state.wallet;
         let address: Address = parse_address(&self.address)?;
         let signature_format = parse_signature_format(&self.signature_type)?;
 
@@ -630,14 +589,11 @@ pub struct VerifyMessageCommand {
 }
 
 #[cfg(feature = "bip322")]
-impl AppCommand for VerifyMessageCommand {
+impl AppCommand<AppContext<OfflineOperations<'_>>> for VerifyMessageCommand {
     type Output = MessageResult;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or(Error::Generic("Wallet required".into()))?;
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let wallet = &ctx.state.wallet;
 
         let address: Address = parse_address(&self.address)?;
 

@@ -25,14 +25,14 @@ use {bdk_wallet::KeychainKind, std::collections::HashSet, std::io::Write};
 use {
     crate::commands::OnlineWalletSubCommand,
     crate::error::BDKCliError as Error,
-    crate::handlers::{AppContext, AsyncCommand},
+    crate::handlers::{AppContext, AsyncAppCommand, OnlineOperations},
     crate::payjoin::{PayjoinManager, ohttp::RelayManager},
     crate::utils::is_final,
     crate::utils::output::FormatOutput,
     crate::utils::types::{StatusResult, TransactionResult},
     bdk_wallet::bitcoin::{
-        Psbt, Transaction, base64::Engine, base64::prelude::BASE64_STANDARD, consensus::Decodable,
-        hex::FromHex,
+        Psbt, Transaction, Txid, base64::Engine, base64::prelude::BASE64_STANDARD,
+        consensus::Decodable, hex::FromHex,
     },
     std::sync::{Arc, Mutex},
 };
@@ -43,7 +43,7 @@ use {
     feature = "rpc"
 ))]
 impl OnlineWalletSubCommand {
-    pub async fn execute(&self, ctx: &mut AppContext<'_>) -> Result<(), Error> {
+    pub async fn execute(&self, ctx: &mut AppContext<OnlineOperations<'_>>) -> Result<(), Error> {
         match self {
             OnlineWalletSubCommand::FullScan(full_scan_command) => {
                 let response: StatusResult = full_scan_command.execute(ctx).await?;
@@ -84,17 +84,15 @@ pub struct FullScanCommand {
     feature = "cbf",
     feature = "rpc"
 ))]
-impl AsyncCommand for FullScanCommand {
+impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
     type Output = StatusResult;
 
-    async fn execute(&self, ctx: &mut AppContext<'_>) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or(Error::Generic("Wallet required".into()))?;
-        let client = ctx
-            .client
-            .ok_or(Error::Generic("Online client required".into()))?;
+    async fn execute(
+        &self,
+        ctx: &mut AppContext<OnlineOperations<'_>>,
+    ) -> Result<Self::Output, Error> {
+        let wallet = &mut ctx.state.wallet;
+        let client = ctx.state.client;
 
         #[cfg(any(feature = "electrum", feature = "esplora"))]
         let request = wallet.start_full_scan().inspect({
@@ -185,17 +183,15 @@ pub struct SyncCommand {}
     feature = "cbf",
     feature = "rpc"
 ))]
-impl AsyncCommand for SyncCommand {
+impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for SyncCommand {
     type Output = StatusResult;
 
-    async fn execute(&self, ctx: &mut AppContext<'_>) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or(Error::Generic("Wallet required".to_string()))?;
-        let client = ctx
-            .client
-            .ok_or(Error::Generic("Client is required".to_string()))?;
+    async fn execute(
+        &self,
+        ctx: &mut AppContext<OnlineOperations<'_>>,
+    ) -> Result<Self::Output, Error> {
+        let mut wallet = &mut ctx.state.wallet;
+        let client = ctx.state.client;
         #[cfg(any(feature = "electrum", feature = "esplora"))]
         let request = wallet
             .start_sync_with_revealed_spks()
@@ -271,8 +267,8 @@ impl AsyncCommand for SyncCommand {
                 let mempool_txs = emitter.mempool()?;
                 wallet.apply_unconfirmed_txs(mempool_txs.update);
             }
-            #[cfg(feature = "cbf")]
-            KyotoClient { client } => sync_kyoto_client(wallet, client)
+            // #[cfg(feature = "cbf")]
+            KyotoClient { client } => sync_kyoto_client(&mut wallet, client)
                 .await
                 .map_err(|e| Error::Generic(e.to_string()))?,
         }
@@ -306,13 +302,14 @@ pub struct BroadcastCommand {
     feature = "cbf",
     feature = "rpc"
 ))]
-impl AsyncCommand for BroadcastCommand {
+impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for BroadcastCommand {
     type Output = TransactionResult;
 
-    async fn execute(&self, ctx: &mut AppContext<'_>) -> Result<Self::Output, Error> {
-        let client = ctx
-            .client
-            .ok_or(Error::Generic("Online client required".into()))?;
+    async fn execute(
+        &self,
+        ctx: &mut AppContext<OnlineOperations<'_>>,
+    ) -> Result<Self::Output, Error> {
+        let client = ctx.state.client;
 
         let tx = match (&self.psbt, &self.tx) {
             (Some(psbt), None) => {
@@ -339,7 +336,7 @@ impl AsyncCommand for BroadcastCommand {
             }
         };
 
-        let txid = client.broadcast(tx).await?;
+        let txid: Txid = client.broadcast(tx).await?;
 
         Ok(TransactionResult {
             txid: txid.to_string(),
@@ -349,20 +346,6 @@ impl AsyncCommand for BroadcastCommand {
 
 #[derive(Parser, Debug, Clone, PartialEq, Eq)]
 pub struct ReceivePayjoinCommand {
-    // /// The amount to receive in satoshis.
-    // pub amount: u64,
-
-    // /// The payjoin directory URL.
-    // #[clap(long)]
-    // pub directory: String,
-
-    // /// Optional OHTTP relay URLs for privacy.
-    // #[clap(long)]
-    // pub ohttp_relays: Vec<String>,
-
-    // /// Maximum fee rate in sat/vB to pay for the payjoin transaction.
-    // #[clap(long)]
-    // pub max_fee_rate: u64,
     /// Amount to be received in sats.
     #[arg(env = "PAYJOIN_AMOUNT", long = "amount", required = true)]
     amount: u64,
@@ -385,17 +368,15 @@ pub struct ReceivePayjoinCommand {
     feature = "cbf",
     feature = "rpc"
 ))]
-impl AsyncCommand for ReceivePayjoinCommand {
+impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for ReceivePayjoinCommand {
     type Output = StatusResult;
 
-    async fn execute(&self, ctx: &mut AppContext<'_>) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or(Error::Generic("Wallet required".into()))?;
-        let client = ctx
-            .client
-            .ok_or(Error::Generic("Online client required".into()))?;
+    async fn execute(
+        &self,
+        ctx: &mut AppContext<OnlineOperations<'_>>,
+    ) -> Result<Self::Output, Error> {
+        let wallet = &mut ctx.state.wallet;
+        let client = ctx.state.client;
 
         let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
         let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);
@@ -415,16 +396,6 @@ impl AsyncCommand for ReceivePayjoinCommand {
 
 #[derive(Parser, Debug, Clone, PartialEq, Eq)]
 pub struct SendPayjoinCommand {
-    // /// The Payjoin URI string to send to.
-    // pub uri: String,
-
-    // /// Optional OHTTP relay URLs for privacy.
-    // #[clap(long)]
-    // pub ohttp_relays: Vec<String>,
-
-    // /// Fee rate in sat/vB for the transaction.
-    // #[clap(long, short)]
-    // pub fee_rate: u64,
     /// BIP 21 URI for the Payjoin.
     #[arg(env = "PAYJOIN_URI", long = "uri", required = true)]
     uri: String,
@@ -447,15 +418,15 @@ pub struct SendPayjoinCommand {
     feature = "cbf",
     feature = "rpc"
 ))]
-impl AsyncCommand for SendPayjoinCommand {
+impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for SendPayjoinCommand {
     type Output = StatusResult;
 
-    async fn execute(&self, ctx: &mut AppContext<'_>) -> Result<Self::Output, Error> {
-        let wallet = ctx
-            .wallet
-            .as_deref_mut()
-            .ok_or(Error::Generic("Wallet required".into()))?;
-        let client = ctx.client.ok_or(Error::Generic("client required".into()))?;
+    async fn execute(
+        &self,
+        ctx: &mut AppContext<OnlineOperations<'_>>,
+    ) -> Result<Self::Output, Error> {
+        let wallet = &mut ctx.state.wallet;
+        let client = ctx.state.client;
 
         let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
         let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);

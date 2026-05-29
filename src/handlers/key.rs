@@ -1,5 +1,6 @@
 use crate::commands::KeySubCommand;
 use crate::error::BDKCliError as Error;
+use crate::handlers::Init;
 use crate::handlers::{AppCommand, AppContext};
 use crate::utils::output::FormatOutput;
 use crate::utils::types::KeyResult;
@@ -15,7 +16,7 @@ use bdk_wallet::miniscript::{self, Segwitv0};
 use clap::Parser;
 
 impl KeySubCommand {
-    pub fn execute(&self, ctx: &mut AppContext) -> Result<(), Error> {
+    pub fn execute(&self, ctx: &mut AppContext<Init>) -> Result<(), Error> {
         match self {
             KeySubCommand::Generate(generate_key_command) => generate_key_command
                 .execute(ctx)?
@@ -44,10 +45,10 @@ pub struct GenerateKeyCommand {
     password: Option<String>,
 }
 
-impl AppCommand for GenerateKeyCommand {
+impl AppCommand<AppContext<Init>> for GenerateKeyCommand {
     type Output = KeyResult;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
+    fn execute(&self, ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
         let secp = Secp256k1::new();
         let mnemonic_type = match self.word_count {
             12 => WordCount::Words12,
@@ -88,10 +89,10 @@ pub struct DeriveKeyCommand {
     path: DerivationPath,
 }
 
-impl AppCommand for DeriveKeyCommand {
+impl AppCommand<AppContext<Init>> for DeriveKeyCommand {
     type Output = KeyResult;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
+    fn execute(&self, ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
         let secp = Secp256k1::new();
 
         let derived_xprv = &self.xprv.derive_priv(&secp, &self.path)?;
@@ -134,10 +135,10 @@ pub struct RestoreKeyCommand {
     password: Option<String>,
 }
 
-impl AppCommand for RestoreKeyCommand {
+impl AppCommand<AppContext<Init>> for RestoreKeyCommand {
     type Output = KeyResult;
 
-    fn execute(&self, ctx: &mut AppContext) -> Result<Self::Output, Error> {
+    fn execute(&self, ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
         let secp = Secp256k1::new();
 
         let mnemonic = Mnemonic::parse_in(Language::English, &self.mnemonic)?;
