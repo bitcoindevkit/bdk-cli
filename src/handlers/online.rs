@@ -170,7 +170,9 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
                 sync_kyoto_client(wallet, client).await?;
             }
         }
-        Ok(StatusResult::new("Full scan completed successfully."))
+        Ok(StatusResult {
+            message: "Full scan completed successfully.".to_string(),
+        })
     }
 }
 
@@ -190,7 +192,7 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for SyncCommand {
         &self,
         ctx: &mut AppContext<OnlineOperations<'_>>,
     ) -> Result<Self::Output, Error> {
-        let mut wallet = &mut ctx.state.wallet;
+        let wallet = &mut ctx.state.wallet;
         let client = ctx.state.client;
         #[cfg(any(feature = "electrum", feature = "esplora"))]
         let request = wallet
@@ -267,12 +269,14 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for SyncCommand {
                 let mempool_txs = emitter.mempool()?;
                 wallet.apply_unconfirmed_txs(mempool_txs.update);
             }
-            // #[cfg(feature = "cbf")]
-            KyotoClient { client } => sync_kyoto_client(&mut wallet, client)
+            #[cfg(feature = "cbf")]
+            KyotoClient { client } => sync_kyoto_client(wallet, client)
                 .await
                 .map_err(|e| Error::Generic(e.to_string()))?,
         }
-        Ok(StatusResult::new("Wallet synced successfully."))
+        Ok(StatusResult {
+            message: "Wallet synced successfully.".to_string(),
+        })
     }
 }
 
@@ -321,7 +325,7 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for BroadcastCommand {
                 psbt.extract_tx()?
             }
             (None, Some(tx)) => {
-                let tx_bytes = Vec::<u8>::from_hex(&tx)?;
+                let tx_bytes = Vec::<u8>::from_hex(tx)?;
                 Transaction::consensus_decode(&mut tx_bytes.as_slice())?
             }
             (Some(_), Some(_)) => {

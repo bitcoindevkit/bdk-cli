@@ -102,12 +102,6 @@ pub trait AppCommand<C> {
 ))]
 pub trait AsyncAppCommand<C> {
     type Output: FormatOutput;
-    
+
     async fn execute(&self, ctx: &mut C) -> Result<Self::Output, Error>;
 }
-
-// context for online and online
-// => cli.rs
-// handlers/{mod for commands}
-// wallet subdir /
-// wallet-offline and wallet-online (client mod)

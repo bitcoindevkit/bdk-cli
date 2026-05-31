@@ -25,6 +25,7 @@ impl From<AddressInfo> for AddressResult {
     }
 }
 
+#[allow(unused)]
 /// Represents the data for a single transaction
 #[derive(Serialize)]
 pub struct TransactionDetails {
@@ -131,14 +132,6 @@ pub struct MessageResult {
 #[derive(Serialize, Debug)]
 pub struct StatusResult {
     pub message: String,
-}
-
-impl StatusResult {
-    pub fn new(msg: &str) -> Self {
-        Self {
-            message: msg.to_string(),
-        }
-    }
 }
 
 #[cfg(any(

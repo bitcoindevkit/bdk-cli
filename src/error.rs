@@ -61,7 +61,7 @@ pub enum BDKCliError {
     #[error("PsbtError: {0}")]
     PsbtError(#[from] bdk_wallet::bitcoin::psbt::Error),
 
-    // #[cfg(feature = "sqlite")]
+    #[cfg(feature = "sqlite")]
     #[error("Rusqlite error: {0}")]
     RusqliteError(Box<bdk_wallet::rusqlite::Error>),
 

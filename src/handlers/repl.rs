@@ -1,13 +1,11 @@
-use bdk_wallet::{Wallet, bitcoin::Network};
-
 #[cfg(feature = "repl")]
-use crate::handlers::AppCommand;
-#[cfg(feature = "repl")]
-use crate::{handlers::AppContext, utils::output::FormatOutput};
-
-#[cfg(feature = "repl")]
-use crate::commands::ReplSubCommand;
-use clap::Parser;
+use {
+    crate::commands::ReplSubCommand,
+    crate::handlers::{AppCommand, AppContext},
+    crate::utils::output::FormatOutput,
+    bdk_wallet::{Wallet, bitcoin::Network},
+    clap::Parser,
+};
 
 #[cfg(any(
     feature = "electrum",
@@ -17,11 +15,7 @@ use clap::Parser;
 ))]
 use crate::client::BlockchainClient;
 #[cfg(feature = "repl")]
-use std::io::Write;
-use {
-    crate::commands::{CliOpts, WalletSubCommand},
-    crate::error::BDKCliError as Error,
-};
+use {crate::commands::WalletSubCommand, crate::error::BDKCliError as Error, std::io::Write};
 
 #[cfg(feature = "repl")]
 pub(crate) async fn respond(
@@ -36,7 +30,6 @@ pub(crate) async fn respond(
     client: Option<&BlockchainClient>,
     line: &str,
     datadir: std::path::PathBuf,
-    _cli_opts: &CliOpts,
 ) -> Result<bool, String> {
     let args = shlex::split(line).ok_or("error: Invalid quoting".to_string())?;
 

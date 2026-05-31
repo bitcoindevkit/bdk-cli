@@ -522,7 +522,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CombinePsbtCommand {
     }
 }
 
-// #[cfg(feature = "bip322")]
+#[cfg(feature = "bip322")]
 #[derive(Debug, Parser, Clone, PartialEq)]
 pub struct SignMessageCommand {
     /// The message to sign
@@ -572,7 +572,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for SignMessageCommand {
     }
 }
 
-// #[cfg(feature = "bip322")]
+#[cfg(feature = "bip322")]
 #[derive(Debug, Parser, Clone, PartialEq)]
 pub struct VerifyMessageCommand {
     /// The signature proof to verify

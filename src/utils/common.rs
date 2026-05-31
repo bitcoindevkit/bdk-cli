@@ -14,6 +14,7 @@ use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 #[cfg(feature = "silent-payments")]
 use bdk_sp::encoding::SilentPaymentCode;
 
+use crate::commands::OfflineWalletSubCommand;
 use std::{
     path::{Path, PathBuf},
     str::FromStr,
@@ -215,5 +216,30 @@ pub(crate) fn parse_signature_format(format_str: &str) -> Result<SignatureFormat
             "Invalid signature format. Use 'legacy', 'simple', 'full', or 'fullproofoffunds'"
                 .to_string(),
         )),
+    }
+}
+
+pub fn command_requires_db(command: &OfflineWalletSubCommand) -> bool {
+    match command {
+        OfflineWalletSubCommand::Balance(_)
+        | OfflineWalletSubCommand::Unspent(_)
+        | OfflineWalletSubCommand::Transactions(_)
+        | OfflineWalletSubCommand::BumpFee(_) => true,
+
+        OfflineWalletSubCommand::NewAddress(_)
+        | OfflineWalletSubCommand::UnusedAddress(_)
+        | OfflineWalletSubCommand::CreateTx(_)
+        | OfflineWalletSubCommand::Policies(_)
+        | OfflineWalletSubCommand::PublicDescriptor(_)
+        | OfflineWalletSubCommand::Sign(_)
+        | OfflineWalletSubCommand::ExtractPsbt(_)
+        | OfflineWalletSubCommand::FinalizePsbt(_)
+        | OfflineWalletSubCommand::CombinePsbt(_) => false,
+
+        #[cfg(feature = "bip322")]
+        OfflineWalletSubCommand::SignMessage(_) => true,
+
+        #[cfg(feature = "bip322")]
+        OfflineWalletSubCommand::VerifyMessage(_) => false,
     }
 }

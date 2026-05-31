@@ -116,7 +116,7 @@ pub enum CliSubCommand {
     #[cfg(feature = "compiler")]
     #[clap(long_about = "Miniscript policy compiler")]
     Compile(CompileCommand),
-    // #[cfg(feature = "repl")]
+    #[cfg(feature = "repl")]
     /// REPL command loop mode.
     ///
     /// REPL command loop can be used to make recurring callbacks to an already loaded wallet.

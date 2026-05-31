@@ -25,26 +25,15 @@ mod payjoin;
 mod persister;
 mod utils;
 
-#[cfg(feature = "redb")]
-use bdk_redb::Store as RedbStore;
 use bdk_wallet::bitcoin::Network;
 use log::{debug, warn};
 
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "rpc",
-    feature = "cbf"
-))]
-use crate::client::new_blockchain_client;
 use crate::commands::{CliOpts, CliSubCommand, WalletSubCommand};
 use crate::error::BDKCliError as Error;
 use crate::handlers::{AppCommand, AppContext};
-#[cfg(any(feature = "sqlite", feature = "redb"))]
-use crate::persister::{Persister, new_persisted_wallet};
 use crate::utils::output::FormatOutput;
-use crate::utils::prepare_wallet_db_dir;
-use crate::utils::{load_wallet_config, prepare_home_dir};
+use crate::utils::runtime::WalletRuntime;
+use crate::utils::{command_requires_db, prepare_home_dir};
 use clap::Parser;
 
 #[tokio::main]
@@ -81,70 +70,36 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
                 feature = "rpc",
                 feature = "cbf"
             ))]
-            WalletSubCommand::OnlineWalletSubCommand(online_cmd) => {
-                let (wallet_opts, network) = load_wallet_config(&home_dir, &wallet_name)?;
+            WalletSubCommand::OnlineWalletSubCommand(cmd) => {
+                let runtime = WalletRuntime::load(&home_dir, &wallet_name)?;
 
-                let database_path = prepare_wallet_db_dir(&home_dir, &wallet_name)?;
-                #[cfg(any(feature = "sqlite", feature = "redb"))]
-                let mut persister: Persister = match &wallet_opts.database_type {
-                    #[cfg(feature = "sqlite")]
-                    crate::persister::DatabaseType::Sqlite => {
-                        let db_file = database_path.join("wallet.sqlite");
-                        let connection = bdk_wallet::rusqlite::Connection::open(db_file)?;
-                        Persister::Connection(connection)
-                    }
-                    #[cfg(feature = "redb")]
-                    crate::persister::DatabaseType::Redb => {
-                        use crate::persister::Persister;
+                let mut wallet = runtime.build_wallet(true)?;
+                let client = runtime.build_client(&wallet)?;
 
-                        let db = std::sync::Arc::new(bdk_redb::redb::Database::create(
-                            home_dir.join("wallet.redb"),
-                        )?);
-                        let store = RedbStore::new(db, wallet_name)?;
-                        log::debug!("Redb database opened successfully");
-                        Persister::RedbStore(store)
-                    }
-                };
+                let mut ctx = AppContext::new_online_wallet(
+                    runtime.network,
+                    runtime.home_dir.clone(),
+                    &mut wallet,
+                    &client,
+                );
 
-                let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
-
-                let client = new_blockchain_client(&wallet_opts, &wallet, database_path)?;
-
-                let mut ctx =
-                    AppContext::new_online_wallet(network, home_dir, &mut wallet, &client);
-
-                online_cmd.execute(&mut ctx).await?;
+                cmd.execute(&mut ctx).await?;
             }
-            WalletSubCommand::OfflineWalletSubCommand(offline_cmd) => {
-                let (wallet_opts, network) = load_wallet_config(&home_dir, &wallet_name)?;
 
-                let database_path = prepare_wallet_db_dir(&home_dir, &wallet_name)?;
+            WalletSubCommand::OfflineWalletSubCommand(cmd) => {
+                let runtime = WalletRuntime::load(&home_dir, &wallet_name)?;
 
-                #[cfg(any(feature = "sqlite", feature = "redb"))]
-                let mut persister: Persister = match &wallet_opts.database_type {
-                    #[cfg(feature = "sqlite")]
-                    crate::persister::DatabaseType::Sqlite => {
-                        let db_file = database_path.join("wallet.sqlite");
-                        let connection = bdk_wallet::rusqlite::Connection::open(db_file)?;
-                        Persister::Connection(connection)
-                    }
-                    #[cfg(feature = "redb")]
-                    crate::persister::DatabaseType::Redb => {
-                        use crate::persister::Persister;
-                        let db = std::sync::Arc::new(bdk_redb::redb::Database::create(
-                            home_dir.join("wallet.redb"),
-                        )?);
-                        let store = RedbStore::new(db, wallet_name)?;
-                        Persister::RedbStore(store)
-                    }
-                };
+                let mut wallet = runtime.build_wallet(command_requires_db(&cmd))?;
 
-                let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
+                let mut ctx = AppContext::new_offline_wallet(
+                    runtime.network,
+                    runtime.home_dir.clone(),
+                    &mut wallet,
+                );
 
-                let mut ctx = AppContext::new_offline_wallet(network, home_dir, &mut wallet);
-
-                offline_cmd.execute(&mut ctx)?;
+                cmd.execute(&mut ctx)?;
             }
+
             WalletSubCommand::Config(mut config_cmd) => {
                 config_cmd.wallet_opts.wallet = Some(wallet_name);
 
@@ -156,107 +111,81 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
 
         CliSubCommand::Key { subcommand } => {
             let mut ctx = AppContext::new(cli_opts.network, home_dir);
+
             subcommand.execute(&mut ctx)?;
         }
-        CliSubCommand::Descriptor(descriptor_command) => {
+
+        CliSubCommand::Descriptor(cmd) => {
             let mut ctx = AppContext::new(cli_opts.network, home_dir);
-            descriptor_command
-                .execute(&mut ctx)?
-                .write_out(std::io::stdout())?;
-        }
-        CliSubCommand::Wallets(cmd) => {
-            let mut ctx = AppContext::new(cli_opts.network, home_dir);
+
             cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
         }
+
+        CliSubCommand::Wallets(cmd) => {
+            let mut ctx = AppContext::new(cli_opts.network, home_dir);
+
+            cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
+        }
+
+        #[cfg(feature = "repl")]
         CliSubCommand::Repl {
             wallet: wallet_name,
         } => {
-            #[cfg(feature = "repl")]
-            {
-                let (wallet_opts, network) = load_wallet_config(&home_dir, &wallet_name)?;
-                let database_path = prepare_wallet_db_dir(&home_dir, &wallet_name)?;
+            let runtime = WalletRuntime::load(&home_dir, &wallet_name)?;
 
-                #[cfg(any(feature = "sqlite", feature = "redb"))]
-                let mut persister: Persister = match &wallet_opts.database_type {
-                    #[cfg(feature = "sqlite")]
-                    crate::persister::DatabaseType::Sqlite => {
-                        let db_file = database_path.join("wallet.sqlite");
-                        let connection = bdk_wallet::rusqlite::Connection::open(db_file)?;
-                        Persister::Connection(connection)
-                    }
-                    #[cfg(feature = "redb")]
-                    crate::persister::DatabaseType::Redb => {
-                        use crate::persister::Persister;
-                        let db = std::sync::Arc::new(bdk_redb::redb::Database::create(
-                            home_dir.join("wallet.redb"),
-                        )?);
-                        let store = RedbStore::new(db, wallet_name.clone())?;
-                        Persister::RedbStore(store)
-                    }
-                };
+            let mut wallet = runtime.build_wallet(true)?;
 
-                let mut wallet = new_persisted_wallet(network, &mut persister, &wallet_opts)?;
+            #[cfg(any(
+                feature = "electrum",
+                feature = "esplora",
+                feature = "rpc",
+                feature = "cbf"
+            ))]
+            let client = runtime.build_client(&wallet).ok();
 
-                #[cfg(any(
-                    feature = "electrum",
-                    feature = "esplora",
-                    feature = "rpc",
-                    feature = "cbf"
-                ))]
-                let client = Some(new_blockchain_client(&wallet_opts, &wallet, database_path)?);
+            println!(
+                "Entering REPL mode for wallet '{}'. \
+                     Type 'exit' to quit.",
+                wallet_name
+            );
 
-                println!(
-                    "Entering REPL mode for wallet '{}'. Type 'exit' to quit.",
-                    wallet_name
-                );
+            loop {
+                let line = crate::handlers::repl::readline()?;
 
-                loop {
-                    let line = crate::handlers::repl::readline()?;
-                    if line.trim().is_empty() {
-                        continue;
-                    }
+                if line.trim().is_empty() {
+                    continue;
+                }
 
-                    // Pass it to our newly refactored respond function
-                    let should_exit = crate::handlers::repl::respond(
-                        network,
-                        &mut wallet,
-                        #[cfg(any(
-                            feature = "electrum",
-                            feature = "esplora",
-                            feature = "rpc",
-                            feature = "cbf"
-                        ))]
-                        client.as_ref(), 
-                        &line,
-                        home_dir.clone(),
-                        &cli_opts,
-                    )
-                    .await
-                    .map_err(Error::Generic)?; 
+                let should_exit = crate::handlers::repl::respond(
+                    runtime.network,
+                    &mut wallet,
+                    #[cfg(any(
+                        feature = "electrum",
+                        feature = "esplora",
+                        feature = "rpc",
+                        feature = "cbf"
+                    ))]
+                    client.as_ref(),
+                    &line,
+                    runtime.home_dir.clone(),
+                )
+                .await
+                .map_err(Error::Generic)?;
 
-                    // Break the loop if the user typed `exit`
-                    if should_exit {
-                        break;
-                    }
+                if should_exit {
+                    break;
                 }
             }
+        }
 
-            #[cfg(not(feature = "repl"))]
-            {
-                return Err(Error::Generic(
-                    "The 'repl' feature is not enabled in this build.".into(),
-                ));
-            }
-        }
-        CliSubCommand::Completions { shell } => {
-            shell;
-        }
         #[cfg(feature = "compiler")]
         CliSubCommand::Compile(cmd) => {
             let mut ctx = AppContext::new(cli_opts.network, home_dir);
+
             cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
         }
-    };
+        CliSubCommand::Completions { shell: _ } => unimplemented!(),
+    }
 
     Ok(())
 }

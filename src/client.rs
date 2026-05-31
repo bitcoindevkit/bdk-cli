@@ -1,5 +1,3 @@
-#[cfg(feature = "rpc")]
-use bdk_bitcoind_rpc::{Emitter, bitcoincore_rpc::RpcApi};
 #[cfg(feature = "esplora")]
 use bdk_esplora::EsploraAsyncExt;
 #[cfg(any(
@@ -14,10 +12,14 @@ use {
     bdk_wallet::{
         Wallet,
         bitcoin::{Transaction, Txid},
-        chain::CanonicalizationParams,
     },
     clap::ValueEnum,
     std::path::PathBuf,
+};
+#[cfg(feature = "rpc")]
+use {
+    bdk_bitcoind_rpc::{Emitter, bitcoincore_rpc::RpcApi},
+    bdk_wallet::chain::CanonicalizationParams,
 };
 
 #[cfg(feature = "cbf")]
@@ -79,7 +81,7 @@ pub(crate) enum BlockchainClient {
 impl BlockchainClient {
     pub async fn broadcast(&self, tx: Transaction) -> Result<Txid, Error> {
         match self {
-            // #[cfg(feature = "electrum")]
+            #[cfg(feature = "electrum")]
             Self::Electrum { client, .. } => client
                 .transaction_broadcast(&tx)
                 .map_err(|e| Error::Generic(e.to_string())),

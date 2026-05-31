@@ -1,9 +1,9 @@
-#[cfg(any(feature = "sqlite", feature = "redb"))]
 use crate::commands::WalletOpts;
 use crate::error::BDKCliError as Error;
+use bdk_wallet::Wallet;
+use bdk_wallet::bitcoin::Network;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
-use bdk_wallet::{KeychainKind, PersistedWallet, bitcoin::Network};
-use bdk_wallet::{Wallet, WalletPersister};
+use bdk_wallet::{KeychainKind, PersistedWallet, WalletPersister};
 use clap::ValueEnum;
 
 #[derive(Clone, ValueEnum, Debug, Eq, PartialEq)]
@@ -25,6 +25,7 @@ pub(crate) enum Persister {
     RedbStore(bdk_redb::Store),
 }
 
+#[cfg(any(feature = "sqlite", feature = "redb"))]
 impl WalletPersister for Persister {
     type Error = Error;
 
@@ -97,7 +98,6 @@ where
     Ok(wallet)
 }
 
-#[cfg(not(any(feature = "sqlite", feature = "redb")))]
 pub(crate) fn new_wallet(network: Network, wallet_opts: &WalletOpts) -> Result<Wallet, Error> {
     let ext_descriptor = wallet_opts.ext_descriptor.clone();
     let int_descriptor = wallet_opts.int_descriptor.clone();
