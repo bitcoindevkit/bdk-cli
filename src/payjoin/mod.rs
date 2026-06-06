@@ -548,6 +548,7 @@ impl<'a> PayjoinManager<'a> {
         let candidate_inputs: Vec<InputPair> = self
             .wallet
             .list_unspent()
+            .filter(|output| output.chain_position.is_confirmed())
             .map(|output| {
                 let psbtin = self
                     .wallet
