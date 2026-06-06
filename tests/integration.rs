@@ -244,5 +244,4 @@ mod test {
             .unwrap();
         assert_eq!(confirmed_balance, 1000000000u64);
     }
-
 }

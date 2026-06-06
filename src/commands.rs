@@ -26,6 +26,9 @@ use crate::handlers::{
     },
 };
 
+#[cfg(feature = "silent-payments")]
+use crate::handlers::{descriptor::SilentPaymentCodeCommand, offline::CreateSpTxCommand};
+
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -189,6 +192,12 @@ pub enum CliSubCommand {
         #[arg(value_enum)]
         shell: Shell,
     },
+    /// Silent payment code generation tool.
+    ///
+    /// Allows the encoding of two public keys into a silent payment code.
+    /// Useful to create silent payment transactions using fake silent payment codes.
+    #[cfg(feature = "silent-payments")]
+    SilentPaymentCode(SilentPaymentCodeCommand),
 }
 
 /// Wallet operation subcommands.
@@ -321,6 +330,15 @@ pub enum OfflineWalletSubCommand {
     Balance(BalanceCommand),
     /// Creates a new unsigned transaction.
     CreateTx(CreateTxCommand),
+    /// Creates a silent payment transaction
+    ///
+    /// This sub-command is **EXPERIMENTAL** and should only be used for testing. Do not use this
+    /// feature to create transactions that spend actual funds on the Bitcoin mainnet.
+    // This command DOES NOT return a PSBT. Instead, it directly returns a signed transaction
+    // ready for broadcast, as it is not yet possible to perform a shared derivation of a silent
+    // payment script pubkey in a secure and trustless manner.
+    #[cfg(feature = "silent-payments")]
+    CreateSpTx(CreateSpTxCommand),
     /// Bumps the fees of an RBF transaction.
     BumpFee(BumpFeeCommand),
     /// Returns the available spending policies for the descriptor.
@@ -329,7 +347,6 @@ pub enum OfflineWalletSubCommand {
     PublicDescriptor(PublicDescriptorCommand),
     /// Signs and tries to finalize a PSBT.
     Sign(SignCommand),
-
     /// Extracts a raw transaction from a PSBT.
     ExtractPsbt(ExtractPsbtCommand),
     /// Finalizes a PSBT.

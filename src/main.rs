@@ -185,6 +185,13 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
             cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
         }
         CliSubCommand::Completions { shell: _ } => unimplemented!(),
+
+        #[cfg(feature = "silent-payments")]
+        CliSubCommand::SilentPaymentCode(cmd) => {
+            let mut ctx = AppContext::new(cli_opts.network, home_dir);
+
+            cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
+        }
     }
 
     Ok(())

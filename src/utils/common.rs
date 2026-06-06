@@ -3,6 +3,8 @@ use crate::{commands::WalletOpts, config::WalletConfig, error::BDKCliError as Er
 use bdk_bip322::SignatureFormat;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{Info, Receiver, UnboundedReceiver, Warning};
+#[cfg(feature = "silent-payments")]
+use bdk_sp::encoding::SilentPaymentCode;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -11,8 +13,6 @@ use bdk_kyoto::{Info, Receiver, UnboundedReceiver, Warning};
 ))]
 use bdk_wallet::bitcoin::Psbt;
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
-#[cfg(feature = "silent-payments")]
-use bdk_sp::encoding::SilentPaymentCode;
 
 use crate::commands::OfflineWalletSubCommand;
 use std::{
@@ -241,5 +241,7 @@ pub fn command_requires_db(command: &OfflineWalletSubCommand) -> bool {
 
         #[cfg(feature = "bip322")]
         OfflineWalletSubCommand::VerifyMessage(_) => false,
+        #[cfg(feature = "silent-payments")]
+        OfflineWalletSubCommand::CreateSpTx(_) => false,
     }
 }

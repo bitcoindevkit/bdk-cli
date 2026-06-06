@@ -17,6 +17,18 @@ use clap::Parser;
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::str::FromStr;
+#[cfg(feature = "silent-payments")]
+use {
+    crate::utils::common::parse_sp_code_value_pairs,
+    bdk_sp::{
+        bitcoin::{PrivateKey, PublicKey},
+        encoding::SilentPaymentCode,
+        send::psbt::derive_sp,
+    },
+    bdk_wallet::bitcoin::key::Secp256k1,
+    bdk_wallet::keys::{DescriptorPublicKey, DescriptorSecretKey, SinglePubKey},
+    std::collections::HashMap,
+};
 #[cfg(feature = "bip322")]
 use {
     crate::utils::parse_signature_format,
@@ -41,6 +53,8 @@ impl OfflineWalletSubCommand {
             Self::CreateTx(createtx_command) => {
                 createtx_command.execute(ctx)?.write_out(std::io::stdout())
             }
+            #[cfg(feature = "silent-payments")]
+            Self::CreateSpTx(cmd) => cmd.execute(ctx)?.write_out(std::io::stdout()),
             Self::BumpFee(bumpfee_command) => {
                 bumpfee_command.execute(ctx)?.write_out(std::io::stdout())
             }
@@ -290,6 +304,227 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
         // let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
 
         Ok(PsbtResult::new(&psbt, false, Some(false)))
+    }
+}
+
+#[cfg(feature = "silent-payments")]
+#[derive(Debug, Parser, Clone, PartialEq)]
+pub struct CreateSpTxCommand {
+    /// Adds a recipient to the transaction.
+    // Clap Doesn't support complex vector parsing https://github.com/clap-rs/clap/issues/1704.
+    // Address and amount parsing is done at run time in handler function.
+    #[arg(env = "ADDRESS:SAT", long = "to", required = false, value_parser = parse_recipient)]
+    pub recipients: Option<Vec<(ScriptBuf, u64)>>,
+    /// Parse silent payment recipients
+    #[arg(long = "to-sp", required = true, value_parser = parse_sp_code_value_pairs)]
+    pub silent_payment_recipients: Vec<(SilentPaymentCode, u64)>,
+    /// Sends all the funds (or all the selected utxos). Requires only one recipient with value 0.
+    #[arg(long = "send_all", short = 'a')]
+    pub send_all: bool,
+    /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
+    #[arg(long = "offline_signer")]
+    pub offline_signer: bool,
+    /// Selects which utxos *must* be spent.
+    #[arg(env = "MUST_SPEND_TXID:VOUT", long = "utxos", value_parser = parse_outpoint)]
+    pub utxos: Option<Vec<OutPoint>>,
+    /// Marks a utxo as unspendable.
+    #[arg(env = "CANT_SPEND_TXID:VOUT", long = "unspendable", value_parser = parse_outpoint)]
+    pub unspendable: Option<Vec<OutPoint>>,
+    /// Fee rate to use in sat/vbyte.
+    #[arg(env = "SATS_VBYTE", short = 'f', long = "fee_rate")]
+    pub fee_rate: Option<f32>,
+    /// Selects which policy should be used to satisfy the external descriptor.
+    #[arg(env = "EXT_POLICY", long = "external_policy")]
+    pub external_policy: Option<String>,
+    /// Selects which policy should be used to satisfy the internal descriptor.
+    #[arg(env = "INT_POLICY", long = "internal_policy")]
+    pub internal_policy: Option<String>,
+    /// Optionally create an OP_RETURN output containing given String in utf8 encoding (max 80 bytes)
+    #[arg(
+        env = "ADD_STRING",
+        long = "add_string",
+        short = 's',
+        conflicts_with = "add_data"
+    )]
+    pub add_string: Option<String>,
+    /// Optionally create an OP_RETURN output containing given base64 encoded String. (max 80 bytes)
+    #[arg(
+        env = "ADD_DATA",
+        long = "add_data",
+        short = 'o',
+        conflicts_with = "add_string"
+    )]
+    pub add_data: Option<String>, //base 64 econding
+}
+
+#[cfg(feature = "silent-payments")]
+impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
+    type Output = RawPsbt;
+
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let mut tx_builder = ctx.state.wallet.build_tx();
+
+        let sp_recipients: Vec<SilentPaymentCode> = self
+            .silent_payment_recipients
+            .iter()
+            .map(|(sp_code, _)| sp_code.clone())
+            .collect();
+
+        if self.send_all {
+            if sp_recipients.len() == 1 && self.recipients.is_none() {
+                tx_builder
+                    .drain_wallet()
+                    .drain_to(sp_recipients[0].get_placeholder_p2tr_spk());
+            } else if let Some(ref recipients) = self.recipients
+                && sp_recipients.is_empty()
+            {
+                if recipients.len() == 1 {
+                    tx_builder.drain_wallet().drain_to(recipients[0].0.clone());
+                } else {
+                    return Err(Error::Generic(
+                        "Wallet can only be drain to a single output".to_string(),
+                    ));
+                }
+            } else {
+                return Err(Error::Generic(
+                    "Wallet can only be drain to a single output".to_string(),
+                ));
+            }
+        } else {
+            let mut outputs: Vec<(ScriptBuf, Amount)> = self
+                .silent_payment_recipients
+                .iter()
+                .map(|(sp_code, amount)| {
+                    let script = sp_code.get_placeholder_p2tr_spk();
+                    (script, Amount::from_sat(*amount))
+                })
+                .collect();
+
+            if let Some(recipients) = &self.recipients {
+                let recipients = recipients
+                    .iter()
+                    .map(|(script, amount)| (script.clone(), Amount::from_sat(*amount)));
+
+                outputs.extend(recipients);
+            }
+
+            tx_builder.set_recipients(outputs);
+        }
+
+        // Do not enable RBF for this transaction
+        tx_builder.set_exact_sequence(Sequence::MAX);
+
+        if self.offline_signer {
+            tx_builder.include_output_redeem_witness_script();
+        }
+
+        if let Some(fee_rate) = self.fee_rate
+            && let Some(fee_rate) = FeeRate::from_sat_per_vb(fee_rate as u64)
+        {
+            tx_builder.fee_rate(fee_rate);
+        }
+
+        if let Some(utxos) = &self.utxos {
+            tx_builder
+                .add_utxos(&utxos[..])
+                .map_err(|_| bdk_wallet::error::CreateTxError::UnknownUtxo)?;
+        }
+
+        if let Some(unspendable) = &self.unspendable {
+            tx_builder.unspendable(unspendable.to_vec());
+        }
+
+        if let Some(base64_data) = &self.add_data {
+            let op_return_data = BASE64_STANDARD
+                .decode(base64_data)
+                .map_err(|e| Error::Generic(e.to_string()))?;
+            tx_builder.add_data(
+                &PushBytesBuf::try_from(op_return_data)
+                    .map_err(|e| Error::Generic(e.to_string()))?,
+            );
+        } else if let Some(string_data) = &self.add_string {
+            let data = PushBytesBuf::try_from(string_data.as_bytes().to_vec())
+                .map_err(|e| Error::Generic(e.to_string()))?;
+            tx_builder.add_data(&data);
+        }
+
+        let policies = vec![
+            self.external_policy
+                .as_ref()
+                .map(|p| (p, KeychainKind::External)),
+            self.internal_policy
+                .as_ref()
+                .map(|p| (p, KeychainKind::Internal)),
+        ];
+
+        for (policy, keychain) in policies.into_iter().flatten() {
+            let policy = serde_json::from_str::<BTreeMap<String, Vec<usize>>>(policy)?;
+            tx_builder.policy_path(policy, keychain);
+        }
+
+        let mut psbt = tx_builder.finish()?;
+
+        let unsigned_psbt = psbt.clone();
+
+        let finalized = ctx.state.wallet.sign(&mut psbt, SignOptions::default())?;
+
+        if !finalized {
+            return Err(Error::Generic(
+                "Cannot produce silent payment outputs without intermediate signing phase."
+                    .to_string(),
+            ));
+        }
+
+        for (full_input, psbt_input) in unsigned_psbt.inputs.iter().zip(psbt.inputs.iter_mut()) {
+            // repopulate key derivation data
+            psbt_input.bip32_derivation = full_input.bip32_derivation.clone();
+            psbt_input.tap_key_origins = full_input.tap_key_origins.clone();
+        }
+
+        let secp = Secp256k1::new();
+        let mut external_signers = ctx
+            .state
+            .wallet
+            .get_signers(KeychainKind::External)
+            .as_key_map(&secp);
+        let internal_signers = ctx
+            .state
+            .wallet
+            .get_signers(KeychainKind::Internal)
+            .as_key_map(&secp);
+        external_signers.extend(internal_signers);
+
+        match external_signers.iter().next().expect("not empty") {
+            (DescriptorPublicKey::Single(single_pub), DescriptorSecretKey::Single(prv)) => {
+                match single_pub.key {
+                    SinglePubKey::FullKey(pk) => {
+                        let keys: HashMap<PublicKey, PrivateKey> = [(pk, prv.key)].into();
+                        derive_sp(&mut psbt, &keys, &sp_recipients, &secp).expect("will fix later");
+                    }
+                    SinglePubKey::XOnly(xonly) => {
+                        let keys: HashMap<bdk_sp::bitcoin::XOnlyPublicKey, PrivateKey> =
+                            [(xonly, prv.key)].into();
+                        derive_sp(&mut psbt, &keys, &sp_recipients, &secp).expect("will fix later");
+                    }
+                };
+            }
+            (_, DescriptorSecretKey::XPrv(k)) => {
+                derive_sp(&mut psbt, &k.xkey, &sp_recipients, &secp).expect("will fix later");
+            }
+            _ => unimplemented!("multi xkey signer"),
+        };
+
+        // Unfinalize PSBT to resign
+        for psbt_input in psbt.inputs.iter_mut() {
+            psbt_input.final_script_sig = None;
+            psbt_input.final_script_witness = None;
+        }
+
+        let _resigned = ctx.state.wallet.sign(&mut psbt, SignOptions::default())?;
+
+        let raw_tx = psbt.extract_tx()?;
+
+        Ok(RawPsbt::new(&raw_tx))
     }
 }
 

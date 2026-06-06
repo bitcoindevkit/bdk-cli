@@ -21,6 +21,9 @@ use {
     std::{str::FromStr, sync::Arc},
 };
 
+#[cfg(feature = "silent-payments")]
+use crate::utils::types::StatusResult;
+
 #[cfg(feature = "compiler")]
 const NUMS_UNSPENDABLE_KEY_HEX: &str =
     "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
@@ -110,6 +113,31 @@ impl AppCommand<AppContext<Init>> for CompileCommand {
             public_descriptors: None,
             private_descriptors: None,
             fingerprint: None,
+        })
+    }
+}
+
+#[cfg(feature = "silent-payments")]
+#[derive(Parser, Debug, Clone, PartialEq)]
+pub struct SilentPaymentCodeCommand {
+    /// The scan public key to use on the silent payment code.
+    #[arg(long = "scan_key")]
+    scan: bdk_sp::bitcoin::secp256k1::PublicKey,
+    /// The spend public key to use on the silent payment code.
+    #[arg(long = "spend_key")]
+    spend: bdk_sp::bitcoin::secp256k1::PublicKey,
+}
+
+#[cfg(feature = "silent-payments")]
+impl AppCommand<AppContext<Init>> for SilentPaymentCodeCommand {
+    type Output = StatusResult;
+
+    fn execute(&self, ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
+        let sp_code =
+            bdk_sp::encoding::SilentPaymentCode::new_v0(self.scan, self.spend, ctx.network);
+
+        Ok(StatusResult {
+            message: sp_code.to_string(),
         })
     }
 }
