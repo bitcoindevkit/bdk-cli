@@ -69,3 +69,9 @@ compiler = []
 
 # Experimental silent payment sending capabilities
 silent-payments = ["dep:bdk_sp"]
+
+[dev-dependencies]
+predicates = "3.0"
+tempfile = "3.8"
+assert_cmd = "2.2.2"
+
