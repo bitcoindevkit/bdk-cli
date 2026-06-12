@@ -37,7 +37,7 @@ impl BdkCli {
     }
 
     /// Creates the base assert_cmd::Command with the global flags pre-loaded
-    fn build_base_cmd(&self) -> Command {
+    pub fn build_base_cmd(&self) -> Command {
         let mut cmd = Command::cargo_bin("bdk-cli").expect("bdk-cli binary must compile");
 
         cmd.arg("--network").arg(&self.network);
@@ -53,15 +53,24 @@ impl BdkCli {
         cmd
     }
 
+    /// Returns a pre-configured Command builder for any top-level subcommand
+    pub fn cmd(&self, subcommand: &str, args: &[&str]) -> Command {
+        let mut cmd = self.build_base_cmd();
+        cmd.arg(subcommand);
+        cmd.args(args);
+        cmd
+    }
+
     /// Returns a pre-configured Command builder for `key` operations
     pub fn key_cmd(&self, args: &[&str]) -> Command {
         let mut cmd = self.build_base_cmd();
         cmd.arg("key");
-        cmd.args(args); 
+        cmd.args(args);
         cmd
     }
 
     /// Returns a pre-configured Command builder for `wallet` operations
+    #[allow(unused)]
     pub fn wallet_cmd(&self, args: &[&str]) -> Command {
         let mut cmd = self.build_base_cmd();
         cmd.arg("wallet");
