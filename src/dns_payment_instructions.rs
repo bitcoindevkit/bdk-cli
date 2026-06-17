@@ -4,8 +4,9 @@ use bitcoin_payment_instructions::{
     PaymentMethodType, amount, dns_resolver::DNSHrnResolver,
 };
 use core::{net::SocketAddr, str::FromStr};
+use tokio::time::timeout;
 
-use crate::{error::BDKCliError as Error, utils::shorten};
+use crate::error::BDKCliError as Error;
 
 #[derive(Debug)]
 pub struct ResolvedPaymentInfo {
@@ -24,7 +25,7 @@ impl ResolvedPaymentInfo {
             .iter()
             .map(|pm| match pm {
                 PaymentMethod::LightningBolt11(bolt11) => {
-                    format!("Bolt 11 invoice ({})", shorten(bolt11, 20, 15))
+                    format!("Bolt 11 invoice ({})", bolt11)
                 }
                 PaymentMethod::LightningBolt12(offer) => format!("Bolt 12 invoice ({})", offer),
                 PaymentMethod::OnChain(address) => format!("On chain ({})", address),
@@ -58,7 +59,12 @@ pub(crate) async fn parse_dns_instructions(
         ParseError::HrnResolutionError("Unable to create socket from provided address")
     })?;
     let resolver = DNSHrnResolver(sock_addr);
-    let instructions = PaymentInstructions::parse(hrn, network, &resolver, true).await?;
+    let instructions = timeout(
+        std::time::Duration::from_secs(30),
+        PaymentInstructions::parse(hrn, network, &resolver, true),
+    )
+    .await
+    .map_err(|_| ParseError::HrnResolutionError("Resolution request timed out"))??;
     Ok((resolver, instructions))
 }
 
@@ -104,11 +110,11 @@ pub async fn process_instructions(
 
             let min_amount = instructions
                 .min_amt()
-                .map(|amnt| Amount::from_sat(amnt.milli_sats()));
+                .map(|amnt| Amount::from_sat(amnt.sats_rounding_up()));
 
             let max_amount = instructions
                 .max_amt()
-                .map(|amnt| Amount::from_sat(amnt.milli_sats()));
+                .map(|amnt| Amount::from_sat(amnt.sats_rounding_up()));
 
             if min_amount.is_some_and(|min| amount_to_send < min) {
                 return Err(Error::Generic(

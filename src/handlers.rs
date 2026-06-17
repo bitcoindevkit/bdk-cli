@@ -529,6 +529,9 @@ pub async fn handle_offline_wallet_subcommand(
             }
         }
         CreateTx {
+            #[cfg(feature = "dns_payment")]
+            mut recipients,
+            #[cfg(not(feature = "dns_payment"))]
             recipients,
             #[cfg(feature = "dns_payment")]
             dns_recipients,
@@ -547,6 +550,25 @@ pub async fn handle_offline_wallet_subcommand(
         } => {
             let mut tx_builder = wallet.build_tx();
 
+            #[cfg(feature = "dns_payment")]
+            for recipient in dns_recipients {
+                log::info!("Resolving DNS instructions for recipient {}", recipient.0);
+                let amount = Amount::from_sat(recipient.1);
+                let (resolver, instructions) =
+                    parse_dns_instructions(&recipient.0, cli_opts.network, &dns_resolver)
+                        .await
+                        .map_err(|e| Error::Generic(format!("Parsing error occured {e:#?}")))?;
+                let payment = process_instructions(amount, &instructions, resolver).await?;
+
+                recipients.push((payment.0.into(), payment.1.to_sat()));
+            }
+
+            if recipients.is_empty() {
+                return Err(Error::Generic(
+                    "Either --to or --to_dns parameters must be specified".to_string(),
+                ));
+            }
+
             if send_all {
                 if recipients.len() == 1 {
                     tx_builder.drain_wallet().drain_to(recipients[0].0.clone());
@@ -556,25 +578,10 @@ pub async fn handle_offline_wallet_subcommand(
                     ));
                 }
             } else {
-                #[allow(unused_mut)]
-                let mut recipients: Vec<_> = recipients
+                let recipients: Vec<_> = recipients
                     .into_iter()
                     .map(|(script, amount)| (script, Amount::from_sat(amount)))
                     .collect();
-
-                #[cfg(feature = "dns_payment")]
-                for recipient in dns_recipients {
-                    println!("Resolving DNS instructions for recipient {}", recipient.0);
-                    let amount = Amount::from_sat(recipient.1);
-                    let (resolver, instructions) =
-                        parse_dns_instructions(&recipient.0, cli_opts.network, &dns_resolver)
-                            .await
-                            .map_err(|e| Error::Generic(format!("Parsing error occured {e:#?}")))?;
-                    let payment = process_instructions(amount, &instructions, resolver).await?;
-
-                    recipients.push((payment.0.into(), payment.1));
-                }
-
                 tx_builder.set_recipients(recipients);
             }
 

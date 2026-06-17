@@ -380,7 +380,7 @@ pub enum OfflineWalletSubCommand {
         /// Adds a recipient to the transaction.
         // Clap Doesn't support complex vector parsing https://github.com/clap-rs/clap/issues/1704.
         // Address and amount parsing is done at run time in handler function.
-        #[arg(env = "ADDRESS:SAT", long = "to", required = true, value_parser = parse_recipient)]
+        #[arg(env = "ADDRESS:SAT", long = "to", value_parser = parse_recipient)]
         recipients: Vec<(ScriptBuf, u64)>,
         #[cfg(feature = "dns_payment")]
         /// Adds DNS recipients to the transaction
