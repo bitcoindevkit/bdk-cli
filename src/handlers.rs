@@ -540,7 +540,13 @@ pub fn handle_offline_wallet_subcommand(
             let mut tx_builder = wallet.build_tx();
 
             if send_all {
-                tx_builder.drain_wallet().drain_to(recipients[0].0.clone());
+                if recipients.len() == 1 {
+                    tx_builder.drain_wallet().drain_to(recipients[0].0.clone());
+                } else {
+                    return Err(Error::Generic(
+                        "Wallet can only be drained to a single output".to_string(),
+                    ));
+                }
             } else {
                 let recipients = recipients
                     .into_iter()
