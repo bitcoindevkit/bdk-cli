@@ -22,6 +22,7 @@ pub struct BdkCli {
     pub verbosity: bool,
     pub recv_desc: Option<String>,
     pub change_desc: Option<String>,
+    pub server_url: Option<String>,
 }
 
 impl BdkCli {
@@ -33,6 +34,7 @@ impl BdkCli {
             verbosity: false,
             recv_desc: None,
             change_desc: None,
+            server_url: None,
         }
     }
 
@@ -48,6 +50,10 @@ impl BdkCli {
 
         if self.verbosity {
             cmd.arg("--verbose");
+        }
+
+        if let Some(url) = &self.server_url {
+            cmd.arg("--server").arg(url);
         }
 
         cmd
