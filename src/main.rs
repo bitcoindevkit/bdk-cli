@@ -72,32 +72,35 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
             ))]
             WalletSubCommand::OnlineWalletSubCommand(cmd) => {
                 let runtime = WalletRuntime::load(&home_dir, &wallet_name)?;
-
                 let mut wallet = runtime.build_wallet(true)?;
                 let client = runtime.build_client(&wallet)?;
+                {
+                    let mut ctx = AppContext::new_online_wallet(
+                        runtime.network,
+                        runtime.home_dir.clone(),
+                        &mut wallet,
+                        &client,
+                    );
 
-                let mut ctx = AppContext::new_online_wallet(
-                    runtime.network,
-                    runtime.home_dir.clone(),
-                    &mut wallet,
-                    &client,
-                );
-
-                cmd.execute(&mut ctx).await?;
+                    cmd.execute(&mut ctx).await?;
+                }
+                wallet.persist()?;
             }
 
             WalletSubCommand::OfflineWalletSubCommand(cmd) => {
                 let runtime = WalletRuntime::load(&home_dir, &wallet_name)?;
-
                 let mut wallet = runtime.build_wallet(command_requires_db(&cmd))?;
 
-                let mut ctx = AppContext::new_offline_wallet(
-                    runtime.network,
-                    runtime.home_dir.clone(),
-                    &mut wallet,
-                );
+                {
+                    let mut ctx = AppContext::new_offline_wallet(
+                        runtime.network,
+                        runtime.home_dir.clone(),
+                        &mut wallet,
+                    );
 
-                cmd.execute(&mut ctx)?;
+                    cmd.execute(&mut ctx)?;
+                }
+                wallet.persist()?;
             }
 
             WalletSubCommand::Config(mut config_cmd) => {

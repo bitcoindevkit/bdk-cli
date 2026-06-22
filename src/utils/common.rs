@@ -224,12 +224,12 @@ pub fn command_requires_db(command: &OfflineWalletSubCommand) -> bool {
         OfflineWalletSubCommand::Balance(_)
         | OfflineWalletSubCommand::Unspent(_)
         | OfflineWalletSubCommand::Transactions(_)
-        | OfflineWalletSubCommand::BumpFee(_) => true,
-
-        OfflineWalletSubCommand::NewAddress(_)
+        | OfflineWalletSubCommand::BumpFee(_)
+        | OfflineWalletSubCommand::NewAddress(_)
         | OfflineWalletSubCommand::UnusedAddress(_)
-        | OfflineWalletSubCommand::CreateTx(_)
-        | OfflineWalletSubCommand::Policies(_)
+        | OfflineWalletSubCommand::CreateTx(_) => true,
+
+        OfflineWalletSubCommand::Policies(_)
         | OfflineWalletSubCommand::PublicDescriptor(_)
         | OfflineWalletSubCommand::Sign(_)
         | OfflineWalletSubCommand::ExtractPsbt(_)

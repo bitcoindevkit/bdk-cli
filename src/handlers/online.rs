@@ -96,14 +96,14 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
 
         #[cfg(any(feature = "electrum", feature = "esplora"))]
         let request = wallet.start_full_scan().inspect({
-            let mut stdout = std::io::stdout();
+            let mut stderr = std::io::stderr();
             let mut once = HashSet::<KeychainKind>::new();
             move |k, spk_i, _| {
                 if once.insert(k) {
-                    print!("\nScanning keychain [{k:?}]");
+                    eprint!("\nScanning keychain [{k:?}]");
                 }
-                print!(" {spk_i:<3}");
-                stdout.flush().expect("must flush");
+                eprint!(" {spk_i:<3}");
+                stderr.flush().expect("must flush");
             }
         });
 

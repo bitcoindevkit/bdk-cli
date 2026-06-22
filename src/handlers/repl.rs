@@ -98,7 +98,6 @@ pub(crate) async fn respond(
         }
 
         ReplSubCommand::Exit => None,
-        // _ => todo!(), // Handled specifically depending on your ReplSubCommand definitions
     };
 
     if response.is_some() {

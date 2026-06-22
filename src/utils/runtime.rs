@@ -26,9 +26,9 @@ use {
 use crate::client::{BlockchainClient, new_blockchain_client};
 
 pub enum RuntimeWallet {
-    Standard(Wallet),
+    Standard(Box<Wallet>),
     #[cfg(any(feature = "sqlite", feature = "redb"))]
-    Persisted(PersistedWallet<Persister>),
+    Persisted(Box<PersistedWallet<Persister>>, Box<Persister>),
 }
 
 impl Deref for RuntimeWallet {
@@ -37,7 +37,7 @@ impl Deref for RuntimeWallet {
         match self {
             Self::Standard(wallet) => wallet,
             #[cfg(any(feature = "sqlite", feature = "redb"))]
-            Self::Persisted(wallet) => wallet,
+            Self::Persisted(wallet, _) => wallet,
         }
     }
 }
@@ -47,7 +47,20 @@ impl DerefMut for RuntimeWallet {
         match self {
             Self::Standard(wallet) => wallet,
             #[cfg(any(feature = "sqlite", feature = "redb"))]
-            Self::Persisted(wallet) => wallet,
+            Self::Persisted(wallet, _) => wallet,
+        }
+    }
+}
+
+impl RuntimeWallet {
+    pub fn persist(&mut self) -> Result<(), Error> {
+        match self {
+            Self::Standard(_) => Ok(()),
+            #[cfg(any(feature = "sqlite", feature = "redb"))]
+            Self::Persisted(wallet, persister) => {
+                wallet.persist(persister)?;
+                Ok(())
+            }
         }
     }
 }
@@ -78,25 +91,28 @@ impl WalletRuntime {
 
     pub fn build_wallet(&self, require_db: bool) -> Result<RuntimeWallet, Error> {
         if !require_db {
-            return Ok(RuntimeWallet::Standard(new_wallet(
+            return Ok(RuntimeWallet::Standard(Box::new(new_wallet(
                 self.network,
                 &self.wallet_opts,
-            )?));
+            )?)));
         }
 
         #[cfg(any(feature = "sqlite", feature = "redb"))]
         {
             let mut persister = self.create_persister()?;
             let wallet = new_persisted_wallet(self.network, &mut persister, &self.wallet_opts)?;
-            Ok(RuntimeWallet::Persisted(wallet))
+            Ok(RuntimeWallet::Persisted(
+                Box::new(wallet),
+                Box::new(persister),
+            ))
         }
 
         #[cfg(not(any(feature = "sqlite", feature = "redb")))]
         {
-            Ok(RuntimeWallet::Standard(new_wallet(
+            Ok(RuntimeWallet::Standard(Box::new(new_wallet(
                 self.network,
                 &self.wallet_opts,
-            )?))
+            )?)))
         }
     }
 
