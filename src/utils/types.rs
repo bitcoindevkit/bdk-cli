@@ -78,21 +78,13 @@ pub struct PsbtResult {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_finalized: Option<bool>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub details: Option<serde_json::Value>,
 }
 
 impl PsbtResult {
-    pub fn new(psbt: &Psbt, verbose: bool, finalized: Option<bool>) -> Self {
+    pub fn new(psbt: &Psbt, finalized: Option<bool>) -> Self {
         Self {
             psbt: bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD.encode(psbt.serialize()),
             is_finalized: finalized,
-            details: if verbose {
-                Some(serde_json::to_value(psbt).unwrap_or_default())
-            } else {
-                None
-            },
         }
     }
 }

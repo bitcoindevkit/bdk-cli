@@ -95,7 +95,6 @@ impl AppCommand<AppContext<Init>> for SaveConfigCommand {
             network: ctx.network.to_string(),
             ext_descriptor: self.wallet_opts.ext_descriptor.clone(),
             int_descriptor: self.wallet_opts.int_descriptor.clone(),
-
             #[cfg(any(feature = "sqlite", feature = "redb"))]
             database_type: match self.wallet_opts.database_type {
                 #[cfg(feature = "sqlite")]

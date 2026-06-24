@@ -19,7 +19,6 @@ use std::path::PathBuf;
 pub struct BdkCli {
     pub network: String,
     pub datadir: Option<PathBuf>,
-    pub verbosity: bool,
     pub recv_desc: Option<String>,
     pub change_desc: Option<String>,
     pub server_url: Option<String>,
@@ -31,7 +30,6 @@ impl BdkCli {
         Self {
             network: network.to_string(),
             datadir,
-            verbosity: false,
             recv_desc: None,
             change_desc: None,
             server_url: None,
@@ -46,10 +44,6 @@ impl BdkCli {
 
         if let Some(dir) = &self.datadir {
             cmd.arg("--datadir").arg(dir);
-        }
-
-        if self.verbosity {
-            cmd.arg("--verbose");
         }
 
         if let Some(url) = &self.server_url {
