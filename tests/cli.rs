@@ -552,7 +552,7 @@ mod test_offline {
         let sign_json: Value = serde_json::from_slice(&sign_output.stdout).unwrap();
         let proof = sign_json["proof"].as_str().unwrap();
 
-        // A tampered message should fail verification gracefully (valid: false)
+        // A tampered message should fail
         cli.wallet_cmd(&[
             "--wallet",
             WALLET_NAME,

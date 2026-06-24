@@ -311,6 +311,8 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
 
         let psbt = tx_builder.finish()?;
 
+        // let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
+
         Ok(PsbtResult::new(&psbt, Some(false)))
     }
 }
@@ -761,7 +763,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CombinePsbtCommand {
                     Ok(acc)
                 })?;
 
-        Ok(PsbtResult::new(&final_psbt, None))
+        Ok(PsbtResult::new(&final_psbt, Some(false)))
     }
 }
 
