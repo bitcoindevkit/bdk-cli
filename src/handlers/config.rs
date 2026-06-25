@@ -124,6 +124,22 @@ impl AppCommand<AppContext<Init>> for SaveConfigCommand {
             parallel_requests: Some(self.wallet_opts.parallel_requests),
             #[cfg(feature = "rpc")]
             cookie: self.wallet_opts.cookie.clone(),
+
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy: self.wallet_opts.proxy_opts.proxy.clone(),
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy_auth: self
+                .wallet_opts
+                .proxy_opts
+                .proxy_auth
+                .as_ref()
+                .map(|(u, p)| format!("{u}:{p}")),
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy_retries: Some(self.wallet_opts.proxy_opts.retries),
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy_timeout: self.wallet_opts.proxy_opts.timeout,
+            #[cfg(feature = "cbf")]
+            conn_count: Some(self.wallet_opts.compactfilter_opts.conn_count),
         };
 
         config.wallets.insert(wallet_name.clone(), wallet_config);

@@ -95,19 +95,18 @@ pub(crate) fn parse_address(address_str: &str) -> Result<Address, Error> {
 /// If not the default home directory is created at `~/.bdk-bitcoin`.
 #[allow(dead_code)]
 pub(crate) fn prepare_home_dir(home_path: Option<PathBuf>) -> Result<PathBuf, Error> {
-    let dir = home_path.unwrap_or_else(|| {
-        let mut dir = PathBuf::new();
-        dir.push(
-            dirs::home_dir()
-                .ok_or_else(|| Error::Generic("home dir not found".to_string()))
-                .unwrap(),
-        );
-        dir.push(".bdk-bitcoin");
-        dir
-    });
+    let dir = match home_path {
+        Some(dir) => dir,
+        None => {
+            let mut dir =
+                dirs::home_dir().ok_or_else(|| Error::Generic("Home dir not found".to_string()))?;
+            dir.push(".bdk-bitcoin");
+            dir
+        }
+    };
 
     if !dir.exists() {
-        std::fs::create_dir(&dir).map_err(|e| Error::Generic(e.to_string()))?;
+        std::fs::create_dir_all(&dir).map_err(|e| Error::Generic(e.to_string()))?;
     }
 
     Ok(dir)
@@ -171,14 +170,8 @@ pub fn load_wallet_config(
             "Wallet '{wallet_name}' not found in config"
         )))?;
 
-    let network = match wallet_config.network.as_str() {
-        "bitcoin" => Ok(Network::Bitcoin),
-        "testnet" => Ok(Network::Testnet),
-        "regtest" => Ok(Network::Regtest),
-        "signet" => Ok(Network::Signet),
-        "testnet4" => Ok(Network::Testnet4),
-        _ => Err(Error::Generic("Invalid network in config".to_string())),
-    }?;
+    let network = Network::from_str(&wallet_config.network)
+        .map_err(|_| Error::Generic("Invalid network in config".to_string()))?;
 
     Ok((wallet_opts, network))
 }
