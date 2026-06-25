@@ -274,6 +274,9 @@ pub struct WalletOpts {
     #[cfg(feature = "cbf")]
     #[clap(flatten)]
     pub compactfilter_opts: CompactFilterOpts,
+    #[cfg(any(feature = "electrum", feature = "esplora"))]
+    #[command(flatten)]
+    pub proxy_opts: ProxyOpts,
 }
 
 /// Options to configure a SOCKS5 proxy for a blockchain client connection.
@@ -281,11 +284,11 @@ pub struct WalletOpts {
 #[derive(Debug, Args, Clone, PartialEq, Eq)]
 pub struct ProxyOpts {
     /// Sets the SOCKS5 proxy for a blockchain client.
-    #[arg(env = "PROXY_ADDRS:PORT", long = "proxy", short = 'p')]
+    #[arg(env = "PROXY_ADDRS:PORT", long = "proxy")]
     pub proxy: Option<String>,
 
     /// Sets the SOCKS5 proxy credential.
-    #[arg(env = "PROXY_USER:PASSWD", long="proxy_auth", short='a', value_parser = parse_proxy_auth)]
+    #[arg(env = "PROXY_USER:PASSWD", long="proxy_auth", value_parser = parse_proxy_auth)]
     pub proxy_auth: Option<(String, String)>,
 
     /// Sets the SOCKS5 proxy retries for the blockchain client.

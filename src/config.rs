@@ -50,6 +50,21 @@ pub struct WalletConfigInner {
     pub parallel_requests: Option<usize>,
     #[cfg(feature = "rpc")]
     pub cookie: Option<String>,
+    #[cfg(any(feature = "electrum", feature = "esplora"))]
+    #[serde(default)]
+    pub proxy: Option<String>,
+    #[cfg(any(feature = "electrum", feature = "esplora"))]
+    #[serde(default)]
+    pub proxy_auth: Option<String>,
+    #[cfg(any(feature = "electrum", feature = "esplora"))]
+    #[serde(default)]
+    pub proxy_retries: Option<u8>,
+    #[cfg(any(feature = "electrum", feature = "esplora"))]
+    #[serde(default)]
+    pub proxy_timeout: Option<u8>,
+    #[cfg(feature = "cbf")]
+    #[serde(default)]
+    pub conn_count: Option<u8>,
 }
 
 impl WalletConfig {
@@ -93,7 +108,7 @@ impl TryFrom<&WalletConfigInner> for WalletOpts {
     type Error = Error;
 
     fn try_from(config: &WalletConfigInner) -> Result<Self, Self::Error> {
-        let _network = Network::from_str(&config.network)
+        Network::from_str(&config.network)
             .map_err(|_| Error::Generic("Invalid network".to_string()))?;
 
         #[cfg(any(feature = "sqlite", feature = "redb"))]
@@ -155,8 +170,21 @@ impl TryFrom<&WalletConfigInner> for WalletOpts {
             #[cfg(feature = "rpc")]
             cookie: config.cookie.clone(),
 
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy_opts: crate::commands::ProxyOpts {
+                proxy: config.proxy.clone(),
+                proxy_auth: match &config.proxy_auth {
+                    Some(s) => Some(crate::utils::parse_proxy_auth(s)?),
+                    None => None,
+                },
+                retries: config.proxy_retries.unwrap_or(5),
+                timeout: config.proxy_timeout,
+            },
+
             #[cfg(feature = "cbf")]
-            compactfilter_opts: crate::commands::CompactFilterOpts { conn_count: 2 },
+            compactfilter_opts: crate::commands::CompactFilterOpts {
+                conn_count: config.conn_count.unwrap_or(2),
+            },
         })
     }
 }
@@ -218,6 +246,16 @@ mod tests {
             rpc_password: None,
             #[cfg(feature = "rpc")]
             cookie: None,
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy: None,
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy_auth: None,
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy_retries: None,
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy_timeout: None,
+            #[cfg(feature = "cbf")]
+            conn_count: None,
         };
 
         let opts: WalletOpts = (&wallet_config)
@@ -293,6 +331,16 @@ mod tests {
             rpc_password: None,
             #[cfg(feature = "rpc")]
             cookie: None,
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy: None,
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy_auth: None,
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy_retries: None,
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy_timeout: None,
+            #[cfg(feature = "cbf")]
+            conn_count: None,
         };
 
         let result: Result<WalletOpts, Error> = (&inner).try_into();
