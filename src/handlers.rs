@@ -922,27 +922,35 @@ pub(crate) async fn handle_online_wallet_subcommand(
                         NO_EXPECTED_MEMPOOL_TXS,
                     );
 
-                    while let Some(block_event) = emitter.next_block()? {
-                        if block_event.block_height() % 10_000 == 0 {
-                            let percent_done = f64::from(block_event.block_height())
-                                / f64::from(blockchain_info.headers as u32)
-                                * 100f64;
-                            println!(
-                                "Applying block at height: {}, {:.2}% done.",
-                                block_event.block_height(),
-                                percent_done
-                            );
-                        }
+                    let block_events = wallet.events_helper(|w| {
+                        while let Some(block_event) = emitter.next_block()? {
+                            if block_event.block_height() % 10_000 == 0 {
+                                let percent_done = f64::from(block_event.block_height())
+                                    / f64::from(blockchain_info.headers as u32)
+                                    * 100f64;
+                                println!(
+                                    "Applying block at height: {}, {:.2}% done.",
+                                    block_event.block_height(),
+                                    percent_done
+                                );
+                            }
 
-                        wallet.apply_block_connected_to(
-                            &block_event.block,
-                            block_event.block_height(),
-                            block_event.connected_to(),
-                        )?;
-                    }
+                            w.apply_block_connected_to(
+                                &block_event.block,
+                                block_event.block_height(),
+                                block_event.connected_to(),
+                            )?;
+                        }
+                        Ok::<_, Error>(())
+                    })?;
+                    print_wallet_events(&block_events);
 
                     let mempool_txs = emitter.mempool()?;
-                    wallet.apply_unconfirmed_txs(mempool_txs.update);
+                    let mempool_events = wallet.apply_unconfirmed_txs_events(mempool_txs.update);
+                    print_wallet_events(&mempool_events);
+
+                    let evicted_events = wallet.apply_evicted_txs_events(mempool_txs.evicted);
+                    print_wallet_events(&evicted_events);
                 }
                 #[cfg(feature = "cbf")]
                 KyotoClient { client } => {
@@ -1879,27 +1887,34 @@ pub async fn sync_wallet(client: &BlockchainClient, wallet: &mut Wallet) -> Resu
                     .filter(|tx| tx.chain_position.is_unconfirmed()),
             );
 
-            while let Some(block_event) = emitter.next_block()? {
-                if block_event.block_height() % 10_000 == 0 {
-                    let percent_done = f64::from(block_event.block_height())
-                        / f64::from(blockchain_info.headers as u32)
-                        * 100f64;
-                    println!(
-                        "Applying block at height: {}, {:.2}% done.",
+            let block_events = wallet.events_helper(|w| {
+                while let Some(block_event) = emitter.next_block()? {
+                    if block_event.block_height() % 10_000 == 0 {
+                        let percent_done = f64::from(block_event.block_height())
+                            / f64::from(blockchain_info.headers as u32)
+                            * 100f64;
+                        println!(
+                            "Applying block at height: {}, {:.2}% done.",
+                            block_event.block_height(),
+                            percent_done
+                        );
+                    }
+                    w.apply_block_connected_to(
+                        &block_event.block,
                         block_event.block_height(),
-                        percent_done
-                    );
+                        block_event.connected_to(),
+                    )?;
                 }
-
-                wallet.apply_block_connected_to(
-                    &block_event.block,
-                    block_event.block_height(),
-                    block_event.connected_to(),
-                )?;
-            }
+                Ok::<_, Error>(())
+            })?;
+            print_wallet_events(&block_events);
 
             let mempool_txs = emitter.mempool()?;
-            wallet.apply_unconfirmed_txs(mempool_txs.update);
+            let mempool_events = wallet.apply_unconfirmed_txs_events(mempool_txs.update);
+            print_wallet_events(&mempool_events);
+
+            let evicted_events = wallet.apply_evicted_txs_events(mempool_txs.evicted);
+            print_wallet_events(&evicted_events);
             Ok(())
         }
         #[cfg(feature = "cbf")]

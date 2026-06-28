@@ -44,9 +44,7 @@ use cli_table::{Cell, CellStruct, Style, Table};
     feature = "rpc",
     feature = "cbf"
 ))]
-use crate::commands::ClientType;
-#[cfg(any(feature = "electrum", feature = "esplora",))]
-use bdk_wallet::event::WalletEvent;
+use {crate::commands::ClientType, bdk_wallet::event::WalletEvent};
 
 use bdk_wallet::Wallet;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
@@ -400,9 +398,11 @@ pub async fn sync_kyoto_client(
 
     let update = handle.update_subscriber.lock().await.update().await?;
     tracing::info!("Received update: applying to wallet");
-    wallet
-        .apply_update(update)
+    let events = wallet
+        .apply_update_events(update)
         .map_err(|e| Error::Generic(format!("Failed to apply update: {e}")))?;
+
+    print_wallet_events(&events);
 
     tracing::info!(
         "Chain tip: {}, Transactions: {}, Balance: {}",
@@ -706,45 +706,61 @@ pub fn load_wallet_config(
 
     Ok((wallet_opts, network))
 }
-#[cfg(any(feature = "electrum", feature = "esplora",))]
-pub fn print_wallet_events(events: &Vec<WalletEvent>) {
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+pub fn print_wallet_events(events: &[WalletEvent]) {
     for event in events {
         match event {
-            WalletEvent::TxConfirmed {
-                txid,
-                tx: _,
-                block_time,
-                old_block_time: _,
-            } => {
-                eprintln!(
-                    "Transaction {} confirmed in block {:?}",
-                    txid, block_time.block_id
-                );
-            }
-            WalletEvent::TxUnconfirmed {
-                txid,
-                tx: _,
-                old_block_time: _,
-            } => {
-                eprintln!("Transaction {txid} became unconfirmed");
-            }
-            WalletEvent::TxReplaced {
-                txid,
-                tx: _,
-                conflicts: _,
-            } => {
-                eprintln!("Received new transaction: {txid}");
-            }
-            WalletEvent::TxDropped { txid, tx: _ } => {
-                eprintln!("Transaction {txid} has been dropped");
-            }
             WalletEvent::ChainTipChanged { old_tip, new_tip } => {
                 eprintln!(
-                    "Wallet has synced to {:?} chain tip from {:?}",
-                    new_tip.height, old_tip.height
+                    "Chain tip advanced from height {} to {}",
+                    old_tip.height, new_tip.height
                 );
             }
-            _ => eprintln!(),
+            WalletEvent::TxConfirmed {
+                txid,
+                block_time,
+                old_block_time,
+                ..
+            } => match old_block_time {
+                Some(old) => eprintln!(
+                    "Transaction {txid} re-confirmed at height {} (was height {}, likely a reorg)",
+                    block_time.block_id.height, old.block_id.height
+                ),
+                None => eprintln!(
+                    "Transaction {txid} confirmed at height {}",
+                    block_time.block_id.height
+                ),
+            },
+            WalletEvent::TxUnconfirmed {
+                txid,
+                old_block_time,
+                ..
+            } => match old_block_time {
+                Some(old) => eprintln!(
+                    "Transaction {txid} became unconfirmed (was confirmed at height {}, likely a reorg)",
+                    old.block_id.height
+                ),
+                None => eprintln!("Transaction {txid} seen in mempool"),
+            },
+            WalletEvent::TxReplaced {
+                txid, conflicts, ..
+            } => {
+                let ids: Vec<String> = conflicts.iter().map(|(_, c)| c.to_string()).collect();
+                eprintln!(
+                    "Transaction {txid} was replaced (conflicts with: {})",
+                    ids.join(", ")
+                );
+            }
+            WalletEvent::TxDropped { txid, .. } => {
+                eprintln!("Transaction {txid} dropped from the mempool");
+            }
+            _ => {}
         }
     }
 }
