@@ -23,13 +23,10 @@ use payjoin::send::v2::{
 };
 use payjoin::{HpkePublicKey, ImplementationError, UriExt};
 use serde_json::{json, to_string_pretty};
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{path::PathBuf, sync::Arc};
 
 use crate::payjoin::db::{ReceiverPersister, SenderPersister, open_payjoin_db};
-use crate::payjoin::ohttp::{RelayManager, fetch_ohttp_keys};
+use crate::payjoin::ohttp::RelayManager;
 
 pub mod db;
 pub mod ohttp;
@@ -41,7 +38,7 @@ pub mod ohttp;
 /// [`PayjoinManager::proceed_receiver_session`].
 pub(crate) struct PayjoinManager<'a> {
     wallet: &'a mut Wallet,
-    relay_manager: Arc<Mutex<RelayManager>>,
+    relay_manager: RelayManager,
     db: Arc<crate::payjoin::db::Database>,
 }
 
@@ -110,7 +107,7 @@ impl<'a> PayjoinManager<'a> {
         wallet_name: &str,
     ) -> Result<Self, Error> {
         let db = open_payjoin_db(datadir, wallet_name)?;
-        let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
+        let relay_manager = RelayManager::new();
 
         Ok(Self {
             wallet,
@@ -137,14 +134,8 @@ impl<'a> PayjoinManager<'a> {
             .collect::<Result<_, _>>()
             .map_err(|e| Error::Generic(format!("Failed to parse one or more OHTTP URLs: {e}")))?;
 
-        if ohttp_relays.is_empty() {
-            return Err(Error::Generic(
-                "At least one valid OHTTP relay must be provided.".into(),
-            ));
-        }
-
-        let ohttp_keys =
-            fetch_ohttp_keys(ohttp_relays, &directory, self.relay_manager.clone()).await?;
+        self.relay_manager.configure(ohttp_relays)?;
+        let ohttp_keys = self.relay_manager.fetch_ohttp_keys(&directory).await?;
 
         let persister = crate::payjoin::db::ReceiverPersister::new(self.db.clone())?;
 
@@ -152,20 +143,17 @@ impl<'a> PayjoinManager<'a> {
             .map(FeeRate::from_sat_per_kwu)
             .unwrap_or(FeeRate::BROADCAST_MIN);
 
-        let receiver = payjoin::receive::v2::ReceiverBuilder::new(
-            address.address,
-            directory,
-            ohttp_keys.ohttp_keys,
-        )?
-        .with_amount(payjoin::bitcoin::Amount::from_sat(amount))
-        .with_max_fee_rate(checked_max_fee_rate)
-        .build()
-        .save(&persister)
-        .map_err(|e| {
-            Error::Generic(format!(
-                "Failed to persister the receiver after initialization: {e}"
-            ))
-        })?;
+        let receiver =
+            payjoin::receive::v2::ReceiverBuilder::new(address.address, directory, ohttp_keys)?
+                .with_amount(payjoin::bitcoin::Amount::from_sat(amount))
+                .with_max_fee_rate(checked_max_fee_rate)
+                .build()
+                .save(&persister)
+                .map_err(|e| {
+                    Error::Generic(format!(
+                        "Failed to persister the receiver after initialization: {e}"
+                    ))
+                })?;
 
         let pj_uri = receiver.pj_uri();
         println!("Request Payjoin by sharing this Payjoin Uri:");
@@ -174,7 +162,6 @@ impl<'a> PayjoinManager<'a> {
         self.proceed_receiver_session(
             ReceiveSession::Initialized(receiver.clone()),
             &persister,
-            ohttp_keys.relay_url.to_string(),
             checked_max_fee_rate,
             blockchain_client,
         )
@@ -244,11 +231,7 @@ impl<'a> PayjoinManager<'a> {
                         Error::Generic(format!("Failed to parse one or more OHTTP URLs: {e}"))
                     })?;
 
-                if ohttp_relays.is_empty() {
-                    return Err(Error::Generic(
-                        "At least one valid OHTTP relay must be provided.".into(),
-                    ));
-                }
+                self.relay_manager.configure(ohttp_relays)?;
                 // Check for existing session with the same receiver pubkey
                 let receiver_pubkey = v2_param.receiver_pubkey();
                 let existing_session =
@@ -293,13 +276,8 @@ impl<'a> PayjoinManager<'a> {
                     (SendSession::WithReplyKey(sender), persister)
                 };
 
-                self.proceed_sender_session(
-                    sender_state,
-                    &persister,
-                    ohttp_relays,
-                    blockchain_client,
-                )
-                .await?
+                self.proceed_sender_session(sender_state, &persister, blockchain_client)
+                    .await?
             }
             _ => {
                 unimplemented!("Payjoin version not recognized.");
@@ -313,20 +291,13 @@ impl<'a> PayjoinManager<'a> {
         &mut self,
         session: ReceiveSession,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
-        relay: impl payjoin::IntoUrl,
         max_fee_rate: FeeRate,
         blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         match session {
             ReceiveSession::Initialized(proposal) => {
-                self.read_from_directory(
-                    proposal,
-                    persister,
-                    relay,
-                    max_fee_rate,
-                    blockchain_client,
-                )
-                .await
+                self.read_from_directory(proposal, persister, max_fee_rate, blockchain_client)
+                    .await
             }
             ReceiveSession::UncheckedOriginalPayload(proposal) => {
                 self.check_proposal(proposal, persister, max_fee_rate, blockchain_client)
@@ -382,14 +353,14 @@ impl<'a> PayjoinManager<'a> {
         &mut self,
         receiver: Receiver<Initialized>,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
-        relay: impl payjoin::IntoUrl,
         max_fee_rate: FeeRate,
         blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         let mut current_receiver_typestate = receiver;
         let next_receiver_typestate = loop {
-            let (req, context) = current_receiver_typestate.create_poll_request(relay.as_str())?;
-            let response = self.send_payjoin_post_request(req).await?;
+            let (response, context) = self
+                .post_via_relay(|relay| current_receiver_typestate.create_poll_request(relay))
+                .await?;
             let state_transition = current_receiver_typestate
                 .process_response(response.bytes().await?.to_vec().as_slice(), context)
                 .save(persister);
@@ -630,17 +601,9 @@ impl<'a> PayjoinManager<'a> {
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
         blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
-        let (req, ctx) = receiver
-            .create_post_request(
-                self.unwrap_relay_or_else_fetch(vec![], None::<&str>)
-                    .await?
-                    .as_str(),
-            )
-            .map_err(|e| {
-                Error::Generic(format!("Error occurred when creating a post request for sending final Payjoin proposal: {e}"))
-            })?;
-
-        let res = self.send_payjoin_post_request(req).await?;
+        let (res, ctx) = self
+            .post_via_relay(|relay| receiver.create_post_request(relay))
+            .await?;
         let payjoin_psbt = receiver.psbt().clone();
         let next_receiver_typestate = receiver
             .process_response(&res.bytes().await?, ctx)
@@ -731,28 +694,9 @@ impl<'a> PayjoinManager<'a> {
         receiver: Receiver<HasReplyableError>,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
     ) -> Result<(), Error> {
-        let (err_req, err_ctx) = receiver
-            .create_error_request(
-                self.unwrap_relay_or_else_fetch(vec![], None::<&str>)
-                    .await?
-                    .as_str(),
-            )
-            .map_err(|e| {
-                Error::Generic(format!(
-                    "Error occurred when creating a receiver error request: {}",
-                    e
-                ))
-            })?;
-
-        let err_response = match self.send_payjoin_post_request(err_req).await {
-            Ok(response) => response,
-            Err(e) => {
-                return Err(Error::Generic(format!(
-                    "Failed to post error request: {}",
-                    e
-                )));
-            }
-        };
+        let (err_response, err_ctx) = self
+            .post_via_relay(|relay| receiver.create_error_request(relay))
+            .await?;
 
         let err_bytes = match err_response.bytes().await {
             Ok(bytes) => bytes,
@@ -781,33 +725,16 @@ impl<'a> PayjoinManager<'a> {
         &self,
         session: SendSession,
         persister: &impl SessionPersister<SessionEvent = SenderSessionEvent>,
-        ohttp_relays: Vec<url::Url>,
         blockchain_client: &BlockchainClient,
     ) -> Result<Txid, Error> {
         match session {
             SendSession::WithReplyKey(context) => {
-                let relay = self
-                    .unwrap_relay_or_else_fetch(ohttp_relays, Some(context.endpoint()))
-                    .await?;
-                self.post_original_proposal(
-                    context,
-                    persister,
-                    blockchain_client,
-                    relay.to_string(),
-                )
-                .await
+                self.post_original_proposal(context, persister, blockchain_client)
+                    .await
             }
             SendSession::PollingForProposal(context) => {
-                let relay = self
-                    .unwrap_relay_or_else_fetch(ohttp_relays, Some(context.endpoint()))
-                    .await?;
-                self.get_proposed_payjoin_proposal(
-                    context,
-                    persister,
-                    blockchain_client,
-                    relay.to_string(),
-                )
-                .await
+                self.get_proposed_payjoin_proposal(context, persister, blockchain_client)
+                    .await
             }
             SendSession::Closed(SenderSessionOutcome::Success(psbt)) => {
                 self.process_payjoin_proposal(psbt, blockchain_client).await
@@ -816,44 +743,19 @@ impl<'a> PayjoinManager<'a> {
         }
     }
 
-    async fn unwrap_relay_or_else_fetch(
-        &self,
-        ohttp_relays: Vec<url::Url>,
-        directory: Option<impl payjoin::IntoUrl>,
-    ) -> Result<url::Url, Error> {
-        let selected_relay = self
-            .relay_manager
-            .lock()
-            .expect("Lock should not be poisoned")
-            .get_selected_relay();
-        match selected_relay {
-            Some(relay) => Ok(relay),
-            None => {
-                let directory = directory.ok_or_else(|| {
-                    Error::Generic("No directory URL provided and no relay selected".to_string())
-                })?;
-                Ok(
-                    fetch_ohttp_keys(ohttp_relays, directory, self.relay_manager.clone())
-                        .await?
-                        .relay_url,
-                )
-            }
-        }
-    }
-
     async fn post_original_proposal(
         &self,
         sender: Sender<WithReplyKey>,
         persister: &impl SessionPersister<SessionEvent = SenderSessionEvent>,
         blockchain_client: &BlockchainClient,
-        relay: impl payjoin::IntoUrl,
     ) -> Result<Txid, Error> {
-        let (req, ctx) = sender.create_v2_post_request(relay.as_str())?;
-        let response = self.send_payjoin_post_request(req).await?;
+        let (response, ctx) = self
+            .post_via_relay(|relay| sender.create_v2_post_request(relay))
+            .await?;
         let sender = sender
             .process_response(&response.bytes().await?, ctx)
             .save(persister)?;
-        self.get_proposed_payjoin_proposal(sender, persister, blockchain_client, relay)
+        self.get_proposed_payjoin_proposal(sender, persister, blockchain_client)
             .await
     }
 
@@ -862,12 +764,12 @@ impl<'a> PayjoinManager<'a> {
         sender: Sender<PollingForProposal>,
         persister: &impl SessionPersister<SessionEvent = SenderSessionEvent>,
         blockchain_client: &BlockchainClient,
-        relay: impl payjoin::IntoUrl,
     ) -> Result<Txid, Error> {
         let mut sender = sender.clone();
         loop {
-            let (req, ctx) = sender.create_poll_request(relay.as_str())?;
-            let response = self.send_payjoin_post_request(req).await?;
+            let (response, ctx) = self
+                .post_via_relay(|relay| sender.create_poll_request(relay))
+                .await?;
             let processed_response = sender
                 .process_response(&response.bytes().await?, ctx)
                 .save(persister);
@@ -914,13 +816,36 @@ impl<'a> PayjoinManager<'a> {
             .header("Content-Type", req.content_type)
             .body(req.body)
             .send()
-            .await
+            .await?
+            .error_for_status()
+    }
+
+    async fn post_via_relay<F, T, E>(&self, mut build: F) -> Result<(reqwest::Response, T), Error>
+    where
+        F: FnMut(&str) -> Result<(payjoin::Request, T), E>,
+        E: std::fmt::Display,
+    {
+        loop {
+            let relay = self.relay_manager.choose_relay()?;
+            // Build a fresh request for each attempt. Reusing an OHTTP
+            // ciphertext would let relays correlate retransmissions.
+            let (req, context) = build(relay.as_str())
+                .map_err(|e| Error::Generic(format!("Failed to create OHTTP request: {e}")))?;
+
+            match self.send_payjoin_post_request(req).await {
+                Ok(response) => return Ok((response, context)),
+                Err(e) => {
+                    tracing::debug!("Request to OHTTP relay {relay} failed: {e:?}");
+                    self.relay_manager.add_failed_relay(relay);
+                }
+            }
+        }
     }
 
     /// Resume pending payjoin sessions from the database
     pub async fn resume_payjoins(
         &mut self,
-        directory: String,
+        _directory: String,
         ohttp_relays: Vec<String>,
         session_id: Option<i64>,
         blockchain_client: &BlockchainClient,
@@ -951,10 +876,7 @@ impl<'a> PayjoinManager<'a> {
             .map(|s| url::Url::parse(&s))
             .collect::<Result<_, _>>()
             .map_err(|e| Error::Generic(format!("Failed to parse OHTTP URLs: {e}")))?;
-
-        let relay = self
-            .unwrap_relay_or_else_fetch(ohttp_relays, Some(&directory))
-            .await?;
+        self.relay_manager.configure(ohttp_relays)?;
 
         let max_fee_rate = FeeRate::BROADCAST_MIN;
         let total_sessions = recv_session_ids.len() + send_session_ids.len();
@@ -975,7 +897,6 @@ impl<'a> PayjoinManager<'a> {
                         self.proceed_receiver_session(
                             receiver_state,
                             &persister,
-                            relay.as_str(),
                             max_fee_rate,
                             blockchain_client,
                         ),
@@ -1010,12 +931,7 @@ impl<'a> PayjoinManager<'a> {
                     println!("Resuming sender session {}", session_id);
                     match tokio::time::timeout(
                         std::time::Duration::from_secs(30),
-                        self.proceed_sender_session(
-                            sender_state,
-                            &persister,
-                            vec![relay.clone()],
-                            blockchain_client,
-                        ),
+                        self.proceed_sender_session(sender_state, &persister, blockchain_client),
                     )
                     .await
                     {
