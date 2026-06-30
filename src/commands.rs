@@ -21,8 +21,9 @@ use crate::handlers::{
     key::{DeriveKeyCommand, GenerateKeyCommand, RestoreKeyCommand},
     offline::{
         BalanceCommand, BumpFeeCommand, CombinePsbtCommand, CreateTxCommand, ExtractPsbtCommand,
-        FinalizePsbtCommand, NewAddressCommand, PoliciesCommand, PublicDescriptorCommand,
-        SignCommand, TransactionsCommand, UnspentCommand, UnusedAddressCommand,
+        FinalizePsbtCommand, LockUtxoCommand, LockedUtxosCommand, NewAddressCommand,
+        PoliciesCommand, PublicDescriptorCommand, SignCommand, TransactionsCommand,
+        UnlockUtxoCommand, UnspentCommand, UnusedAddressCommand,
     },
 };
 
@@ -359,6 +360,12 @@ pub enum OfflineWalletSubCommand {
     /// Verify a BIP322 signature
     #[cfg(feature = "bip322")]
     VerifyMessage(VerifyMessageCommand),
+    /// Lock UTXO(s) so they're excluded from coin selection.
+    LockUtxo(LockUtxoCommand),
+    /// Unlock previously locked UTXO(s).
+    UnlockUtxo(UnlockUtxoCommand),
+    /// List currently locked UTXOs.
+    LockedUtxos(LockedUtxosCommand),
 }
 
 /// Wallet subcommands that needs a blockchain backend.

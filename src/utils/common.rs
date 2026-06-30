@@ -220,7 +220,10 @@ pub fn command_requires_db(command: &OfflineWalletSubCommand) -> bool {
         | OfflineWalletSubCommand::BumpFee(_)
         | OfflineWalletSubCommand::NewAddress(_)
         | OfflineWalletSubCommand::UnusedAddress(_)
-        | OfflineWalletSubCommand::CreateTx(_) => true,
+        | OfflineWalletSubCommand::CreateTx(_)
+        | OfflineWalletSubCommand::LockUtxo(_)
+        | OfflineWalletSubCommand::UnlockUtxo(_)
+        | OfflineWalletSubCommand::LockedUtxos(_) => true,
 
         OfflineWalletSubCommand::Policies(_)
         | OfflineWalletSubCommand::PublicDescriptor(_)

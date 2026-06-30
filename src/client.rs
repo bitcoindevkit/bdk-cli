@@ -98,14 +98,10 @@ impl BlockchainClient {
             #[cfg(feature = "cbf")]
             Self::KyotoClient { client } => {
                 let txid = tx.compute_txid();
-                let wtxid = client
-                    .requester
-                    .submit_package(tx)
-                    .await
-                    .map_err(|_| {
-                        tracing::warn!("Broadcast was unsuccessful");
-                        Error::Generic("Transaction broadcast timed out after 30 seconds".into())
-                    })?;
+                let wtxid = client.requester.submit_package(tx).await.map_err(|_| {
+                    tracing::warn!("Broadcast was unsuccessful");
+                    Error::Generic("Transaction broadcast timed out after 30 seconds".into())
+                })?;
                 tracing::info!("Successfully broadcast WTXID: {wtxid}");
                 Ok(txid)
             }
