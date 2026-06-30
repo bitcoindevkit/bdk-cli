@@ -259,7 +259,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
         }
 
         if self.offline_signer {
-            tx_builder.include_output_redeem_witness_script();
+            tx_builder.add_global_xpubs();
         }
 
         if let Some(fee_rate) = self.fee_rate
@@ -414,7 +414,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
         tx_builder.set_exact_sequence(Sequence::MAX);
 
         if self.offline_signer {
-            tx_builder.include_output_redeem_witness_script();
+            tx_builder.add_global_xpubs();
         }
 
         if let Some(fee_rate) = self.fee_rate
@@ -576,7 +576,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for BumpFeeCommand {
         }
 
         if self.offline_signer {
-            tx_builder.include_output_redeem_witness_script();
+            tx_builder.add_global_xpubs();
         }
 
         if let Some(utxos) = &self.utxos {
