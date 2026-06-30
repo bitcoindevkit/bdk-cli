@@ -27,7 +27,9 @@ pub struct WalletConfig {
 pub struct WalletConfigInner {
     pub wallet: String,
     pub network: String,
+    /// This can be a single multipath descriptor (BIP389) or a standard external descriptor.
     pub ext_descriptor: String,
+    /// optional; Do not use if external descriptor is a multipath (BIP389) string
     pub int_descriptor: Option<String>,
     #[cfg(any(feature = "sqlite", feature = "redb"))]
     pub database_type: String,
