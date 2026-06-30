@@ -23,10 +23,7 @@ use {
 };
 
 #[cfg(feature = "cbf")]
-use {
-    crate::utils::trace_logger,
-    bdk_kyoto::{BuilderExt, LightClient},
-};
+use {crate::utils::trace_logger, bdk_kyoto::BuilderExt};
 
 #[cfg(any(
     feature = "electrum",
@@ -103,7 +100,7 @@ impl BlockchainClient {
                 let txid = tx.compute_txid();
                 let wtxid = client
                     .requester
-                    .broadcast_random(tx.clone())
+                    .submit_package(tx)
                     .await
                     .map_err(|_| {
                         tracing::warn!("Broadcast was unsuccessful");
@@ -205,7 +202,8 @@ impl BlockchainClient {
 #[cfg(feature = "cbf")]
 pub struct KyotoClientHandle {
     pub requester: bdk_kyoto::Requester,
-    pub update_subscriber: tokio::sync::Mutex<bdk_kyoto::UpdateSubscriber>,
+    pub update_subscriber:
+        tokio::sync::Mutex<bdk_kyoto::UpdateSubscriber<bdk_kyoto::wallets::Single>>,
 }
 
 #[cfg(any(
@@ -267,21 +265,16 @@ pub(crate) fn new_blockchain_client(
                 .data_dir(&_datadir)
                 .build_with_wallet(_wallet, scan_type)?;
 
-            let LightClient {
-                requester,
-                info_subscriber,
-                warning_subscriber,
-                update_subscriber,
-                node,
-            } = light_client;
+            let (client, logging, update_subscriber) = light_client.subscribe();
+            // `start()` spawns the node's run loop on a tokio task internally.
+            let requester = client.start().requester();
 
             let subscriber = tracing_subscriber::FmtSubscriber::new();
             let _ = tracing::subscriber::set_global_default(subscriber);
 
-            tokio::task::spawn(async move { node.run().await });
-            tokio::task::spawn(
-                async move { trace_logger(info_subscriber, warning_subscriber).await },
-            );
+            tokio::task::spawn(async move {
+                trace_logger(logging.info_subscriber, logging.warning_subscriber).await
+            });
 
             BlockchainClient::KyotoClient {
                 client: Box::new(KyotoClientHandle {
