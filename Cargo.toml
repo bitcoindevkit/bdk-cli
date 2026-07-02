@@ -36,8 +36,8 @@ bdk_esplora = { version = "0.22.2", features = ["async-https", "tokio"], optiona
 bdk_kyoto = { version = "0.15.4", optional = true }
 bdk_redb = { version = "0.1.1", optional = true }
 bdk_sp = { version = "0.1.0", optional = true, git = "https://github.com/bitcoindevkit/bdk-sp", tag = "v0.1.0" }
-payjoin = { version = "=1.0.0-rc.1", features = ["v1", "v2", "io", "_test-utils"], optional = true}
-reqwest = { version = "0.13.2", default-features = false, optional = true }
+payjoin = { version = "0.25.0", features = ["v1", "v2", "io", "_test-utils"], optional = true}
+reqwest = { version = "0.13.2", default-features = false, features = ["rustls"], optional = true }
 url = { version = "2.5.8", optional = true }
 bdk_bip322 = { version = "0.1.0", optional = true }
 
@@ -58,7 +58,7 @@ esplora = ["bdk_esplora", "_payjoin-dependencies"]
 rpc = ["bdk_bitcoind_rpc", "_payjoin-dependencies"] 
 
 # Internal features
-_payjoin-dependencies = ["payjoin", "reqwest", "url"]
+_payjoin-dependencies = ["payjoin", "reqwest", "url", "sqlite"]
 bip322 = ["bdk_bip322"]
 
 # Use this to consensus verify transactions at sync time

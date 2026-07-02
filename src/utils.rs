@@ -175,7 +175,6 @@ pub(crate) fn prepare_wallet_db_dir(
 
     Ok(dir)
 }
-
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",

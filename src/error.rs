@@ -152,6 +152,10 @@ pub enum BDKCliError {
     #[error("Payjoin create request error: {0}")]
     PayjoinCreateRequest(#[from] payjoin::send::v2::CreateRequestError),
 
+    #[cfg(feature = "payjoin")]
+    #[error("Payjoin database error: {0}")]
+    PayjoinDb(#[from] crate::payjoin::db::Error),
+
     #[cfg(feature = "bip322")]
     #[error("BIP-322 error: {0}")]
     Bip322Error(#[from] bdk_bip322::error::Error),
@@ -181,5 +185,18 @@ impl From<bdk_redb::redb::DatabaseError> for BDKCliError {
 impl From<bdk_wallet::rusqlite::Error> for BDKCliError {
     fn from(err: bdk_wallet::rusqlite::Error) -> Self {
         BDKCliError::RusqliteError(Box::new(err))
+    }
+}
+
+#[cfg(feature = "payjoin")]
+impl<ApiErr, StorageErr, ErrorState>
+    From<payjoin::persist::PersistedError<ApiErr, StorageErr, ErrorState>> for BDKCliError
+where
+    ApiErr: std::error::Error,
+    StorageErr: std::error::Error,
+    ErrorState: std::fmt::Debug,
+{
+    fn from(e: payjoin::persist::PersistedError<ApiErr, StorageErr, ErrorState>) -> Self {
+        BDKCliError::Generic(e.to_string())
     }
 }
