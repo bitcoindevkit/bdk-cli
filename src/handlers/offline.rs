@@ -242,9 +242,15 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
         let mut tx_builder = ctx.state.wallet.build_tx();
 
         if self.send_all {
-            tx_builder
-                .drain_wallet()
-                .drain_to(self.recipients[0].0.clone());
+            if self.recipients.len() == 1 {
+                tx_builder
+                    .drain_wallet()
+                    .drain_to(self.recipients[0].0.clone());
+            } else {
+                return Err(Error::Generic(
+                    "Wallet can only be drained to a single output".to_string(),
+                ));
+            }
         } else {
             let recipients = self
                 .recipients
