@@ -102,6 +102,7 @@ fn generate_private_descriptors(
         }),
         mnemonic: None,
         fingerprint: Some(fingerprint.to_string()),
+        r: None,
     })
 }
 
@@ -139,6 +140,7 @@ pub fn generate_public_descriptors(
         private_descriptors: None,
         mnemonic: None,
         fingerprint: Some(fingerprint.to_string()),
+        r: None,
     })
 }
 

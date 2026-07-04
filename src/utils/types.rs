@@ -170,6 +170,10 @@ pub struct DescriptorResult {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fingerprint: Option<String>,
+
+    /// Randomness factor `r` used to derive the taproot unspendable internal key (H + rG).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r: Option<String>,
 }
 
 #[derive(Serialize)]

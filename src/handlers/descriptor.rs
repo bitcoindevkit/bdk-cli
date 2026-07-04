@@ -15,7 +15,11 @@ use clap::Parser;
 #[cfg(feature = "compiler")]
 use {
     bdk_wallet::{
-        bitcoin::XOnlyPublicKey,
+        bitcoin::{
+            XOnlyPublicKey,
+            key::{Parity, rand},
+            secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey},
+        },
         miniscript::{Descriptor, Miniscript, descriptor::TapTree, policy::Concrete},
     },
     std::{str::FromStr, sync::Arc},
@@ -89,15 +93,32 @@ impl AppCommand<AppContext<Init>> for CompileCommand {
             .compile()
             .map_err(|e| Error::Generic(e.to_string()))?;
 
+        let mut r = None;
+
         let descriptor = match self.script_type.as_str() {
             "sh" => Descriptor::new_sh(legacy_policy),
             "wsh" => Descriptor::new_wsh(segwit_policy),
             "sh-wsh" => Descriptor::new_sh_wsh(segwit_policy),
             "tr" => {
-                let xonly_public_key = XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)
+                // Use a randomized unspendable internal key (H + rG) instead of a fixed NUMS
+                // point. This improves privacy by preventing observers from determining whether
+                // key-path spending is disabled. `r` is returned so the user can verify the key
+                // is derived from the NUMS point. See BIP-341.
+                let secp = Secp256k1::new();
+                let r_secret = SecretKey::new(&mut rand::thread_rng());
+                r = Some(r_secret.display_secret().to_string());
+
+                let nums_key = XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)
                     .map_err(|e| Error::Generic(format!("Invalid NUMS key: {e}")))?;
+                let nums_point = PublicKey::from_x_only_public_key(nums_key, Parity::Even);
+
+                let internal_key_point = nums_point
+                    .add_exp_tweak(&secp, &Scalar::from(r_secret))
+                    .map_err(|e| Error::Generic(format!("Failed to tweak NUMS key: {e}")))?;
+                let (xonly_internal_key, _) = internal_key_point.x_only_public_key();
+
                 let tree = TapTree::Leaf(Arc::new(taproot_policy));
-                Descriptor::new_tr(xonly_public_key.to_string(), Some(tree))
+                Descriptor::new_tr(xonly_internal_key.to_string(), Some(tree))
             }
             _ => {
                 return Err(Error::Generic(
@@ -113,6 +134,7 @@ impl AppCommand<AppContext<Init>> for CompileCommand {
             public_descriptors: None,
             private_descriptors: None,
             fingerprint: None,
+            r,
         })
     }
 }
