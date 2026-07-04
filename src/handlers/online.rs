@@ -29,6 +29,7 @@ use {
     crate::payjoin::{PayjoinManager, ohttp::RelayManager},
     crate::utils::is_final,
     crate::utils::output::FormatOutput,
+    crate::utils::print_wallet_events,
     crate::utils::types::{StatusResult, TransactionResult},
     bdk_wallet::bitcoin::{
         Psbt, Transaction, Txid, base64::Engine, base64::prelude::BASE64_STANDARD,
@@ -112,7 +113,8 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
             Electrum { client, batch_size } => {
                 client.populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
                 let update = client.full_scan(request, self.stop_gap, *batch_size, false)?;
-                wallet.apply_update(update)?;
+                let events = wallet.apply_update_events(update)?;
+                print_wallet_events(&events);
             }
 
             #[cfg(feature = "esplora")]
@@ -124,7 +126,8 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
                     .full_scan(request, self.stop_gap, *parallel_requests)
                     .await
                     .map_err(|e| *e)?;
-                wallet.apply_update(update)?;
+                let events = wallet.apply_update_events(update)?;
+                print_wallet_events(&events);
             }
             #[cfg(feature = "rpc")]
             RpcClient { client } => {
@@ -142,27 +145,35 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
                     NO_EXPECTED_MEMPOOL_TXS,
                 );
 
-                while let Some(block_event) = emitter.next_block()? {
-                    if block_event.block_height() % 10_000 == 0 {
-                        let percent_done = f64::from(block_event.block_height())
-                            / f64::from(blockchain_info.headers as u32)
-                            * 100f64;
-                        println!(
-                            "Applying block at height: {}, {:.2}% done.",
-                            block_event.block_height(),
-                            percent_done
-                        );
-                    }
+                let block_events = wallet.events_helper(|w| {
+                    while let Some(block_event) = emitter.next_block()? {
+                        if block_event.block_height() % 10_000 == 0 {
+                            let percent_done = f64::from(block_event.block_height())
+                                / f64::from(blockchain_info.headers as u32)
+                                * 100f64;
+                            println!(
+                                "Applying block at height: {}, {:.2}% done.",
+                                block_event.block_height(),
+                                percent_done
+                            );
+                        }
 
-                    wallet.apply_block_connected_to(
-                        &block_event.block,
-                        block_event.block_height(),
-                        block_event.connected_to(),
-                    )?;
-                }
+                        w.apply_block_connected_to(
+                            &block_event.block,
+                            block_event.block_height(),
+                            block_event.connected_to(),
+                        )?;
+                    }
+                    Ok::<_, Error>(())
+                })?;
+                print_wallet_events(&block_events);
 
                 let mempool_txs = emitter.mempool()?;
-                wallet.apply_unconfirmed_txs(mempool_txs.update);
+                let mempool_events = wallet.apply_unconfirmed_txs_events(mempool_txs.update);
+                print_wallet_events(&mempool_events);
+
+                let evicted_events = wallet.apply_evicted_txs_events(mempool_txs.evicted);
+                print_wallet_events(&evicted_events);
             }
 
             #[cfg(feature = "cbf")]
@@ -210,9 +221,8 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for SyncCommand {
                 client.populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
 
                 let update = client.sync(request, *batch_size, false)?;
-                wallet
-                    .apply_update(update)
-                    .map_err(|e| Error::Generic(e.to_string()))?;
+                let events = wallet.apply_update_events(update)?;
+                print_wallet_events(&events);
             }
             #[cfg(feature = "esplora")]
             Esplora {
@@ -223,9 +233,8 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for SyncCommand {
                     .sync(request, *parallel_requests)
                     .await
                     .map_err(|e| *e)?;
-                wallet
-                    .apply_update(update)
-                    .map_err(|e| Error::Generic(e.to_string()))?;
+                let events = wallet.apply_update_events(update)?;
+                print_wallet_events(&events);
             }
             #[cfg(feature = "rpc")]
             RpcClient { client } => {
@@ -247,27 +256,35 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for SyncCommand {
                         .filter(|tx| tx.chain_position.is_unconfirmed()),
                 );
 
-                while let Some(block_event) = emitter.next_block()? {
-                    if block_event.block_height() % 10_000 == 0 {
-                        let percent_done = f64::from(block_event.block_height())
-                            / f64::from(blockchain_info.headers as u32)
-                            * 100f64;
-                        println!(
-                            "Applying block at height: {}, {:.2}% done.",
-                            block_event.block_height(),
-                            percent_done
-                        );
-                    }
+                let block_events = wallet.events_helper(|w| {
+                    while let Some(block_event) = emitter.next_block()? {
+                        if block_event.block_height() % 10_000 == 0 {
+                            let percent_done = f64::from(block_event.block_height())
+                                / f64::from(blockchain_info.headers as u32)
+                                * 100f64;
+                            println!(
+                                "Applying block at height: {}, {:.2}% done.",
+                                block_event.block_height(),
+                                percent_done
+                            );
+                        }
 
-                    wallet.apply_block_connected_to(
-                        &block_event.block,
-                        block_event.block_height(),
-                        block_event.connected_to(),
-                    )?;
-                }
+                        w.apply_block_connected_to(
+                            &block_event.block,
+                            block_event.block_height(),
+                            block_event.connected_to(),
+                        )?;
+                    }
+                    Ok::<_, Error>(())
+                })?;
+                print_wallet_events(&block_events);
 
                 let mempool_txs = emitter.mempool()?;
-                wallet.apply_unconfirmed_txs(mempool_txs.update);
+                let mempool_events = wallet.apply_unconfirmed_txs_events(mempool_txs.update);
+                print_wallet_events(&mempool_events);
+
+                let evicted_events = wallet.apply_evicted_txs_events(mempool_txs.evicted);
+                print_wallet_events(&evicted_events);
             }
             #[cfg(feature = "cbf")]
             KyotoClient { client } => sync_kyoto_client(wallet, client)
