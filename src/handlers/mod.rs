@@ -37,6 +37,7 @@ pub struct OfflineOperations<'a> {
 pub struct OnlineOperations<'a> {
     pub wallet: &'a mut Wallet,
     pub client: &'a BlockchainClient,
+    pub wallet_name: String,
 }
 
 /// The generic context
@@ -79,11 +80,16 @@ impl<'a> AppContext<OnlineOperations<'a>> {
         datadir: PathBuf,
         wallet: &'a mut Wallet,
         client: &'a BlockchainClient,
+        wallet_name: String,
     ) -> Self {
         Self {
             network,
             datadir,
-            state: OnlineOperations { wallet, client },
+            state: OnlineOperations {
+                wallet,
+                client,
+                wallet_name,
+            },
         }
     }
 }

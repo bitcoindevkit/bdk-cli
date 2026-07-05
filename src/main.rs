@@ -80,6 +80,7 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
                         runtime.home_dir.clone(),
                         &mut wallet,
                         &client,
+                        runtime.wallet_name.clone(),
                     );
 
                     cmd.execute(&mut ctx).await?;
@@ -171,6 +172,13 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
                     client.as_ref(),
                     &line,
                     runtime.home_dir.clone(),
+                    #[cfg(any(
+                        feature = "electrum",
+                        feature = "esplora",
+                        feature = "rpc",
+                        feature = "cbf"
+                    ))]
+                    &wallet_name,
                 )
                 .await
                 .map_err(Error::Generic)?;

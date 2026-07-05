@@ -38,7 +38,8 @@ use crate::handlers::{descriptor::SilentPaymentCodeCommand, offline::CreateSpTxC
 use crate::{
     client::ClientType,
     handlers::online::{
-        BroadcastCommand, FullScanCommand, ReceivePayjoinCommand, SendPayjoinCommand, SyncCommand,
+        BroadcastCommand, FullScanCommand, PayjoinHistoryCommand, ReceivePayjoinCommand,
+        ResumePayjoinCommand, SendPayjoinCommand, SyncCommand,
     },
 };
 
@@ -381,6 +382,10 @@ pub enum OnlineWalletSubCommand {
     ReceivePayjoin(ReceivePayjoinCommand),
     /// Sends an original PSBT to a BIP 21 URI and broadcasts the returned Payjoin PSBT.
     SendPayjoin(SendPayjoinCommand),
+    /// Resume pending payjoin sessions.
+    ResumePayjoin(ResumePayjoinCommand),
+    /// Show payjoin session history.
+    PayjoinHistory(PayjoinHistoryCommand),
 }
 
 /// Subcommands for Key operations.

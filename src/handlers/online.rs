@@ -26,17 +26,17 @@ use {
     crate::commands::OnlineWalletSubCommand,
     crate::error::BDKCliError as Error,
     crate::handlers::{AppContext, AsyncAppCommand, OnlineOperations},
-    crate::payjoin::{PayjoinManager, ohttp::RelayManager},
+    crate::payjoin::PayjoinManager,
     crate::utils::is_final,
     crate::utils::output::FormatOutput,
-    crate::utils::print_wallet_events,
     crate::utils::types::{StatusResult, TransactionResult},
     bdk_wallet::bitcoin::{
         Psbt, Transaction, Txid, base64::Engine, base64::prelude::BASE64_STANDARD,
         consensus::Decodable, hex::FromHex,
     },
-    std::sync::{Arc, Mutex},
 };
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+use crate::utils::print_wallet_events;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -64,6 +64,14 @@ impl OnlineWalletSubCommand {
             }
             OnlineWalletSubCommand::SendPayjoin(send_payjoin_command) => {
                 let response: StatusResult = send_payjoin_command.execute(ctx).await?;
+                response.write_out(std::io::stdout())
+            }
+            OnlineWalletSubCommand::ResumePayjoin(resume_payjoin_command) => {
+                let response: StatusResult = resume_payjoin_command.execute(ctx).await?;
+                response.write_out(std::io::stdout())
+            }
+            OnlineWalletSubCommand::PayjoinHistory(payjoin_history_command) => {
+                let response: StatusResult = payjoin_history_command.execute(ctx).await?;
                 response.write_out(std::io::stdout())
             }
         }
@@ -396,11 +404,12 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for ReceivePayjoinCommand
         &self,
         ctx: &mut AppContext<OnlineOperations<'_>>,
     ) -> Result<Self::Output, Error> {
+        let wallet_name = ctx.state.wallet_name.clone();
+        let datadir = ctx.datadir.clone();
         let wallet = &mut ctx.state.wallet;
         let client = ctx.state.client;
 
-        let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
-        let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);
+        let mut payjoin_manager = PayjoinManager::new(wallet, Some(datadir), &wallet_name)?;
         let result = payjoin_manager
             .receive_payjoin(
                 self.amount,
@@ -446,11 +455,12 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for SendPayjoinCommand {
         &self,
         ctx: &mut AppContext<OnlineOperations<'_>>,
     ) -> Result<Self::Output, Error> {
+        let wallet_name = ctx.state.wallet_name.clone();
+        let datadir = ctx.datadir.clone();
         let wallet = &mut ctx.state.wallet;
         let client = ctx.state.client;
 
-        let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
-        let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);
+        let mut payjoin_manager = PayjoinManager::new(wallet, Some(datadir), &wallet_name)?;
         let result = payjoin_manager
             .send_payjoin(
                 self.uri.clone(),
@@ -459,6 +469,76 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for SendPayjoinCommand {
                 client,
             )
             .await?;
+
+        Ok(StatusResult { message: result })
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq, Eq)]
+pub struct ResumePayjoinCommand {
+    /// Payjoin directory for the session
+    #[arg(env = "PAYJOIN_DIRECTORY", long = "directory", required = true)]
+    directory: String,
+    /// URL of the Payjoin OHTTP relay. Can be repeated multiple times.
+    #[arg(env = "PAYJOIN_OHTTP_RELAY", long = "ohttp_relay", required = true)]
+    ohttp_relay: Vec<String>,
+    /// Resume only a specific active session ID (sender and/or receiver).
+    #[arg(env = "PAYJOIN_SESSION_ID", long = "session_id")]
+    session_id: Option<i64>,
+}
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for ResumePayjoinCommand {
+    type Output = StatusResult;
+
+    async fn execute(
+        &self,
+        ctx: &mut AppContext<OnlineOperations<'_>>,
+    ) -> Result<Self::Output, Error> {
+        let wallet_name = ctx.state.wallet_name.clone();
+        let datadir = ctx.datadir.clone();
+        let wallet = &mut ctx.state.wallet;
+        let client = ctx.state.client;
+
+        let mut payjoin_manager = PayjoinManager::new(wallet, Some(datadir), &wallet_name)?;
+        let result = payjoin_manager
+            .resume_payjoins(
+                self.directory.clone(),
+                self.ohttp_relay.clone(),
+                self.session_id,
+                client,
+            )
+            .await?;
+
+        Ok(StatusResult { message: result })
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq, Eq)]
+pub struct PayjoinHistoryCommand {}
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for PayjoinHistoryCommand {
+    type Output = StatusResult;
+
+    async fn execute(
+        &self,
+        ctx: &mut AppContext<OnlineOperations<'_>>,
+    ) -> Result<Self::Output, Error> {
+        let wallet_name = ctx.state.wallet_name.clone();
+        let datadir = ctx.datadir.clone();
+
+        let result = PayjoinManager::history(Some(datadir), &wallet_name)?;
 
         Ok(StatusResult { message: result })
     }

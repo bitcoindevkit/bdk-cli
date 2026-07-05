@@ -1,56 +1,118 @@
-#![cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "rpc",
-    feature = "cbf"
-))]
-
 use crate::client::BlockchainClient;
+use crate::error::BDKCliError as Error;
 use bdk_wallet::{
     SignOptions, Wallet,
     bitcoin::{FeeRate, Psbt, Txid, consensus::encode::serialize_hex},
 };
+use cli_table::{Cell, CellStruct, Style, Table};
 use payjoin::bitcoin::TxIn;
 use payjoin::persist::{OptionalTransitionOutcome, SessionPersister};
 use payjoin::receive::InputPair;
 use payjoin::receive::v2::{
     HasReplyableError, Initialized, MaybeInputsOwned, MaybeInputsSeen, Monitor, OutputsUnknown,
     PayjoinProposal, ProvisionalProposal, ReceiveSession, Receiver,
-    SessionEvent as ReceiverSessionEvent, UncheckedOriginalPayload, WantsFeeRange, WantsInputs,
-    WantsOutputs,
+    SessionEvent as ReceiverSessionEvent, SessionOutcome as ReceiverSessionOutcome,
+    UncheckedOriginalPayload, WantsFeeRange, WantsInputs, WantsOutputs,
+    replay_event_log as replay_receiver_event_log,
 };
 use payjoin::send::v2::{
     PollingForProposal, SendSession, Sender, SessionEvent as SenderSessionEvent,
     SessionOutcome as SenderSessionOutcome, WithReplyKey,
+    replay_event_log as replay_sender_event_log,
 };
-use payjoin::{ImplementationError, UriExt};
+use payjoin::{HpkePublicKey, ImplementationError, UriExt};
 use serde_json::{json, to_string_pretty};
-use std::sync::{Arc, Mutex};
+use std::{path::PathBuf, sync::Arc};
 
-use crate::{
-    error::BDKCliError as Error,
-    payjoin::ohttp::{RelayManager, fetch_ohttp_keys},
-};
+use crate::payjoin::db::{ReceiverPersister, SenderPersister, open_payjoin_db};
+use crate::payjoin::ohttp::RelayManager;
 
+pub mod db;
 pub mod ohttp;
 
-/// Implements all of the functions required to go through the Payjoin receive and send processes.
+/// Coordinates Payjoin receive and send flows.
 ///
-/// TODO: At the time of writing, this struct is written to make a Persister implementation easier
-/// but the persister is not implemented yet! For instance [`PayjoinManager::proceed_sender_session`] and
-/// [`PayjoinManager::proceed_receiver_session`] are designed such that the manager can enable
-/// resuming ongoing payjoins are well. So... this is a TODO for implementing persister.
+/// The manager owns the wallet, relay manager, and database handles needed to persist session
+/// events and resume ongoing Payjoins through [`PayjoinManager::proceed_sender_session`] and
+/// [`PayjoinManager::proceed_receiver_session`].
 pub(crate) struct PayjoinManager<'a> {
     wallet: &'a mut Wallet,
-    relay_manager: Arc<Mutex<RelayManager>>,
+    relay_manager: RelayManager,
+    db: Arc<crate::payjoin::db::Database>,
+}
+
+trait StatusText {
+    fn status_text(&self) -> &'static str;
+}
+
+impl StatusText for SendSession {
+    fn status_text(&self) -> &'static str {
+        match self {
+            SendSession::WithReplyKey(_) | SendSession::PollingForProposal(_) => {
+                "Waiting for proposal"
+            }
+            SendSession::Closed(session_outcome) => match session_outcome {
+                SenderSessionOutcome::Failure => "Session failure",
+                SenderSessionOutcome::Success(_) => "Session success",
+                SenderSessionOutcome::Cancel => "Session cancelled",
+            },
+        }
+    }
+}
+
+impl StatusText for ReceiveSession {
+    fn status_text(&self) -> &'static str {
+        match self {
+            ReceiveSession::Initialized(_) => "Waiting for original proposal",
+            ReceiveSession::UncheckedOriginalPayload(_)
+            | ReceiveSession::MaybeInputsOwned(_)
+            | ReceiveSession::MaybeInputsSeen(_)
+            | ReceiveSession::OutputsUnknown(_)
+            | ReceiveSession::WantsOutputs(_)
+            | ReceiveSession::WantsInputs(_)
+            | ReceiveSession::WantsFeeRange(_)
+            | ReceiveSession::ProvisionalProposal(_) => "Processing original proposal",
+            ReceiveSession::PayjoinProposal(_) => "Payjoin proposal sent",
+            ReceiveSession::HasReplyableError(_) => {
+                "Session failure, waiting to post error response"
+            }
+            ReceiveSession::Monitor(_) => "Monitoring payjoin proposal",
+            ReceiveSession::Closed(session_outcome) => match session_outcome {
+                ReceiverSessionOutcome::Failure => "Session failure",
+                ReceiverSessionOutcome::Success(_) => {
+                    "Session success, Payjoin proposal was broadcasted"
+                }
+                ReceiverSessionOutcome::Cancel => "Session cancelled",
+                ReceiverSessionOutcome::FallbackBroadcasted => "Fallback broadcasted",
+                ReceiverSessionOutcome::PayjoinProposalSent => {
+                    "Payjoin proposal sent, skipping monitoring as the sender is spending non-SegWit inputs"
+                }
+            },
+        }
+    }
+}
+
+struct SessionHistoryRow {
+    id: String,
+    role: &'static str,
+    status: String,
+    completed_at: Option<String>,
 }
 
 impl<'a> PayjoinManager<'a> {
-    pub fn new(wallet: &'a mut Wallet, relay_manager: Arc<Mutex<RelayManager>>) -> Self {
-        Self {
+    pub fn new(
+        wallet: &'a mut Wallet,
+        datadir: Option<PathBuf>,
+        wallet_name: &str,
+    ) -> Result<Self, Error> {
+        let db = open_payjoin_db(datadir, wallet_name)?;
+        let relay_manager = RelayManager::new();
+
+        Ok(Self {
             wallet,
             relay_manager,
-        }
+            db,
+        })
     }
 
     pub async fn receive_payjoin(
@@ -71,35 +133,26 @@ impl<'a> PayjoinManager<'a> {
             .collect::<Result<_, _>>()
             .map_err(|e| Error::Generic(format!("Failed to parse one or more OHTTP URLs: {e}")))?;
 
-        if ohttp_relays.is_empty() {
-            return Err(Error::Generic(
-                "At least one valid OHTTP relay must be provided.".into(),
-            ));
-        }
+        self.relay_manager.configure(ohttp_relays)?;
+        let ohttp_keys = self.relay_manager.fetch_ohttp_keys(&directory).await?;
 
-        let ohttp_keys =
-            fetch_ohttp_keys(ohttp_relays, &directory, self.relay_manager.clone()).await?;
-        // TODO: Implement proper persister.
-        let persister = payjoin::persist::NoopSessionPersister::<ReceiverSessionEvent>::default();
+        let persister = crate::payjoin::db::ReceiverPersister::new(self.db.clone())?;
 
         let checked_max_fee_rate = max_fee_rate
             .map(FeeRate::from_sat_per_kwu)
             .unwrap_or(FeeRate::BROADCAST_MIN);
 
-        let receiver = payjoin::receive::v2::ReceiverBuilder::new(
-            address.address,
-            directory,
-            ohttp_keys.ohttp_keys,
-        )?
-        .with_amount(payjoin::bitcoin::Amount::from_sat(amount))
-        .with_max_fee_rate(checked_max_fee_rate)
-        .build()
-        .save(&persister)
-        .map_err(|e| {
-            Error::Generic(format!(
-                "Failed to persister the receiver after initialization: {e}"
-            ))
-        })?;
+        let receiver =
+            payjoin::receive::v2::ReceiverBuilder::new(address.address, directory, ohttp_keys)?
+                .with_amount(payjoin::bitcoin::Amount::from_sat(amount))
+                .with_max_fee_rate(checked_max_fee_rate)
+                .build()
+                .save(&persister)
+                .map_err(|e| {
+                    Error::Generic(format!(
+                        "Failed to persister the receiver after initialization: {e}"
+                    ))
+                })?;
 
         let pj_uri = receiver.pj_uri();
         println!("Request Payjoin by sharing this Payjoin Uri:");
@@ -108,7 +161,6 @@ impl<'a> PayjoinManager<'a> {
         self.proceed_receiver_session(
             ReceiveSession::Initialized(receiver.clone()),
             &persister,
-            ohttp_keys.relay_url.to_string(),
             checked_max_fee_rate,
             blockchain_client,
         )
@@ -117,12 +169,6 @@ impl<'a> PayjoinManager<'a> {
         Ok(to_string_pretty(&json!({}))?)
     }
 
-    #[cfg(any(
-        feature = "electrum",
-        feature = "esplora",
-        feature = "rpc",
-        feature = "cbf"
-    ))]
     pub async fn send_payjoin(
         &mut self,
         uri: String,
@@ -175,7 +221,7 @@ impl<'a> PayjoinManager<'a> {
                 self.process_payjoin_proposal(psbt, blockchain_client)
                     .await?
             }
-            payjoin::PjParam::V2(_) => {
+            payjoin::PjParam::V2(v2_param) => {
                 let ohttp_relays: Vec<url::Url> = ohttp_relays
                     .into_iter()
                     .map(|s| url::Url::parse(&s))
@@ -184,37 +230,53 @@ impl<'a> PayjoinManager<'a> {
                         Error::Generic(format!("Failed to parse one or more OHTTP URLs: {e}"))
                     })?;
 
-                if ohttp_relays.is_empty() {
-                    return Err(Error::Generic(
-                        "At least one valid OHTTP relay must be provided.".into(),
-                    ));
-                }
+                self.relay_manager.configure(ohttp_relays)?;
+                // Check for existing session with the same receiver pubkey
+                let receiver_pubkey = v2_param.receiver_pubkey();
+                let existing_session =
+                    self.db
+                        .get_send_session_ids()?
+                        .into_iter()
+                        .find_map(|session_id| {
+                            let session_receiver_pubkey = self
+                                .db
+                                .get_send_session_receiver_pk(&session_id)
+                                .expect("Receiver pubkey should exist if session id exists");
+                            if session_receiver_pubkey == *receiver_pubkey {
+                                Some(session_id)
+                            } else {
+                                None
+                            }
+                        });
 
-                // TODO: Implement proper persister.
-                let persister =
-                    payjoin::persist::NoopSessionPersister::<SenderSessionEvent>::default();
+                let (sender_state, persister) = if let Some(session_id) = existing_session {
+                    let sender_persister = SenderPersister::from_id(self.db.clone(), session_id);
+                    let (send_session, _) =
+                        replay_sender_event_log(&sender_persister).map_err(|e| {
+                            Error::Generic(format!("Failed to replay sender event log: {e:?}"))
+                        })?;
+                    println!("Resuming existing sender session");
+                    (send_session, sender_persister)
+                } else {
+                    let persister = {
+                        let receiver_pubkey: HpkePublicKey = v2_param.receiver_pubkey().clone();
+                        SenderPersister::new(self.db.clone(), receiver_pubkey)?
+                    };
 
-                let sender = payjoin::send::v2::SenderBuilder::new(original_psbt.clone(), uri)
-                    .build_recommended(fee_rate)?
-                    .save(&persister)
-                    .map_err(|e| {
-                        Error::Generic(format!(
-                            "Failed to save the Payjoin v2 sender in the persister: {e}"
-                        ))
-                    })?;
+                    let sender = payjoin::send::v2::SenderBuilder::new(original_psbt.clone(), uri)
+                        .build_recommended(fee_rate)?
+                        .save(&persister)
+                        .map_err(|e| {
+                            Error::Generic(format!(
+                                "Failed to save the Payjoin v2 sender in the persister: {e}"
+                            ))
+                        })?;
 
-                let selected_relay =
-                    fetch_ohttp_keys(ohttp_relays, &sender.endpoint(), self.relay_manager.clone())
-                        .await?
-                        .relay_url;
+                    (SendSession::WithReplyKey(sender), persister)
+                };
 
-                self.proceed_sender_session(
-                    SendSession::WithReplyKey(sender),
-                    &persister,
-                    selected_relay.to_string(),
-                    blockchain_client,
-                )
-                .await?
+                self.proceed_sender_session(sender_state, &persister, blockchain_client)
+                    .await?
             }
             _ => {
                 unimplemented!("Payjoin version not recognized.");
@@ -228,20 +290,13 @@ impl<'a> PayjoinManager<'a> {
         &mut self,
         session: ReceiveSession,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
-        relay: impl payjoin::IntoUrl,
         max_fee_rate: FeeRate,
         blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         match session {
             ReceiveSession::Initialized(proposal) => {
-                self.read_from_directory(
-                    proposal,
-                    persister,
-                    relay,
-                    max_fee_rate,
-                    blockchain_client,
-                )
-                .await
+                self.read_from_directory(proposal, persister, max_fee_rate, blockchain_client)
+                    .await
             }
             ReceiveSession::UncheckedOriginalPayload(proposal) => {
                 self.check_proposal(proposal, persister, max_fee_rate, blockchain_client)
@@ -297,14 +352,14 @@ impl<'a> PayjoinManager<'a> {
         &mut self,
         receiver: Receiver<Initialized>,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
-        relay: impl payjoin::IntoUrl,
         max_fee_rate: FeeRate,
         blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         let mut current_receiver_typestate = receiver;
         let next_receiver_typestate = loop {
-            let (req, context) = current_receiver_typestate.create_poll_request(relay.as_str())?;
-            let response = self.send_payjoin_post_request(req).await?;
+            let (response, context) = self
+                .post_via_relay(|relay| current_receiver_typestate.create_poll_request(relay))
+                .await?;
             let state_transition = current_receiver_typestate
                 .process_response(response.bytes().await?.to_vec().as_slice(), context)
                 .save(persister);
@@ -374,13 +429,8 @@ impl<'a> PayjoinManager<'a> {
         blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
         let next_receiver_typestate = receiver
-            .check_inputs_not_owned(&mut |input| {
-                Ok(self.wallet.is_mine(input.to_owned()))
-            })
-            .save(persister)
-            .map_err(|e| {
-                Error::Generic(format!("Error occurred when saving after checking if inputs in the original proposal are not owned: {e}"))
-            })?;
+            .check_inputs_not_owned(&mut |input| Ok(self.wallet.is_mine(input.to_owned())))
+            .save(persister)?;
 
         self.check_no_inputs_seen_before(
             next_receiver_typestate,
@@ -398,16 +448,11 @@ impl<'a> PayjoinManager<'a> {
         max_fee_rate: FeeRate,
         blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
-        // This is not supported as there is no persistence of previous Payjoin attempts in BDK CLI
-        // yet. If there is support either in the BDK persister or Payjoin persister, this can be
-        // implemented, but it is not a concern as the use cases of the CLI does not warrant
-        // protection against probing attacks.
-        println!(
-            "Checking whether the inputs in the proposal were seen before to protect from probing attacks is not supported. Skipping the check..."
-        );
-        let next_receiver_typestate = receiver.check_no_inputs_seen_before(&mut |_| Ok(false)).save(persister).map_err(|e| {
-            Error::Generic(format!("Error occurred when saving after checking if the inputs in the proposal were seen before: {e}"))
-        })?;
+        let db = self.db.clone();
+        let next_receiver_typestate = receiver
+            .check_no_inputs_seen_before(&mut |input| Ok(db.insert_input_seen_before(*input)?))
+            .save(persister)?;
+
         self.identify_receiver_outputs(
             next_receiver_typestate,
             persister,
@@ -424,11 +469,11 @@ impl<'a> PayjoinManager<'a> {
         max_fee_rate: FeeRate,
         blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
-        let next_receiver_typestate = receiver.identify_receiver_outputs(&mut |output_script| {
-            Ok(self.wallet.is_mine(output_script.to_owned()))
-        }).save(persister).map_err(|e| {
-            Error::Generic(format!("Error occurred when saving after checking if the outputs in the original proposal are owned by the receiver: {e}"))
-        })?;
+        let next_receiver_typestate = receiver
+            .identify_receiver_outputs(&mut |output_script| {
+                Ok(self.wallet.is_mine(output_script.to_owned()))
+            })
+            .save(persister)?;
 
         self.commit_outputs(
             next_receiver_typestate,
@@ -473,6 +518,7 @@ impl<'a> PayjoinManager<'a> {
         let candidate_inputs: Vec<InputPair> = self
             .wallet
             .list_unspent()
+            .filter(|output| output.chain_position.is_confirmed())
             .map(|output| {
                 let psbtin = self
                     .wallet
@@ -512,9 +558,9 @@ impl<'a> PayjoinManager<'a> {
         max_fee_rate: FeeRate,
         blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
-        let next_receiver_typestate = receiver.apply_fee_range(None, Some(max_fee_rate)).save(persister).map_err(|e| {
-            Error::Generic(format!("Error occurred when saving after applying the receiver fee range to the transaction: {e}"))
-        })?;
+        let next_receiver_typestate = receiver
+            .apply_fee_range(None, Some(max_fee_rate))
+            .save(persister)?;
         self.finalize_proposal(next_receiver_typestate, persister, blockchain_client)
             .await
     }
@@ -542,12 +588,7 @@ impl<'a> PayjoinManager<'a> {
 
                 Ok(psbt_clone)
             })
-            .save(persister)
-            .map_err(|e| {
-                Error::Generic(format!(
-                    "Error occurred when saving after signing the Payjoin proposal: {e}"
-                ))
-            })?;
+            .save(persister)?;
 
         self.send_payjoin_proposal(next_receiver_typestate, persister, blockchain_client)
             .await
@@ -559,22 +600,13 @@ impl<'a> PayjoinManager<'a> {
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
         blockchain_client: &BlockchainClient,
     ) -> Result<(), Error> {
-        let (req, ctx) = receiver.create_post_request(
-            self.relay_manager
-                .lock()
-                .expect("Lock should not be poisoned")
-                .get_selected_relay()
-                .expect("A relay should already be selected")
-                .as_str(),
-        ).map_err(|e| {
-                Error::Generic(format!("Error occurred when creating a post request for sending final Payjoin proposal: {e}"))
-            })?;
-
-        let res = self.send_payjoin_post_request(req).await?;
+        let (res, ctx) = self
+            .post_via_relay(|relay| receiver.create_post_request(relay))
+            .await?;
         let payjoin_psbt = receiver.psbt().clone();
-        let next_receiver_typestate = receiver.process_response(&res.bytes().await?, ctx).save(persister).map_err(|e| {
-            Error::Generic(format!("Error occurred when saving after processing the response to the Payjoin proposal send: {e}"))
-        })?;
+        let next_receiver_typestate = receiver
+            .process_response(&res.bytes().await?, ctx)
+            .save(persister)?;
         println!(
             "Response successful. TXID: {}",
             payjoin_psbt.extract_tx_unchecked_fee_rate().compute_txid()
@@ -588,8 +620,8 @@ impl<'a> PayjoinManager<'a> {
     /// sender.
     ///
     /// This function syncs the wallet at regular intervals and checks for the Payjoin transaction
-    /// in a loop until it is detected or a timeout is reached. Since [`sync_wallet`] now accepts
-    /// a reference to the BlockchainClient, we can call it multiple times in a loop.
+    /// in a loop until it is detected or a timeout is reached. Since [`BlockchainClient::sync_wallet`]
+    /// accepts a reference to the BlockchainClient, we can call it multiple times in a loop.
     async fn monitor_payjoin_proposal(
         &mut self,
         receiver: Receiver<Monitor>,
@@ -628,19 +660,9 @@ impl<'a> PayjoinManager<'a> {
                                         return Ok(Some(tx_details.tx.as_ref().clone()));
                                     }
                                 Err(ImplementationError::from("Cannot find the transaction in the mempool or the blockchain"))
-                                },
-                                |outpoint| {
-                                    let utxo = self.wallet.get_utxo(outpoint);
-                                    match utxo {
-                                        Some(_) => Ok(false),
-                                        None => Ok(true),
-                                    }
                                 }
                             )
-                            .save(persister)
-                            .map_err(|e| {
-                                Error::Generic(format!("Error occurred when saving after checking that sender has broadcasted the Payjoin transaction: {e}"))
-                            });
+                            .save(persister);
 
                         if let Ok(OptionalTransitionOutcome::Progress(_)) = check_result {
                             println!("Payjoin transaction detected in the mempool!");
@@ -671,31 +693,9 @@ impl<'a> PayjoinManager<'a> {
         receiver: Receiver<HasReplyableError>,
         persister: &impl SessionPersister<SessionEvent = ReceiverSessionEvent>,
     ) -> Result<(), Error> {
-        let (err_req, err_ctx) = receiver
-            .create_error_request(
-                self.relay_manager
-                    .lock()
-                    .expect("Lock should not be poisoned")
-                    .get_selected_relay()
-                    .expect("A relay should already be selected")
-                    .as_str(),
-            )
-            .map_err(|e| {
-                Error::Generic(format!(
-                    "Error occurred when creating a receiver error request: {}",
-                    e
-                ))
-            })?;
-
-        let err_response = match self.send_payjoin_post_request(err_req).await {
-            Ok(response) => response,
-            Err(e) => {
-                return Err(Error::Generic(format!(
-                    "Failed to post error request: {}",
-                    e
-                )));
-            }
-        };
+        let (err_response, err_ctx) = self
+            .post_via_relay(|relay| receiver.create_error_request(relay))
+            .await?;
 
         let err_bytes = match err_response.bytes().await {
             Ok(bytes) => bytes,
@@ -724,16 +724,15 @@ impl<'a> PayjoinManager<'a> {
         &self,
         session: SendSession,
         persister: &impl SessionPersister<SessionEvent = SenderSessionEvent>,
-        relay: impl payjoin::IntoUrl,
         blockchain_client: &BlockchainClient,
     ) -> Result<Txid, Error> {
         match session {
             SendSession::WithReplyKey(context) => {
-                self.post_original_proposal(context, relay, persister, blockchain_client)
+                self.post_original_proposal(context, persister, blockchain_client)
                     .await
             }
             SendSession::PollingForProposal(context) => {
-                self.get_proposed_payjoin_proposal(context, relay, persister, blockchain_client)
+                self.get_proposed_payjoin_proposal(context, persister, blockchain_client)
                     .await
             }
             SendSession::Closed(SenderSessionOutcome::Success(psbt)) => {
@@ -746,33 +745,30 @@ impl<'a> PayjoinManager<'a> {
     async fn post_original_proposal(
         &self,
         sender: Sender<WithReplyKey>,
-        relay: impl payjoin::IntoUrl,
         persister: &impl SessionPersister<SessionEvent = SenderSessionEvent>,
         blockchain_client: &BlockchainClient,
     ) -> Result<Txid, Error> {
-        let (req, ctx) = sender.create_v2_post_request(relay.as_str())?;
-        let response = self.send_payjoin_post_request(req).await?;
+        let (response, ctx) = self
+            .post_via_relay(|relay| sender.create_v2_post_request(relay))
+            .await?;
         let sender = sender
             .process_response(&response.bytes().await?, ctx)
-            .save(persister)
-        .map_err(|e| {
-                Error::Generic(format!("Failed to persist the Payjoin send after successfully sending original proposal: {e}"))
-            })?;
-        self.get_proposed_payjoin_proposal(sender, relay, persister, blockchain_client)
+            .save(persister)?;
+        self.get_proposed_payjoin_proposal(sender, persister, blockchain_client)
             .await
     }
 
     async fn get_proposed_payjoin_proposal(
         &self,
         sender: Sender<PollingForProposal>,
-        relay: impl payjoin::IntoUrl,
         persister: &impl SessionPersister<SessionEvent = SenderSessionEvent>,
         blockchain_client: &BlockchainClient,
     ) -> Result<Txid, Error> {
         let mut sender = sender.clone();
         loop {
-            let (req, ctx) = sender.create_poll_request(relay.as_str())?;
-            let response = self.send_payjoin_post_request(req).await?;
+            let (response, ctx) = self
+                .post_via_relay(|relay| sender.create_poll_request(relay))
+                .await?;
             let processed_response = sender
                 .process_response(&response.bytes().await?, ctx)
                 .save(persister);
@@ -821,6 +817,268 @@ impl<'a> PayjoinManager<'a> {
             .header("Content-Type", req.content_type)
             .body(req.body)
             .send()
-            .await
+            .await?
+            .error_for_status()
+    }
+
+    async fn post_via_relay<F, T, E>(&self, mut build: F) -> Result<(reqwest::Response, T), Error>
+    where
+        F: FnMut(&str) -> Result<(payjoin::Request, T), E>,
+        E: std::fmt::Display,
+    {
+        loop {
+            let relay = self.relay_manager.choose_relay()?;
+            // Build a fresh request for each attempt. Reusing an OHTTP
+            // ciphertext would let relays correlate retransmissions.
+            let (req, context) = build(relay.as_str())
+                .map_err(|e| Error::Generic(format!("Failed to create OHTTP request: {e}")))?;
+
+            match self.send_payjoin_post_request(req).await {
+                Ok(response) => return Ok((response, context)),
+                Err(e) => {
+                    tracing::debug!("Request to OHTTP relay {relay} failed: {e:?}");
+                    self.relay_manager.add_failed_relay(relay);
+                }
+            }
+        }
+    }
+
+    /// Resume pending payjoin sessions from the database
+    pub async fn resume_payjoins(
+        &mut self,
+        _directory: String,
+        ohttp_relays: Vec<String>,
+        session_id: Option<i64>,
+        blockchain_client: &BlockchainClient,
+    ) -> Result<String, Error> {
+        let db = self.db.clone();
+        let mut recv_session_ids = db.get_recv_session_ids()?;
+        let mut send_session_ids = db.get_send_session_ids()?;
+
+        if let Some(session_id) = session_id {
+            recv_session_ids.retain(|id| id.as_i64() == session_id);
+            send_session_ids.retain(|id| id.as_i64() == session_id);
+
+            if recv_session_ids.is_empty() && send_session_ids.is_empty() {
+                return Ok(serde_json::to_string_pretty(&json!({
+                    "message": format!("No active session found for session_id {}.", session_id)
+                }))?);
+            }
+        }
+
+        if recv_session_ids.is_empty() && send_session_ids.is_empty() {
+            return Ok(serde_json::to_string_pretty(&json!({
+                "message": "No sessions to resume."
+            }))?);
+        }
+
+        let ohttp_relays: Vec<url::Url> = ohttp_relays
+            .into_iter()
+            .map(|s| url::Url::parse(&s))
+            .collect::<Result<_, _>>()
+            .map_err(|e| Error::Generic(format!("Failed to parse OHTTP URLs: {e}")))?;
+        self.relay_manager.configure(ohttp_relays)?;
+
+        let max_fee_rate = FeeRate::BROADCAST_MIN;
+        let total_sessions = recv_session_ids.len() + send_session_ids.len();
+        let mut completed = 0usize;
+        let mut timed_out = 0usize;
+        let mut failed = 0usize;
+
+        println!("Resuming {} payjoin session(s)...\n", total_sessions);
+
+        // Resume receiver sessions
+        for session_id in recv_session_ids {
+            let persister = ReceiverPersister::from_id(db.clone(), session_id.clone());
+            match replay_receiver_event_log(&persister) {
+                Ok((receiver_state, _)) => {
+                    println!("Resuming receiver session {}", session_id);
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(30),
+                        self.proceed_receiver_session(
+                            receiver_state,
+                            &persister,
+                            max_fee_rate,
+                            blockchain_client,
+                        ),
+                    )
+                    .await
+                    {
+                        Ok(Ok(_)) => {
+                            completed += 1;
+                        }
+                        Ok(Err(e)) => {
+                            failed += 1;
+                            println!("Receiver session {} failed: {}", session_id, e);
+                        }
+                        Err(_) => {
+                            timed_out += 1;
+                            println!("Receiver session {} timed out", session_id);
+                        }
+                    }
+                }
+                Err(e) => {
+                    failed += 1;
+                    println!("Failed to replay receiver session {}: {:?}", session_id, e);
+                }
+            }
+        }
+
+        // Resume sender sessions
+        for session_id in send_session_ids {
+            let persister = SenderPersister::from_id(db.clone(), session_id.clone());
+            match replay_sender_event_log(&persister) {
+                Ok((sender_state, _)) => {
+                    println!("Resuming sender session {}", session_id);
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(30),
+                        self.proceed_sender_session(sender_state, &persister, blockchain_client),
+                    )
+                    .await
+                    {
+                        Ok(Ok(_)) => {
+                            completed += 1;
+                        }
+                        Ok(Err(e)) => {
+                            failed += 1;
+                            println!("Sender session {} failed: {}", session_id, e);
+                        }
+                        Err(_) => {
+                            timed_out += 1;
+                            println!("Sender session {} timed out", session_id);
+                        }
+                    }
+                }
+                Err(e) => {
+                    failed += 1;
+                    println!("Failed to replay sender session {}: {:?}", session_id, e);
+                }
+            }
+        }
+
+        Ok(serde_json::to_string_pretty(&json!({
+            "message": format!("Resumed polling for {} session(s).", total_sessions),
+            "outcome": format!(
+                "Completed: {}, timed out: {}, failed: {}.",
+                completed, timed_out, failed
+            )
+        }))?)
+    }
+
+    /// Show payjoin session history
+    pub fn history(
+        datadir: Option<std::path::PathBuf>,
+        wallet_name: &str,
+    ) -> Result<String, Error> {
+        let db = open_payjoin_db(datadir, wallet_name)?;
+        let mut send_rows: Vec<SessionHistoryRow> = Vec::new();
+        let mut recv_rows: Vec<SessionHistoryRow> = Vec::new();
+
+        // Active send sessions
+        for session_id in db
+            .get_send_session_ids()
+            .map_err(|e| Error::Generic(format!("{e}")))?
+        {
+            let persister = SenderPersister::from_id(db.clone(), session_id.clone());
+            let status = match replay_sender_event_log(&persister) {
+                Ok((state, _)) => state.status_text().to_string(),
+                Err(e) => e.to_string(),
+            };
+            send_rows.push(SessionHistoryRow {
+                id: session_id.to_string(),
+                role: "Sender",
+                status,
+                completed_at: None,
+            });
+        }
+
+        // Active receive sessions
+        for session_id in db
+            .get_recv_session_ids()
+            .map_err(|e| Error::Generic(format!("{e}")))?
+        {
+            let persister = ReceiverPersister::from_id(db.clone(), session_id.clone());
+            let status = match replay_receiver_event_log(&persister) {
+                Ok((state, _)) => state.status_text().to_string(),
+                Err(e) => e.to_string(),
+            };
+            recv_rows.push(SessionHistoryRow {
+                id: session_id.to_string(),
+                role: "Receiver",
+                status,
+                completed_at: None,
+            });
+        }
+
+        // Completed send sessions
+        for (session_id, completed_at) in db
+            .get_inactive_send_session_ids()
+            .map_err(|e| Error::Generic(format!("{e}")))?
+        {
+            let persister = SenderPersister::from_id(db.clone(), session_id.clone());
+            let status = match replay_sender_event_log(&persister) {
+                Ok((state, _)) => state.status_text().to_string(),
+                Err(e) => e.to_string(),
+            };
+            let completed_at = db
+                .format_unix_timestamp(completed_at)
+                .map_err(|e| Error::Generic(format!("{e}")))?;
+            send_rows.push(SessionHistoryRow {
+                id: session_id.to_string(),
+                role: "Sender",
+                status,
+                completed_at: Some(completed_at),
+            });
+        }
+
+        // Completed receive sessions
+        for (session_id, completed_at) in db
+            .get_inactive_recv_session_ids()
+            .map_err(|e| Error::Generic(format!("{e}")))?
+        {
+            let persister = ReceiverPersister::from_id(db.clone(), session_id.clone());
+            let status = match replay_receiver_event_log(&persister) {
+                Ok((state, _)) => state.status_text().to_string(),
+                Err(e) => e.to_string(),
+            };
+            let completed_at = db
+                .format_unix_timestamp(completed_at)
+                .map_err(|e| Error::Generic(format!("{e}")))?;
+            recv_rows.push(SessionHistoryRow {
+                id: session_id.to_string(),
+                role: "Receiver",
+                status,
+                completed_at: Some(completed_at),
+            });
+        }
+
+        let rows: Vec<Vec<CellStruct>> = send_rows
+            .iter()
+            .chain(recv_rows.iter())
+            .map(|row| {
+                vec![
+                    row.id.as_str().cell(),
+                    row.role.cell(),
+                    row.completed_at
+                        .clone()
+                        .unwrap_or_else(|| "Not Completed".to_string())
+                        .cell(),
+                    row.status.as_str().cell(),
+                ]
+            })
+            .collect();
+
+        let table = rows
+            .table()
+            .title(vec![
+                "Session ID".cell().bold(true),
+                "Sender/Receiver".cell().bold(true),
+                "Completed At".cell().bold(true),
+                "Status".cell().bold(true),
+            ])
+            .display()
+            .map_err(|e| Error::Generic(e.to_string()))?;
+
+        Ok(format!("{table}"))
     }
 }
