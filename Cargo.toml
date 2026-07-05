@@ -26,6 +26,7 @@ tracing = "0.1.44"
 tracing-subscriber = "0.3.20"
 toml = "1.1.0"
 serde= {version = "1.0", features = ["derive"]}
+tap = "1.0.1"
 
 # Optional dependencies
 bdk_bitcoind_rpc = { version = "0.22.0", features = ["std"], optional = true }
@@ -69,3 +70,6 @@ compiler = []
 
 # Experimental silent payment sending capabilities
 silent-payments = ["dep:bdk_sp"]
+
+[dev-dependencies]
+claims = "0.8.0"
