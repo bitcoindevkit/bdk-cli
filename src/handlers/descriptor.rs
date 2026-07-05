@@ -112,9 +112,10 @@ impl AppCommand<AppContext<Init>> for CompileCommand {
                     .map_err(|e| Error::Generic(format!("Invalid NUMS key: {e}")))?;
                 let nums_point = PublicKey::from_x_only_public_key(nums_key, Parity::Even);
 
-                let internal_key_point = nums_point
-                    .add_exp_tweak(&secp, &Scalar::from(r_secret))
-                    .map_err(|e| Error::Generic(format!("Failed to tweak NUMS key: {e}")))?;
+                let internal_key_point =
+                    nums_point
+                        .add_exp_tweak(&secp, &Scalar::from(r_secret))
+                        .map_err(|e| Error::Generic(format!("Failed to tweak NUMS key: {e}")))?;
                 let (xonly_internal_key, _) = internal_key_point.x_only_public_key();
 
                 let tree = TapTree::Leaf(Arc::new(taproot_policy));

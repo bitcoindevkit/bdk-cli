@@ -16,6 +16,8 @@ use {
 #[cfg(any(feature = "electrum", feature = "esplora"))]
 use {bdk_wallet::KeychainKind, std::collections::HashSet, std::io::Write};
 
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+use crate::utils::print_wallet_events;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -35,8 +37,6 @@ use {
         consensus::Decodable, hex::FromHex,
     },
 };
-#[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
-use crate::utils::print_wallet_events;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",

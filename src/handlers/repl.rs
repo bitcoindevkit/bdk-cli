@@ -7,11 +7,14 @@ use {
     clap::Parser,
 };
 
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "rpc",
-    feature = "cbf"
+#[cfg(all(
+    feature = "repl",
+    any(
+        feature = "electrum",
+        feature = "esplora",
+        feature = "rpc",
+        feature = "cbf"
+    )
 ))]
 use crate::client::BlockchainClient;
 #[cfg(feature = "repl")]
