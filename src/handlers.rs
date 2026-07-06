@@ -529,14 +529,7 @@ pub async fn handle_offline_wallet_subcommand(
             }
         }
         CreateTx {
-            #[cfg(feature = "dns_payment")]
-            mut recipients,
-            #[cfg(not(feature = "dns_payment"))]
             recipients,
-            #[cfg(feature = "dns_payment")]
-            dns_recipients,
-            #[cfg(feature = "dns_payment")]
-            dns_resolver,
             send_all,
             enable_rbf,
             offline_signer,
@@ -550,7 +543,103 @@ pub async fn handle_offline_wallet_subcommand(
         } => {
             let mut tx_builder = wallet.build_tx();
 
-            #[cfg(feature = "dns_payment")]
+            if send_all {
+                if recipients.len() == 1 {
+                    tx_builder.drain_wallet().drain_to(recipients[0].0.clone());
+                } else {
+                    return Err(Error::Generic(
+                        "Wallet can only be drained to a single output".to_string(),
+                    ));
+                }
+            } else {
+                let recipients: Vec<_> = recipients
+                    .into_iter()
+                    .map(|(script, amount)| (script, Amount::from_sat(amount)))
+                    .collect();
+                tx_builder.set_recipients(recipients);
+            }
+
+            if !enable_rbf {
+                tx_builder.set_exact_sequence(Sequence::MAX);
+            }
+
+            if offline_signer {
+                tx_builder.include_output_redeem_witness_script();
+            }
+
+            if let Some(fee_rate) = fee_rate
+                && let Some(fee_rate) = FeeRate::from_sat_per_vb(fee_rate as u64)
+            {
+                tx_builder.fee_rate(fee_rate);
+            }
+
+            if let Some(utxos) = utxos {
+                tx_builder
+                    .add_utxos(&utxos[..])
+                    .map_err(|_| bdk_wallet::error::CreateTxError::UnknownUtxo)?;
+            }
+
+            if let Some(unspendable) = unspendable {
+                tx_builder.unspendable(unspendable);
+            }
+
+            if let Some(base64_data) = add_data {
+                let op_return_data = BASE64_STANDARD
+                    .decode(base64_data)
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+                tx_builder.add_data(
+                    &PushBytesBuf::try_from(op_return_data)
+                        .map_err(|e| Error::Generic(e.to_string()))?,
+                );
+            } else if let Some(string_data) = add_string {
+                let data = PushBytesBuf::try_from(string_data.as_bytes().to_vec())
+                    .map_err(|e| Error::Generic(e.to_string()))?;
+                tx_builder.add_data(&data);
+            }
+
+            let policies = vec![
+                external_policy.map(|p| (p, KeychainKind::External)),
+                internal_policy.map(|p| (p, KeychainKind::Internal)),
+            ];
+
+            for (policy, keychain) in policies.into_iter().flatten() {
+                let policy = serde_json::from_str::<BTreeMap<String, Vec<usize>>>(&policy)?;
+                tx_builder.policy_path(policy, keychain);
+            }
+
+            let psbt = tx_builder.finish()?;
+
+            let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
+
+            if wallet_opts.verbose {
+                Ok(serde_json::to_string_pretty(
+                    &json!({"psbt": psbt_base64, "details": psbt}),
+                )?)
+            } else {
+                Ok(serde_json::to_string_pretty(
+                    &json!({"psbt": psbt_base64 }),
+                )?)
+            }
+        }
+        #[cfg(feature = "dns_payment")]
+        CreateDnsTx {
+            recipients,
+            dns_recipients,
+            dns_resolver,
+            send_all,
+            enable_rbf,
+            offline_signer,
+            utxos,
+            unspendable,
+            fee_rate,
+            external_policy,
+            internal_policy,
+            add_data,
+            add_string,
+        } => {
+            let mut tx_builder = wallet.build_tx();
+            let mut recipients = recipients;
+
             for recipient in dns_recipients {
                 log::info!("Resolving DNS instructions for recipient {}", recipient.0);
                 let amount = Amount::from_sat(recipient.1);
