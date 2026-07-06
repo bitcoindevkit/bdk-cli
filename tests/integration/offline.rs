@@ -1,6 +1,5 @@
 #[cfg(feature = "rpc")]
 mod test_offline {
-    use super::*;
     use crate::common::BdkCli;
     use assert_cmd::Command;
     use predicates::prelude::*;
@@ -260,5 +259,93 @@ mod test_offline {
         .assert()
         .success()
         .stdout(predicate::str::contains("\"valid\": false"));
+    }
+
+    #[test]
+    fn test_create_tx_send_all_rejects_multiple_recipients() {
+        let (cli, mut cmd_init) = setup_wallet_config();
+        cmd_init.assert().success();
+
+        // Same address twice => two recipients => must be rejected under --send_all.
+        let recipient = "tb1p4tp4l6glyr2gs94neqcpr5gha7344nfyznfkc8szkreflscsdkgqsdent4:0";
+        cli.wallet_cmd(&[
+            "--wallet",
+            WALLET_NAME,
+            "create_tx",
+            "--send_all",
+            "--to",
+            recipient,
+            "--to",
+            recipient,
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Wallet can only be drained to a single output",
+        ));
+    }
+}
+
+#[cfg(all(feature = "repl", feature = "electrum"))]
+mod repl_tests {
+    use crate::common::BdkCli;
+    use serde_json::Value;
+    use tempfile::TempDir;
+
+    const WALLET_NAME: &str = "repl_test_wallet";
+
+    fn setup_repl_wallet() -> (BdkCli, TempDir) {
+        let temp = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp.path().to_path_buf()));
+
+        let desc = cli.cmd("descriptor", &["--type", "tr"]).output().unwrap();
+        let v: Value = serde_json::from_slice(&desc.stdout).unwrap();
+        let ext = v["private_descriptors"]["external"].as_str().unwrap();
+        let int = v["private_descriptors"]["internal"].as_str().unwrap();
+
+        cli.build_base_cmd()
+            .args(["wallet", "--wallet", WALLET_NAME, "config"])
+            .args(["--ext-descriptor", ext, "--int-descriptor", int])
+            .args(["--client-type", "electrum", "--database-type", "sqlite"])
+            .args(["--url", "127.0.0.1:1"])
+            .assert()
+            .success();
+
+        (cli, temp)
+    }
+
+    #[test]
+    fn test_repl_executes_commands_and_exits() {
+        let (cli, _temp) = setup_repl_wallet();
+
+        let output = cli
+            .build_base_cmd()
+            .args(["repl", "--wallet", WALLET_NAME])
+            .write_stdin("wallet new_address\nwallet balance\nexit\n")
+            .output()
+            .expect("failed to run repl");
+
+        assert!(
+            output.status.success(),
+            "repl exited non-zero: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("Entering REPL mode"),
+            "missing banner:\n{stdout}"
+        );
+        assert!(
+            stdout.contains("\"address\":"),
+            "new_address output missing:\n{stdout}"
+        );
+        assert!(
+            stdout.contains("\"confirmed\":"),
+            "balance output missing:\n{stdout}"
+        );
+        assert!(
+            stdout.contains("Exiting..."),
+            "no exit acknowledgement:\n{stdout}"
+        );
     }
 }

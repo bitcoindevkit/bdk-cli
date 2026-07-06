@@ -179,6 +179,108 @@ mod test_online {
     }
 
     #[test]
+    fn test_funded_wallet_unspent_and_transactions() {
+        let (cli, mut cmd_init, env) = setup_online_wallet();
+        cmd_init.assert().success();
+        fund_and_sync_wallet(&cli, &env);
+
+        //  unspent: exactly one confirmed, unspent 50,000,000 sat UTXO
+        let unspent = run_wallet_json(&cli, &["unspent"]);
+        assert_eq!(
+            unspent["count"].as_u64(),
+            Some(1),
+            "funded wallet should report exactly one UTXO, got: {unspent}"
+        );
+
+        let utxo = &unspent["items"][0];
+        assert_eq!(
+            utxo["txout"]["value"].as_u64(),
+            Some(50_000_000),
+            "the single UTXO should equal the 0.5 BTC funding amount"
+        );
+        assert_eq!(
+            utxo["is_spent"].as_bool(),
+            Some(false),
+            "the funding UTXO must be unspent"
+        );
+        assert!(
+            utxo["outpoint"].as_str().is_some_and(|o| o.contains(':')),
+            "UTXO outpoint should be a `txid:vout` string, got: {}",
+            utxo["outpoint"]
+        );
+        assert!(
+            utxo["derivation_index"].is_number(),
+            "UTXO should expose a numeric derivation_index"
+        );
+
+        // transactions: exactly one relevant tx, funding our address
+        let txs = run_wallet_json(&cli, &["transactions"]);
+        assert_eq!(
+            txs["count"].as_u64(),
+            Some(1),
+            "funded wallet should report exactly one transaction, got: {txs}"
+        );
+
+        let tx = &txs["items"][0];
+        assert_eq!(
+            tx["is_coinbase"].as_bool(),
+            Some(false),
+            "the funding transaction is a normal send, not a coinbase"
+        );
+        assert!(
+            tx["txid"].as_str().is_some_and(|t| t.len() == 64),
+            "transaction should expose a 64-char hex txid, got: {}",
+            tx["txid"]
+        );
+        // The funding tx must contain the output that paid us 0.5 BTC.
+        let outputs = tx["outputs"]
+            .as_array()
+            .expect("transaction outputs should be a JSON array");
+        assert!(
+            outputs
+                .iter()
+                .any(|o| o["value"].as_u64() == Some(50_000_000)),
+            "funding tx should contain a 50,000,000 sat output to the wallet"
+        );
+    }
+
+    #[test]
+    fn test_create_tx_send_all_drains_wallet() {
+        let (cli, mut cmd_init, env) = setup_online_wallet();
+        cmd_init.assert().success();
+        fund_and_sync_wallet(&cli, &env);
+
+        let unsigned_psbt = run_wallet_json(
+            &cli,
+            &["create_tx", "--send_all", "--to", &format!("{RECIPIENT}:0")],
+        )["psbt"]
+            .as_str()
+            .expect("create_tx: missing 'psbt' field")
+            .to_string();
+
+        let (signed_psbt, finalized) = cli_sign(&cli, &unsigned_psbt);
+        assert!(finalized, "drain PSBT should be finalized after signing");
+
+        let raw_tx = cli_extract_psbt(&cli, &signed_psbt);
+        let drain_txid = cli_broadcast(&cli, &raw_tx);
+        env.rpc_client()
+            .get_mempool_entry(&drain_txid)
+            .expect("drain tx not found in node mempool");
+
+        env.mine_blocks(1, None)
+            .expect("Failed to mine drain confirmation block");
+        env.wait_until_electrum_sees_block(Duration::from_secs(10))
+            .expect("Electrum did not catch up to drain confirmation");
+
+        cli_sync(&cli);
+        assert_eq!(
+            cli_balance(&cli),
+            0,
+            "send_all should leave a zero confirmed balance"
+        );
+    }
+
+    #[test]
     fn test_full_online_transaction_lifecycle() {
         let (cli, mut cmd_init, env) = setup_online_wallet();
         cmd_init.assert().success();
