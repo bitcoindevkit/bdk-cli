@@ -433,4 +433,141 @@ mod test_online {
             "balance should reflect exactly one confirmed spend after RBF, got {final_balance}"
         );
     }
+
+    #[test]
+    fn test_create_tx_multiple_recipients() {
+        use bdk_wallet::bitcoin::Psbt;
+
+        let (cli, mut cmd_init, env) = setup_online_wallet();
+        cmd_init.assert().success();
+        fund_and_sync_wallet(&cli, &env);
+
+        let second = cli_new_address(&cli);
+
+        let psbt_b64 = run_wallet_json(
+            &cli,
+            &[
+                "create_tx",
+                "--to",
+                &format!("{RECIPIENT}:20000"),
+                "--to",
+                &format!("{second}:30000"),
+            ],
+        )["psbt"]
+            .as_str()
+            .expect("create_tx: missing 'psbt' field")
+            .to_string();
+
+        let psbt: Psbt = psbt_b64
+            .parse()
+            .expect("create_tx returned an invalid PSBT");
+        let values: Vec<u64> = psbt
+            .unsigned_tx
+            .output
+            .iter()
+            .map(|o| o.value.to_sat())
+            .collect();
+
+        assert!(
+            values.contains(&20_000),
+            "first recipient (20_000) output missing: {values:?}"
+        );
+        assert!(
+            values.contains(&30_000),
+            "second recipient (30_000) output missing: {values:?}"
+        );
+        assert!(
+            psbt.unsigned_tx.output.len() >= 2,
+            "expected at least the two recipient outputs, got {}",
+            psbt.unsigned_tx.output.len()
+        );
+    }
+
+    #[cfg(feature = "rpc")]
+    mod test_online_rpc {
+        use crate::common::BdkCli;
+        use bdk_testenv::{TestEnv, bitcoincore_rpc::RpcApi};
+        use bdk_wallet::bitcoin::{Address, Amount, Network};
+        use serde_json::Value;
+        use std::str::FromStr;
+        use tempfile::TempDir;
+
+        static WALLET_NAME: &str = "test_rpc_wallet";
+
+    
+        #[test]
+        fn test_rpc_full_scan_reflects_funding() {
+            let env = TestEnv::new().expect("start testenv");
+            let rpc_url = env.bitcoind.rpc_url();
+            let cookie = env
+                .bitcoind
+                .params
+                .cookie_file
+                .to_str()
+                .unwrap()
+                .to_string();
+
+            let temp_dir = TempDir::new().unwrap();
+            let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+
+            // descriptors
+            let desc = cli.cmd("descriptor", &["--type", "tr"]).output().unwrap();
+            let dv: Value = serde_json::from_slice(&desc.stdout).unwrap();
+            let ext = dv["private_descriptors"]["external"].as_str().unwrap();
+            let int = dv["private_descriptors"]["internal"].as_str().unwrap();
+
+            // config: rpc client-type, --url flag, cookie as a POSITIONAL arg
+            cli.build_base_cmd()
+                .args(["wallet", "--wallet", WALLET_NAME, "config"])
+                .args(["--ext-descriptor", ext, "--int-descriptor", int])
+                .args(["--client-type", "rpc", "--database-type", "sqlite"])
+                .args(["--url", &rpc_url])
+                .arg(&cookie)
+                .assert()
+                .success();
+
+            // wallet address to fund
+            let out = cli
+                .wallet_cmd(&["--wallet", WALLET_NAME, "new_address"])
+                .output()
+                .unwrap();
+            let addr_json: Value = serde_json::from_slice(&out.stdout).unwrap();
+            let address = Address::from_str(addr_json["address"].as_str().unwrap())
+                .unwrap()
+                .require_network(Network::Regtest)
+                .unwrap();
+
+            // fund + confirm 
+            let node_addr = env
+                .rpc_client()
+                .get_new_address(None, None)
+                .unwrap()
+                .assume_checked();
+            env.mine_blocks(101, Some(node_addr)).unwrap();
+            env.send(&address, Amount::from_btc(0.5).unwrap()).unwrap();
+            env.mine_blocks(3, None).unwrap();
+
+            // full_scan + balance via rpc
+            let scan = cli
+                .wallet_cmd(&["--wallet", WALLET_NAME, "full_scan"])
+                .output()
+                .unwrap();
+            assert!(
+                scan.status.success(),
+                "rpc full_scan failed: {}",
+                String::from_utf8_lossy(&scan.stderr)
+            );
+
+            let bal = cli
+                .wallet_cmd(&["--wallet", WALLET_NAME, "balance"])
+                .output()
+                .unwrap();
+            let bj: Value = serde_json::from_slice(&bal.stdout).unwrap();
+            assert_eq!(
+                bj["confirmed"].as_u64(),
+                Some(50_000_000),
+                "rpc-synced confirmed balance mismatch: {bj}"
+            );
+        }
+    }
 }

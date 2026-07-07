@@ -292,3 +292,37 @@ mod test_config {
         assert_eq!(config["int_descriptor"].as_str().unwrap(), int_desc);
     }
 }
+
+
+//  SILENT PAYMENTS 
+#[cfg(feature = "silent-payments")]
+mod test_silent_payments {
+    use super::*;
+
+    const SCAN: &str = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+    const SPEND: &str = "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5";
+
+    #[test]
+    fn test_silent_payment_code_network_hrp() {
+        BdkCli::new("regtest", None)
+            .cmd("silent_payment_code", &["--scan_key", SCAN, "--spend_key", SPEND])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("sprt1"));
+
+        BdkCli::new("testnet", None)
+            .cmd("silent_payment_code", &["--scan_key", SCAN, "--spend_key", SPEND])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("tsp1"));
+    }
+
+    #[test]
+    fn test_silent_payment_code_rejects_invalid_pubkey() {
+        BdkCli::new("regtest", None)
+            .cmd("silent_payment_code", &["--scan_key", "deadbeef", "--spend_key", SPEND])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("malformed public key"));
+    }
+}
