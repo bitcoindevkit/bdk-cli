@@ -483,6 +483,139 @@ mod test_online {
         );
     }
 
+    // `create_tx --add_string` embeds an OP_RETURN (nulldata) output carrying
+    // the given text, at zero value.
+    #[test]
+    fn test_create_tx_op_return() {
+        use bdk_wallet::bitcoin::Psbt;
+        let (cli, mut cmd_init, env) = setup_online_wallet();
+        cmd_init.assert().success();
+        fund_and_sync_wallet(&cli, &env);
+
+        let msg = "hello bdk cli";
+        let psbt_b64 = run_wallet_json(
+            &cli,
+            &[
+                "create_tx",
+                "--to",
+                &format!("{RECIPIENT}:20000"),
+                "--add_string",
+                msg,
+            ],
+        )["psbt"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let psbt: Psbt = psbt_b64.parse().expect("invalid PSBT");
+        let op_return = psbt
+            .unsigned_tx
+            .output
+            .iter()
+            .find(|o| o.script_pubkey.is_op_return())
+            .expect("expected an OP_RETURN output");
+        assert_eq!(
+            op_return.value.to_sat(),
+            0,
+            "OP_RETURN output must carry 0 value"
+        );
+        assert!(
+            op_return
+                .script_pubkey
+                .as_bytes()
+                .windows(msg.len())
+                .any(|w| w == msg.as_bytes()),
+            "OP_RETURN should embed the message bytes"
+        );
+    }
+
+    // `create_tx --utxos` forces a specific UTXO to be spent;
+    // `--unspendable`excludes one. Funds two UTXOs so the selection is actually observable.
+    #[test]
+    fn test_create_tx_utxo_selection() {
+        use bdk_wallet::bitcoin::Psbt;
+        let (cli, mut cmd_init, env) = setup_online_wallet();
+        cmd_init.assert().success();
+
+        let node_addr = env
+            .rpc_client()
+            .get_new_address(None, None)
+            .unwrap()
+            .assume_checked();
+        env.mine_blocks(101, Some(node_addr)).unwrap();
+        env.wait_until_electrum_sees_block(Duration::from_secs(10))
+            .unwrap();
+        let a1 = cli_new_address(&cli);
+        let t1 = env.send(&a1, Amount::from_btc(0.3).unwrap()).unwrap();
+        env.wait_until_electrum_sees_txid(t1, Duration::from_secs(10))
+            .unwrap();
+        let a2 = cli_new_address(&cli);
+        let t2 = env.send(&a2, Amount::from_btc(0.2).unwrap()).unwrap();
+        env.wait_until_electrum_sees_txid(t2, Duration::from_secs(10))
+            .unwrap();
+        env.mine_blocks(3, None).unwrap();
+        env.wait_until_electrum_sees_block(Duration::from_secs(10))
+            .unwrap();
+        cli_full_scan(&cli);
+
+        let unspent = run_wallet_json(&cli, &["unspent"]);
+        let items = unspent["items"].as_array().unwrap();
+        assert_eq!(items.len(), 2, "expected two UTXOs, got {}", items.len());
+        let op0 = items[0]["outpoint"].as_str().unwrap().to_string();
+
+        // --utxos forces op0 to be an input.
+        let psbt_a: Psbt = run_wallet_json(
+            &cli,
+            &[
+                "create_tx",
+                "--to",
+                &format!("{RECIPIENT}:10000"),
+                "--utxos",
+                &op0,
+            ],
+        )["psbt"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let inputs_a: Vec<String> = psbt_a
+            .unsigned_tx
+            .input
+            .iter()
+            .map(|i| i.previous_output.to_string())
+            .collect();
+        assert!(
+            inputs_a.contains(&op0),
+            "--utxos should force {op0}: {inputs_a:?}"
+        );
+
+        // --unspendable excludes op0 (the other UTXO covers the amount).
+        let psbt_b: Psbt = run_wallet_json(
+            &cli,
+            &[
+                "create_tx",
+                "--to",
+                &format!("{RECIPIENT}:10000"),
+                "--unspendable",
+                &op0,
+            ],
+        )["psbt"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let inputs_b: Vec<String> = psbt_b
+            .unsigned_tx
+            .input
+            .iter()
+            .map(|i| i.previous_output.to_string())
+            .collect();
+        assert!(
+            !inputs_b.contains(&op0),
+            "--unspendable should exclude {op0}: {inputs_b:?}"
+        );
+    }
+
     #[cfg(feature = "rpc")]
     mod test_rpc {
         use super::*;
@@ -679,5 +812,202 @@ mod test_online {
                 "SP recipient output should be P2TR"
             );
         }
+    }
+
+    #[cfg(feature = "bip322")]
+    #[test]
+    fn test_verify_message_proof_of_funds_uses_persisted_utxos() {
+        let env = TestEnv::new().expect("Failed to start bdk_testenv");
+        let server_url = env.electrsd.electrum_url.as_str();
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+
+        // A wpkh wallet
+        let desc = cli.cmd("descriptor", &["--type", "wpkh"]).output().unwrap();
+        let desc_val: Value = serde_json::from_slice(&desc.stdout).unwrap();
+        let ext_desc = desc_val["private_descriptors"]["external"]
+            .as_str()
+            .unwrap();
+        let int_desc = desc_val["private_descriptors"]["internal"]
+            .as_str()
+            .unwrap();
+        cli.build_base_cmd()
+            .arg("wallet")
+            .arg("--wallet")
+            .arg(WALLET_NAME)
+            .arg("config")
+            .arg("--ext-descriptor")
+            .arg(ext_desc)
+            .arg("--int-descriptor")
+            .arg(int_desc)
+            .arg("--client-type")
+            .arg("electrum")
+            .arg("--database-type")
+            .arg("sqlite")
+            .arg("--url")
+            .arg(server_url)
+            .assert()
+            .success();
+
+        // Fund a single small UTXO
+        let address = cli_new_address(&cli);
+        let node_addr = env
+            .rpc_client()
+            .get_new_address(None, None)
+            .unwrap()
+            .assume_checked();
+        env.mine_blocks(101, Some(node_addr)).unwrap();
+        env.wait_until_electrum_sees_block(Duration::from_secs(10))
+            .unwrap();
+        let txid = env.send(&address, Amount::from_sat(5_000)).unwrap();
+        env.wait_until_electrum_sees_txid(txid, Duration::from_secs(10))
+            .unwrap();
+        env.mine_blocks(3, None).unwrap();
+        env.wait_until_electrum_sees_block(Duration::from_secs(10))
+            .unwrap();
+        cli_full_scan(&cli);
+
+        // The funded outpoint to prove control of.
+        let unspent = run_wallet_json(&cli, &["unspent"]);
+        let outpoint = unspent["items"][0]["outpoint"]
+            .as_str()
+            .expect("funded wallet should have one UTXO")
+            .to_string();
+        let addr = address.to_string();
+
+        // Produce a proof-of-funds over that UTXO.
+        let proof = run_wallet_json(
+            &cli,
+            &[
+                "sign_message",
+                "--message",
+                "proof-of-funds",
+                "--address",
+                &addr,
+                "--signature-type",
+                "fullproofoffunds",
+                "--utxos",
+                &outpoint,
+            ],
+        )["proof"]
+            .as_str()
+            .expect("sign_message should return a proof")
+            .to_string();
+
+        let result = run_wallet_json(
+            &cli,
+            &[
+                "verify_message",
+                "--proof",
+                &proof,
+                "--message",
+                "proof-of-funds",
+                "--address",
+                &addr,
+            ],
+        );
+        assert_eq!(
+            result["valid"].as_bool(),
+            Some(true),
+            "proof-of-funds should verify against the persisted wallet: {result}"
+        );
+        assert_eq!(
+            result["proven_amount"].as_u64(),
+            Some(5_000),
+            "proven_amount should equal the funded UTXO value: {result}"
+        );
+    }
+}
+#[cfg(feature = "esplora")]
+mod test_esplora {
+    use crate::common::BdkCli;
+    use bdk_testenv::{TestEnv, bitcoincore_rpc::RpcApi};
+    use bdk_wallet::bitcoin::{Address, Amount, Network};
+    use serde_json::Value;
+    use std::str::FromStr;
+    use std::time::Duration;
+    use tempfile::TempDir;
+
+    static WALLET_NAME: &str = "test_esplora_wallet";
+
+    // config an esplora wallet, fund it, `full_scan`, and confirm the synced balance.
+    #[test]
+    fn test_esplora_full_scan_reflects_funding() {
+        let env = TestEnv::new().expect("start testenv");
+        let esplora = env
+            .electrsd
+            .esplora_url
+            .clone()
+            .expect("esplora http endpoint (TestEnv sets http_enabled)");
+        // esplora_url is a bind addr ("0.0.0.0:PORT"); connect via loopback.
+        let url = format!("http://{}", esplora.replace("0.0.0.0", "127.0.0.1"));
+
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+
+        let desc = cli.cmd("descriptor", &["--type", "tr"]).output().unwrap();
+        let desc_value: Value = serde_json::from_slice(&desc.stdout).unwrap();
+        let ext = desc_value["private_descriptors"]["external"]
+            .as_str()
+            .unwrap();
+        let int = desc_value["private_descriptors"]["internal"]
+            .as_str()
+            .unwrap();
+        cli.build_base_cmd()
+            .args(["wallet", "--wallet", WALLET_NAME, "config"])
+            .args(["--ext-descriptor", ext, "--int-descriptor", int])
+            .args(["--client-type", "esplora", "--database-type", "sqlite"])
+            .args(["--url", &url])
+            .assert()
+            .success();
+
+        let out = cli
+            .wallet_cmd(&["--wallet", WALLET_NAME, "new_address"])
+            .output()
+            .unwrap();
+        let address = Address::from_str(
+            serde_json::from_slice::<Value>(&out.stdout).unwrap()["address"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap()
+        .require_network(Network::Regtest)
+        .unwrap();
+
+        let node_addr = env
+            .rpc_client()
+            .get_new_address(None, None)
+            .unwrap()
+            .assume_checked();
+        env.mine_blocks(101, Some(node_addr)).unwrap();
+        env.wait_until_electrum_sees_block(Duration::from_secs(10))
+            .unwrap();
+        let txid = env.send(&address, Amount::from_btc(0.5).unwrap()).unwrap();
+        env.wait_until_electrum_sees_txid(txid, Duration::from_secs(10))
+            .unwrap();
+        env.mine_blocks(3, None).unwrap();
+        env.wait_until_electrum_sees_block(Duration::from_secs(10))
+            .unwrap();
+
+        let scan = cli
+            .wallet_cmd(&["--wallet", WALLET_NAME, "full_scan"])
+            .output()
+            .unwrap();
+        assert!(
+            scan.status.success(),
+            "esplora full_scan failed: {}",
+            String::from_utf8_lossy(&scan.stderr)
+        );
+
+        let bal = cli
+            .wallet_cmd(&["--wallet", WALLET_NAME, "balance"])
+            .output()
+            .unwrap();
+        let bj: Value = serde_json::from_slice(&bal.stdout).unwrap();
+        assert_eq!(
+            bj["confirmed"].as_u64(),
+            Some(50_000_000),
+            "esplora-synced confirmed balance mismatch: {bj}"
+        );
     }
 }

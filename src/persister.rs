@@ -4,8 +4,10 @@ use bdk_wallet::Wallet;
 use bdk_wallet::bitcoin::Network;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 use bdk_wallet::{KeychainKind, PersistedWallet, WalletPersister};
+#[cfg(any(feature = "sqlite", feature = "redb"))]
 use clap::ValueEnum;
 
+#[cfg(any(feature = "sqlite", feature = "redb"))]
 #[derive(Clone, ValueEnum, Debug, Eq, PartialEq)]
 pub enum DatabaseType {
     /// Sqlite database

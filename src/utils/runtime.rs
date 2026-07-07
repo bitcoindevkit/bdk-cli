@@ -89,31 +89,28 @@ impl WalletRuntime {
         })
     }
 
-    pub fn build_wallet(&self, require_db: bool) -> Result<RuntimeWallet, Error> {
-        if !require_db {
-            return Ok(RuntimeWallet::Standard(Box::new(new_wallet(
-                self.network,
-                &self.wallet_opts,
-            )?)));
-        }
-
+    pub fn build_wallet(
+        &self,
+        #[cfg_attr(
+            not(any(feature = "sqlite", feature = "redb")),
+            allow(unused_variables)
+        )]
+        require_db: bool,
+    ) -> Result<RuntimeWallet, Error> {
         #[cfg(any(feature = "sqlite", feature = "redb"))]
-        {
+        if require_db {
             let mut persister = self.create_persister()?;
             let wallet = new_persisted_wallet(self.network, &mut persister, &self.wallet_opts)?;
-            Ok(RuntimeWallet::Persisted(
+            return Ok(RuntimeWallet::Persisted(
                 Box::new(wallet),
                 Box::new(persister),
-            ))
+            ));
         }
 
-        #[cfg(not(any(feature = "sqlite", feature = "redb")))]
-        {
-            Ok(RuntimeWallet::Standard(Box::new(new_wallet(
-                self.network,
-                &self.wallet_opts,
-            )?)))
-        }
+        Ok(RuntimeWallet::Standard(Box::new(new_wallet(
+            self.network,
+            &self.wallet_opts,
+        )?)))
     }
 
     #[cfg(any(
