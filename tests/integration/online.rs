@@ -484,17 +484,11 @@ mod test_online {
     }
 
     #[cfg(feature = "rpc")]
-    mod test_online_rpc {
-        use crate::common::BdkCli;
-        use bdk_testenv::{TestEnv, bitcoincore_rpc::RpcApi};
-        use bdk_wallet::bitcoin::{Address, Amount, Network};
-        use serde_json::Value;
-        use std::str::FromStr;
-        use tempfile::TempDir;
+    mod test_rpc {
+        use super::*;
 
         static WALLET_NAME: &str = "test_rpc_wallet";
 
-    
         #[test]
         fn test_rpc_full_scan_reflects_funding() {
             let env = TestEnv::new().expect("start testenv");
@@ -537,7 +531,7 @@ mod test_online {
                 .require_network(Network::Regtest)
                 .unwrap();
 
-            // fund + confirm 
+            // fund + confirm
             let node_addr = env
                 .rpc_client()
                 .get_new_address(None, None)
@@ -567,6 +561,122 @@ mod test_online {
                 bj["confirmed"].as_u64(),
                 Some(50_000_000),
                 "rpc-synced confirmed balance mismatch: {bj}"
+            );
+        }
+    }
+
+    #[cfg(feature = "silent-payments")]
+    mod test_sp {
+        use super::*;
+        use bdk_wallet::bitcoin::{Transaction, consensus::encode::deserialize_hex};
+
+        const SCAN: &str = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+        const SPEND: &str = "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5";
+        static WALLET: &str = "sp_wallet";
+
+        #[test]
+        fn test_create_sp_tx_produces_taproot_output() {
+            let env = TestEnv::new().unwrap();
+            let url = env.electrsd.electrum_url.as_str();
+            let tmp = TempDir::new().unwrap();
+            let cli = BdkCli::new("regtest", Some(tmp.path().to_path_buf()));
+
+            let desc = cli.cmd("descriptor", &["--type", "tr"]).output().unwrap();
+            let dv: Value = serde_json::from_slice(&desc.stdout).unwrap();
+            let ext_desc = dv["private_descriptors"]["external"].as_str().unwrap();
+            let int_desc = dv["private_descriptors"]["internal"].as_str().unwrap();
+            cli.build_base_cmd()
+                .args([
+                    "wallet",
+                    "--wallet",
+                    WALLET,
+                    "config",
+                    "--ext-descriptor",
+                    ext_desc,
+                    "--int-descriptor",
+                    int_desc,
+                    "--client-type",
+                    "electrum",
+                    "--database-type",
+                    "sqlite",
+                    "--url",
+                    url,
+                ])
+                .assert()
+                .success();
+
+            let new_address = cli
+                .wallet_cmd(&["--wallet", WALLET, "new_address"])
+                .output()
+                .unwrap();
+            let addr = Address::from_str(
+                serde_json::from_slice::<Value>(&new_address.stdout).unwrap()["address"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap()
+            .require_network(Network::Regtest)
+            .unwrap();
+            let node_address = env
+                .rpc_client()
+                .get_new_address(None, None)
+                .unwrap()
+                .assume_checked();
+            env.mine_blocks(101, Some(node_address)).unwrap();
+            env.wait_until_electrum_sees_block(Duration::from_secs(10))
+                .unwrap();
+            let txid = env.send(&addr, Amount::from_btc(0.5).unwrap()).unwrap();
+            env.wait_until_electrum_sees_txid(txid, Duration::from_secs(10))
+                .unwrap();
+            env.mine_blocks(3, None).unwrap();
+            env.wait_until_electrum_sees_block(Duration::from_secs(10))
+                .unwrap();
+            cli.wallet_cmd(&["--wallet", WALLET, "full_scan"])
+                .assert()
+                .success();
+
+            let silent_payment_output = cli
+                .cmd(
+                    "silent_payment_code",
+                    &["--scan_key", SCAN, "--spend_key", SPEND],
+                )
+                .output()
+                .unwrap();
+            let sp_code =
+                serde_json::from_slice::<Value>(&silent_payment_output.stdout).unwrap()["message"]
+                    .as_str()
+                    .unwrap()
+                    .to_string();
+
+            let out = cli
+                .wallet_cmd(&[
+                    "--wallet",
+                    WALLET,
+                    "create_sp_tx",
+                    "--to-sp",
+                    &format!("{sp_code}:20000"),
+                ])
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "create_sp_tx failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let rawtx = serde_json::from_slice::<Value>(&out.stdout).unwrap()["raw_tx"]
+                .as_str()
+                .unwrap()
+                .to_string();
+
+            let tx: Transaction = deserialize_hex(&rawtx).expect("invalid raw tx");
+            let sp_out = tx
+                .output
+                .iter()
+                .find(|o| o.value.to_sat() == 20_000)
+                .expect("no 20_000 output");
+            assert!(
+                sp_out.script_pubkey.is_p2tr(),
+                "SP recipient output should be P2TR"
             );
         }
     }

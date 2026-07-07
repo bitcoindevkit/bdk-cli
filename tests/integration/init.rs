@@ -293,8 +293,7 @@ mod test_config {
     }
 }
 
-
-//  SILENT PAYMENTS 
+//  SILENT PAYMENTS
 #[cfg(feature = "silent-payments")]
 mod test_silent_payments {
     use super::*;
@@ -305,13 +304,19 @@ mod test_silent_payments {
     #[test]
     fn test_silent_payment_code_network_hrp() {
         BdkCli::new("regtest", None)
-            .cmd("silent_payment_code", &["--scan_key", SCAN, "--spend_key", SPEND])
+            .cmd(
+                "silent_payment_code",
+                &["--scan_key", SCAN, "--spend_key", SPEND],
+            )
             .assert()
             .success()
             .stdout(predicate::str::contains("sprt1"));
 
         BdkCli::new("testnet", None)
-            .cmd("silent_payment_code", &["--scan_key", SCAN, "--spend_key", SPEND])
+            .cmd(
+                "silent_payment_code",
+                &["--scan_key", SCAN, "--spend_key", SPEND],
+            )
             .assert()
             .success()
             .stdout(predicate::str::contains("tsp1"));
@@ -320,7 +325,10 @@ mod test_silent_payments {
     #[test]
     fn test_silent_payment_code_rejects_invalid_pubkey() {
         BdkCli::new("regtest", None)
-            .cmd("silent_payment_code", &["--scan_key", "deadbeef", "--spend_key", SPEND])
+            .cmd(
+                "silent_payment_code",
+                &["--scan_key", "deadbeef", "--spend_key", SPEND],
+            )
             .assert()
             .failure()
             .stderr(predicate::str::contains("malformed public key"));
