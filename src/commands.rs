@@ -52,6 +52,8 @@ use bdk_wallet::bitcoin::Network;
 use clap::{Args, Parser, Subcommand, value_parser};
 use clap_complete::Shell;
 
+#[cfg(feature = "dns_payment")]
+use crate::utils::parse_dns_recipient;
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
 
