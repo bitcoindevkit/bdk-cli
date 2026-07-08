@@ -84,7 +84,7 @@ pub struct FullScanCommand {
     #[arg(env = "STOP_GAP", long = "scan-stop-gap", default_value = "20")]
     stop_gap: usize,
     // #[clap(long, default_value = "5")]
-    // pub parallel_request: usize,
+    pub parallel_request: usize,
 }
 
 #[cfg(any(
@@ -196,7 +196,7 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
 }
 
 #[derive(Parser, Debug, PartialEq, Eq, Clone)]
-pub struct SyncCommand {}
+pub struct SyncCommand;
 
 #[cfg(any(
     feature = "electrum",
@@ -520,7 +520,7 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for ResumePayjoinCommand 
 }
 
 #[derive(Parser, Debug, Clone, PartialEq, Eq)]
-pub struct PayjoinHistoryCommand {}
+pub struct PayjoinHistoryCommand;
 
 #[cfg(any(
     feature = "electrum",

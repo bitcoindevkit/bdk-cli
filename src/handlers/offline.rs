@@ -91,7 +91,7 @@ impl OfflineWalletSubCommand {
 }
 
 #[derive(Parser, Debug, Clone, PartialEq)]
-pub struct NewAddressCommand {}
+pub struct NewAddressCommand;
 
 impl AppCommand<AppContext<OfflineOperations<'_>>> for NewAddressCommand {
     type Output = AddressResult;
@@ -104,7 +104,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for NewAddressCommand {
 }
 
 #[derive(Parser, Debug, PartialEq, Clone)]
-pub struct UnusedAddressCommand {}
+pub struct UnusedAddressCommand;
 
 impl AppCommand<AppContext<OfflineOperations<'_>>> for UnusedAddressCommand {
     type Output = AddressResult;
@@ -117,7 +117,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for UnusedAddressCommand {
 }
 
 #[derive(Parser, Debug, PartialEq, Clone)]
-pub struct UnspentCommand {}
+pub struct UnspentCommand;
 
 impl AppCommand<AppContext<OfflineOperations<'_>>> for UnspentCommand {
     type Output = ListResult<UnspentDetails>;
@@ -134,7 +134,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for UnspentCommand {
 }
 
 #[derive(Parser, Debug, PartialEq, Clone)]
-pub struct TransactionsCommand {}
+pub struct TransactionsCommand;
 
 impl AppCommand<AppContext<OfflineOperations<'_>>> for TransactionsCommand {
     type Output = ListResult<TransactionDetails>;
@@ -172,7 +172,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for TransactionsCommand {
 }
 
 #[derive(Parser, Debug, PartialEq, Clone)]
-pub struct BalanceCommand {}
+pub struct BalanceCommand;
 
 impl AppCommand<AppContext<OfflineOperations<'_>>> for BalanceCommand {
     type Output = BalanceResult;
@@ -607,7 +607,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for BumpFeeCommand {
 }
 
 #[derive(Parser, Debug, PartialEq, Clone)]
-pub struct PoliciesCommand {}
+pub struct PoliciesCommand;
 
 impl AppCommand<AppContext<OfflineOperations<'_>>> for PoliciesCommand {
     type Output = KeychainPair<serde_json::Value>;
@@ -625,7 +625,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for PoliciesCommand {
 }
 
 #[derive(Parser, Debug, PartialEq, Clone)]
-pub struct PublicDescriptorCommand {}
+pub struct PublicDescriptorCommand;
 
 impl AppCommand<AppContext<OfflineOperations<'_>>> for PublicDescriptorCommand {
     type Output = KeychainPair<String>;

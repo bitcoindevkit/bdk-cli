@@ -143,7 +143,7 @@ impl AppCommand<AppContext<Init>> for SaveConfigCommand {
 }
 
 #[derive(Args, Debug, Clone, PartialEq)]
-pub struct ListWalletsCommand {}
+pub struct ListWalletsCommand;
 
 impl AppCommand<AppContext<Init>> for ListWalletsCommand {
     type Output = WalletsListResult;
