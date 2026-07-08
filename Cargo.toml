@@ -75,3 +75,7 @@ silent-payments = ["dep:bdk_sp"]
 
 [dev-dependencies]
 claims = "0.8.0"
+predicates = "3.0"
+tempfile = "3.8"
+assert_cmd = "2.2.2"
+bdk_testenv = "0.13.1"

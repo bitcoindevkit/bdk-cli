@@ -16,7 +16,6 @@ use bdk_wallet::{KeychainKind, SignOptions};
 use clap::Parser;
 use serde_json::json;
 use std::collections::BTreeMap;
-use std::str::FromStr;
 #[cfg(feature = "silent-payments")]
 use {
     crate::utils::common::parse_sp_code_value_pairs,
@@ -311,6 +310,8 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
 
         let psbt = tx_builder.finish()?;
 
+        // let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
+
         Ok(PsbtResult::new(&psbt, Some(false)))
     }
 }
@@ -540,7 +541,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
 pub struct BumpFeeCommand {
     /// TXID of the transaction to update.
     #[arg(env = "TXID", long = "txid")]
-    pub txid: String,
+    pub txid: Txid,
 
     /// Allows the wallet to reduce the amount to the specified address in order to increase fees.
     #[arg(env = "SHRINK_ADDRESS", long = "shrink", value_parser = parse_address)]
@@ -574,9 +575,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for BumpFeeCommand {
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
         let wallet = &mut ctx.state.wallet;
 
-        let txid = Txid::from_str(self.txid.as_str())?;
-
-        let mut tx_builder = wallet.build_fee_bump(txid)?;
+        let mut tx_builder = wallet.build_fee_bump(self.txid)?;
         let fee_rate =
             FeeRate::from_sat_per_vb(self.fee_rate as u64).unwrap_or(FeeRate::BROADCAST_MIN);
         tx_builder.fee_rate(fee_rate);
@@ -761,7 +760,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CombinePsbtCommand {
                     Ok(acc)
                 })?;
 
-        Ok(PsbtResult::new(&final_psbt, None))
+        Ok(PsbtResult::new(&final_psbt, Some(false)))
     }
 }
 

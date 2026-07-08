@@ -83,7 +83,7 @@ pub struct FullScanCommand {
     /// Stop searching addresses for transactions after finding an unused gap of this length.
     #[arg(env = "STOP_GAP", long = "scan-stop-gap", default_value = "20")]
     stop_gap: usize,
-    // #[clap(long, default_value = "5")]
+    #[clap(long, default_value = "5")]
     pub parallel_request: usize,
 }
 

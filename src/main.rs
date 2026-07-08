@@ -29,7 +29,7 @@ use crate::handlers::{AppCommand, AppContext};
 use crate::utils::output::FormatOutput;
 use crate::utils::runtime::WalletRuntime;
 use crate::utils::{command_requires_db, prepare_home_dir};
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 
 #[tokio::main]
 async fn main() {
@@ -199,8 +199,14 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
 
             cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
         }
-        CliSubCommand::Completions { shell: _ } => unimplemented!(),
-
+        CliSubCommand::Completions { shell } => {
+            clap_complete::generate(
+                shell,
+                &mut CliOpts::command(),
+                "bdk-cli",
+                &mut std::io::stdout(),
+            );
+        }
         #[cfg(feature = "silent-payments")]
         CliSubCommand::SilentPaymentCode(cmd) => {
             let mut ctx = AppContext::new(cli_opts.network, home_dir);

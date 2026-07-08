@@ -12,7 +12,7 @@ use crate::config::{WalletConfig, WalletConfigInner};
 use crate::error::BDKCliError as Error;
 use crate::handlers::Init;
 use crate::handlers::{AppCommand, AppContext};
-#[cfg(feature = "sqlite")]
+#[cfg(any(feature = "sqlite", feature = "redb"))]
 use crate::persister::DatabaseType;
 use crate::utils::types::{StatusResult, WalletsListResult};
 use bdk_wallet::bitcoin::Network;
@@ -95,7 +95,6 @@ impl AppCommand<AppContext<Init>> for SaveConfigCommand {
             network: ctx.network.to_string(),
             ext_descriptor: self.wallet_opts.ext_descriptor.clone(),
             int_descriptor: self.wallet_opts.int_descriptor.clone(),
-
             #[cfg(any(feature = "sqlite", feature = "redb"))]
             database_type: match self.wallet_opts.database_type {
                 #[cfg(feature = "sqlite")]
@@ -125,6 +124,22 @@ impl AppCommand<AppContext<Init>> for SaveConfigCommand {
             parallel_requests: Some(self.wallet_opts.parallel_requests),
             #[cfg(feature = "rpc")]
             cookie: self.wallet_opts.cookie.clone(),
+
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy: self.wallet_opts.proxy_opts.proxy.clone(),
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy_auth: self
+                .wallet_opts
+                .proxy_opts
+                .proxy_auth
+                .as_ref()
+                .map(|(u, p)| format!("{u}:{p}")),
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy_retries: Some(self.wallet_opts.proxy_opts.retries),
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy_timeout: self.wallet_opts.proxy_opts.timeout,
+            #[cfg(feature = "cbf")]
+            conn_count: Some(self.wallet_opts.compactfilter_opts.conn_count),
         };
 
         config.wallets.insert(wallet_name.clone(), wallet_config);
