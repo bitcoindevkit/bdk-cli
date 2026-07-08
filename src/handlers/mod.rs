@@ -1,5 +1,7 @@
 pub mod config;
 pub mod descriptor;
+#[cfg(feature = "dns_payment")]
+pub mod dns;
 pub mod key;
 pub mod offline;
 pub mod online;
@@ -104,7 +106,8 @@ pub trait AppCommand<C> {
     feature = "electrum",
     feature = "esplora",
     feature = "rpc",
-    feature = "cbf"
+    feature = "cbf",
+    feature = "dns_payment"
 ))]
 pub trait AsyncAppCommand<C> {
     type Output: FormatOutput;

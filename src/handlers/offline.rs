@@ -82,6 +82,11 @@ impl OfflineWalletSubCommand {
             Self::VerifyMessage(verify_message_command) => verify_message_command
                 .execute(ctx)?
                 .write_out(std::io::stdout()),
+            #[cfg(feature = "dns_payment")]
+            Self::CreateDnsTx(_) => Err(Error::Generic(
+                "CreateDnsTx is dispatched asynchronously through main"
+                    .to_string(),
+            )),
         }
     }
 }

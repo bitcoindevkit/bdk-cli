@@ -33,6 +33,8 @@ use log::{debug, warn};
 
 use crate::commands::{CliOpts, CliSubCommand, WalletSubCommand};
 use crate::error::BDKCliError as Error;
+#[cfg(feature = "dns_payment")]
+use crate::handlers::AsyncAppCommand;
 use crate::handlers::{AppCommand, AppContext};
 use crate::utils::output::FormatOutput;
 use crate::utils::runtime::WalletRuntime;
@@ -102,7 +104,16 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
                         &mut wallet,
                     );
 
-                    cmd.execute(&mut ctx)?;
+                    match cmd {
+                        #[cfg(feature = "dns_payment")]
+                        commands::OfflineWalletSubCommand::CreateDnsTx(dns_cmd) => {
+                            dns_cmd
+                                .execute(&mut ctx)
+                                .await?
+                                .write_out(std::io::stdout())?;
+                        }
+                        other => other.execute(&mut ctx)?,
+                    }
                 }
                 wallet.persist()?;
             }
@@ -205,6 +216,11 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
             let mut ctx = AppContext::new(cli_opts.network, home_dir);
 
             cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
+        }
+        #[cfg(feature = "dns_payment")]
+        CliSubCommand::ResolveDnsRecipient(cmd) => {
+            let mut ctx = AppContext::new(cli_opts.network, home_dir);
+            cmd.execute(&mut ctx).await?.write_out(std::io::stdout())?;
         }
     }
 

@@ -53,7 +53,8 @@ use clap::{Args, Parser, Subcommand, value_parser};
 use clap_complete::Shell;
 
 #[cfg(feature = "dns_payment")]
-use crate::utils::parse_dns_recipient;
+use crate::handlers::dns::{CreateDnsTxCommand, ResolveDnsRecipientCommand};
+
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
 
@@ -201,6 +202,9 @@ pub enum CliSubCommand {
     /// Useful to create silent payment transactions using fake silent payment codes.
     #[cfg(feature = "silent-payments")]
     SilentPaymentCode(SilentPaymentCodeCommand),
+    /// Resolves BIP-353 DNS payment instructions for a human-readable name.
+    #[cfg(feature = "dns_payment")]
+    ResolveDnsRecipient(ResolveDnsRecipientCommand),
 }
 
 /// Wallet operation subcommands.
@@ -362,6 +366,9 @@ pub enum OfflineWalletSubCommand {
     /// Verify a BIP322 signature
     #[cfg(feature = "bip322")]
     VerifyMessage(VerifyMessageCommand),
+    /// Creates a new unsigned transaction from DNS payment instructions.
+    #[cfg(feature = "dns_payment")]
+    CreateDnsTx(CreateDnsTxCommand),
 }
 
 /// Wallet subcommands that needs a blockchain backend.
