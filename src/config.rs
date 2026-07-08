@@ -117,7 +117,6 @@ impl TryFrom<&WalletConfigInner> for WalletOpts {
 
         Ok(WalletOpts {
             wallet: Some(config.wallet.clone()),
-            verbose: false,
             ext_descriptor: config.ext_descriptor.clone(),
             int_descriptor: config.int_descriptor.clone(),
 

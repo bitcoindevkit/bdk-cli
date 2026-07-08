@@ -311,9 +311,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
 
         let psbt = tx_builder.finish()?;
 
-        // let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
-
-        Ok(PsbtResult::new(&psbt, false, Some(false)))
+        Ok(PsbtResult::new(&psbt, Some(false)))
     }
 }
 
@@ -604,7 +602,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for BumpFeeCommand {
 
         // let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
 
-        Ok(PsbtResult::new(&psbt, false, Some(false)))
+        Ok(PsbtResult::new(&psbt, Some(false)))
     }
 }
 
@@ -672,7 +670,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for SignCommand {
             ..Default::default()
         };
         let finalized = wallet.sign(&mut psbt, signopt)?;
-        Ok(PsbtResult::new(&psbt, false, Some(finalized)))
+        Ok(PsbtResult::new(&psbt, Some(finalized)))
     }
 }
 
@@ -728,7 +726,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for FinalizePsbtCommand {
 
         let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
 
-        Ok(PsbtResult::new(&psbt, false, Some(finalized)))
+        Ok(PsbtResult::new(&psbt, Some(finalized)))
     }
 }
 
@@ -763,7 +761,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CombinePsbtCommand {
                     Ok(acc)
                 })?;
 
-        Ok(PsbtResult::new(&final_psbt, false, None))
+        Ok(PsbtResult::new(&final_psbt, None))
     }
 }
 

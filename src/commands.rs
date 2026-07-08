@@ -230,9 +230,6 @@ pub struct WalletOpts {
     /// Selects the wallet to use.
     #[arg(skip)]
     pub wallet: Option<String>,
-    /// Adds verbosity, returns PSBT in JSON format alongside serialized, displays expanded objects.
-    #[arg(env = "VERBOSE", short = 'v', long = "verbose")]
-    pub verbose: bool,
     /// Sets the descriptor to use for the external addresses.
     #[arg(env = "EXT_DESCRIPTOR", short = 'e', long, required = true)]
     pub ext_descriptor: String,
