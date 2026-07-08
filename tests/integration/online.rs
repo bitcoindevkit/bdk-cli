@@ -917,7 +917,56 @@ mod test_online {
             "proven_amount should equal the funded UTXO value: {result}"
         );
     }
+
+    // `create_dns_tx` with a plain `--to` recipient
+    #[cfg(feature = "dns_payment")]
+    #[test]
+    fn test_create_dns_tx_plain_recipient() {
+        use bdk_wallet::bitcoin::Psbt;
+        let (cli, mut cmd_init, env) = setup_online_wallet();
+        cmd_init.assert().success();
+        fund_and_sync_wallet(&cli, &env);
+
+        let psbt_b64 = run_wallet_json(
+            &cli,
+            &["create_dns_tx", "--to", &format!("{RECIPIENT}:20000")],
+        )["psbt"]
+            .as_str()
+            .expect("create_dns_tx: missing 'psbt'")
+            .to_string();
+
+        let psbt: Psbt = psbt_b64
+            .parse()
+            .expect("create_dns_tx returned an invalid PSBT");
+        assert!(
+            psbt.unsigned_tx
+                .output
+                .iter()
+                .any(|o| o.value.to_sat() == 20_000),
+            "expected the 20_000 sat recipient output"
+        );
+    }
+
+    // With neither `--to` nor `--to_dns`, the command errors.
+    #[cfg(feature = "dns_payment")]
+    #[test]
+    fn test_create_dns_tx_requires_recipient() {
+        let (cli, mut cmd_init, _env) = setup_online_wallet();
+        cmd_init.assert().success();
+
+        let out = cli
+            .wallet_cmd(&["--wallet", WALLET_NAME, "create_dns_tx"])
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "should fail with no recipients");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("Either --to or --to_dns"),
+            "expected recipient-required error, got: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
 }
+
 #[cfg(feature = "esplora")]
 mod test_esplora {
     use crate::common::BdkCli;
