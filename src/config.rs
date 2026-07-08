@@ -4,11 +4,11 @@
     feature = "rpc",
     feature = "cbf"
 ))]
-use crate::commands::ClientType;
-#[cfg(feature = "sqlite")]
-use crate::commands::DatabaseType;
+use crate::client::ClientType;
 use crate::commands::WalletOpts;
 use crate::error::BDKCliError as Error;
+#[cfg(feature = "sqlite")]
+use crate::persister::DatabaseType;
 use bdk_wallet::bitcoin::Network;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 use clap::ValueEnum;
@@ -117,7 +117,6 @@ impl TryFrom<&WalletConfigInner> for WalletOpts {
 
         Ok(WalletOpts {
             wallet: Some(config.wallet.clone()),
-            verbose: false,
             ext_descriptor: config.ext_descriptor.clone(),
             int_descriptor: config.int_descriptor.clone(),
 

@@ -13,21 +13,50 @@
 //! All subcommands are defined in the below enums.
 
 #![allow(clippy::large_enum_variant)]
-#[cfg(feature = "silent-payments")]
-use {crate::utils::parse_sp_code_value_pairs, bdk_sp::encoding::SilentPaymentCode};
-
-use bdk_wallet::bitcoin::{
-    Address, Network, OutPoint, ScriptBuf,
-    bip32::{DerivationPath, Xpriv},
+#[cfg(feature = "bip322")]
+use crate::handlers::offline::{SignMessageCommand, VerifyMessageCommand};
+use crate::handlers::{
+    config::{ListWalletsCommand, SaveConfigCommand},
+    descriptor::DescriptorCommand,
+    key::{DeriveKeyCommand, GenerateKeyCommand, RestoreKeyCommand},
+    offline::{
+        BalanceCommand, BumpFeeCommand, CombinePsbtCommand, CreateTxCommand, ExtractPsbtCommand,
+        FinalizePsbtCommand, NewAddressCommand, PoliciesCommand, PublicDescriptorCommand,
+        SignCommand, TransactionsCommand, UnspentCommand, UnusedAddressCommand,
+    },
 };
-use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
+
+#[cfg(feature = "silent-payments")]
+use crate::handlers::{descriptor::SilentPaymentCodeCommand, offline::CreateSpTxCommand};
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf"
+))]
+use crate::{
+    client::ClientType,
+    handlers::online::{
+        BroadcastCommand, FullScanCommand, PayjoinHistoryCommand, ReceivePayjoinCommand,
+        ResumePayjoinCommand, SendPayjoinCommand, SyncCommand,
+    },
+};
+
+#[cfg(feature = "compiler")]
+use crate::handlers::descriptor::CompileCommand;
+#[cfg(any(feature = "sqlite", feature = "redb"))]
+use crate::persister::DatabaseType;
+
+use bdk_wallet::bitcoin::Network;
+use clap::{Args, Parser, Subcommand, value_parser};
 use clap_complete::Shell;
 
 #[cfg(feature = "dns_payment")]
-use crate::utils::parse_dns_recipient;
+use crate::handlers::dns::{CreateDnsTxCommand, ResolveDnsRecipientCommand};
+
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
-use crate::utils::{parse_address, parse_outpoint, parse_recipient};
 
 /// The BDK Command Line Wallet App
 ///
@@ -56,9 +85,6 @@ pub struct CliOpts {
     /// Default value : ~/.bdk-bitcoin
     #[arg(env = "DATADIR", short = 'd', long = "datadir")]
     pub datadir: Option<std::path::PathBuf>,
-    /// Output results in pretty format (instead of JSON).
-    #[arg(long = "pretty", global = true)]
-    pub pretty: bool,
     /// Top level cli sub-commands.
     #[command(subcommand)]
     pub subcommand: CliSubCommand,
@@ -96,15 +122,7 @@ pub enum CliSubCommand {
     /// Compile a miniscript policy to an output descriptor.
     #[cfg(feature = "compiler")]
     #[clap(long_about = "Miniscript policy compiler")]
-    Compile {
-        /// Sets the spending policy to compile.
-        #[arg(env = "POLICY", required = true, index = 1)]
-        policy: String,
-        /// Sets the script type used to embed the compiled policy.
-        #[arg(env = "TYPE", short = 't', long = "type", default_value = "wsh", value_parser = ["sh","wsh", "sh-wsh", "tr"]
-        )]
-        script_type: String,
-    },
+    Compile(CompileCommand),
     #[cfg(feature = "repl")]
     /// REPL command loop mode.
     ///
@@ -115,24 +133,15 @@ pub enum CliSubCommand {
         #[arg(env = "WALLET_NAME", short = 'w', long = "wallet", required = true)]
         wallet: String,
     },
+
     /// Output Descriptors operations.
     ///
     /// Generate output descriptors from either extended key (Xprv/Xpub) or mnemonic phrase.
     /// This feature is intended for development and testing purposes only.
-    Descriptor {
-        /// Descriptor type (script type)
-        #[arg(
-            long = "type",
-            short = 't',
-            value_parser = ["pkh", "wpkh", "sh", "wsh", "tr"],
-            default_value = "wsh"
-        )]
-        desc_type: String,
-        /// Optional key: xprv, xpub, or mnemonic phrase
-        key: Option<String>,
-    },
+    Descriptor(DescriptorCommand),
+
     /// List all saved wallet configurations.
-    Wallets,
+    Wallets(ListWalletsCommand),
     /// Generate tab-completion scripts for your shell.
     ///
     /// The completion script is output on stdout, allowing you to redirect
@@ -192,38 +201,17 @@ pub enum CliSubCommand {
     /// Allows the encoding of two public keys into a silent payment code.
     /// Useful to create silent payment transactions using fake silent payment codes.
     #[cfg(feature = "silent-payments")]
-    SilentPaymentCode {
-        /// The scan public key to use on the silent payment code.
-        #[arg(long = "scan_key")]
-        scan: bdk_sp::bitcoin::secp256k1::PublicKey,
-        /// The spend public key to use on the silent payment code.
-        #[arg(long = "spend_key")]
-        spend: bdk_sp::bitcoin::secp256k1::PublicKey,
-    },
-
-    #[cfg(feature = "dns_payment")]
+    SilentPaymentCode(SilentPaymentCodeCommand),
     /// Resolves BIP-353 DNS payment instructions for a human-readable name.
-    ResolveDnsRecipient {
-        /// Human-readable name (e.g. user@domain.com)
-        hrn: String,
-        /// DNS resolver address
-        #[arg(long, default_value = "8.8.8.8")]
-        resolver: String,
-    },
+    #[cfg(feature = "dns_payment")]
+    ResolveDnsRecipient(ResolveDnsRecipientCommand),
 }
 
 /// Wallet operation subcommands.
 #[derive(Debug, Subcommand, Clone, PartialEq)]
 pub enum WalletSubCommand {
     /// Save wallet configuration to `config.toml`.
-    Config {
-        /// Overwrite existing wallet configuration if it exists.
-        #[arg(short = 'f', long = "force", default_value_t = false)]
-        force: bool,
-
-        #[command(flatten)]
-        wallet_opts: WalletOpts,
-    },
+    Config(SaveConfigCommand),
     #[cfg(any(
         feature = "electrum",
         feature = "esplora",
@@ -236,43 +224,12 @@ pub enum WalletSubCommand {
     OfflineWalletSubCommand(OfflineWalletSubCommand),
 }
 
-#[derive(Clone, ValueEnum, Debug, Eq, PartialEq)]
-pub enum DatabaseType {
-    /// Sqlite database
-    #[cfg(feature = "sqlite")]
-    Sqlite,
-    /// Redb database
-    #[cfg(feature = "redb")]
-    Redb,
-}
-
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "rpc",
-    feature = "cbf"
-))]
-#[derive(Clone, ValueEnum, Debug, Eq, PartialEq)]
-pub enum ClientType {
-    #[cfg(feature = "electrum")]
-    Electrum,
-    #[cfg(feature = "esplora")]
-    Esplora,
-    #[cfg(feature = "rpc")]
-    Rpc,
-    #[cfg(feature = "cbf")]
-    Cbf,
-}
-
 /// Config options wallet operations can take.
 #[derive(Debug, Args, Clone, PartialEq, Eq)]
 pub struct WalletOpts {
     /// Selects the wallet to use.
     #[arg(skip)]
     pub wallet: Option<String>,
-    /// Adds verbosity, returns PSBT in JSON format alongside serialized, displays expanded objects.
-    #[arg(env = "VERBOSE", short = 'v', long = "verbose")]
-    pub verbose: bool,
     /// Sets the descriptor to use for the external addresses.
     #[arg(env = "EXT_DESCRIPTOR", short = 'e', long, required = true)]
     pub ext_descriptor: String,
@@ -366,265 +323,49 @@ pub struct CompactFilterOpts {
 #[command(rename_all = "snake")]
 pub enum OfflineWalletSubCommand {
     /// Get a new external address.
-    NewAddress,
+    NewAddress(NewAddressCommand),
     /// Get the first unused external address.
-    UnusedAddress,
+    UnusedAddress(UnusedAddressCommand),
     /// Lists the available spendable UTXOs.
-    Unspent,
+    Unspent(UnspentCommand),
     /// Lists all the incoming and outgoing transactions of the wallet.
-    Transactions,
+    Transactions(TransactionsCommand),
     /// Returns the current wallet balance.
-    Balance,
+    Balance(BalanceCommand),
     /// Creates a new unsigned transaction.
-    CreateTx {
-        /// Adds a recipient to the transaction.
-        // Clap Doesn't support complex vector parsing https://github.com/clap-rs/clap/issues/1704.
-        // Address and amount parsing is done at run time in handler function.
-        #[arg(env = "ADDRESS:SAT", long = "to", required = true, value_parser = parse_recipient)]
-        recipients: Vec<(ScriptBuf, u64)>,
-        /// Sends all the funds (or all the selected utxos). Requires only one recipient with value 0.
-        #[arg(long = "send_all", short = 'a')]
-        send_all: bool,
-        /// Enables Replace-By-Fee (BIP125).
-        #[arg(long = "enable_rbf", short = 'r', default_value_t = true)]
-        enable_rbf: bool,
-        /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
-        #[arg(long = "offline_signer")]
-        offline_signer: bool,
-        /// Selects which utxos *must* be spent.
-        #[arg(env = "MUST_SPEND_TXID:VOUT", long = "utxos", value_parser = parse_outpoint)]
-        utxos: Option<Vec<OutPoint>>,
-        /// Marks a utxo as unspendable.
-        #[arg(env = "CANT_SPEND_TXID:VOUT", long = "unspendable", value_parser = parse_outpoint)]
-        unspendable: Option<Vec<OutPoint>>,
-        /// Fee rate to use in sat/vbyte.
-        #[arg(env = "SATS_VBYTE", short = 'f', long = "fee_rate")]
-        fee_rate: Option<f32>,
-        /// Selects which policy should be used to satisfy the external descriptor.
-        #[arg(env = "EXT_POLICY", long = "external_policy")]
-        external_policy: Option<String>,
-        /// Selects which policy should be used to satisfy the internal descriptor.
-        #[arg(env = "INT_POLICY", long = "internal_policy")]
-        internal_policy: Option<String>,
-        /// Optionally create an OP_RETURN output containing given String in utf8 encoding (max 80 bytes)
-        #[arg(
-            env = "ADD_STRING",
-            long = "add_string",
-            short = 's',
-            conflicts_with = "add_data"
-        )]
-        add_string: Option<String>,
-        /// Optionally create an OP_RETURN output containing given base64 encoded String. (max 80 bytes)
-        #[arg(
-            env = "ADD_DATA",
-            long = "add_data",
-            short = 'o',
-            conflicts_with = "add_string"
-        )]
-        add_data: Option<String>, //base 64 econding
-    },
-    #[cfg(feature = "dns_payment")]
-    /// Creates a new unsigned transaction from DNS payment instructions.
-    CreateDnsTx {
-        /// Adds a recipient to the transaction.
-        #[arg(env = "ADDRESS:SAT", long = "to", value_parser = parse_recipient)]
-        recipients: Vec<(ScriptBuf, u64)>,
-        #[arg(long = "to_dns", value_parser = parse_dns_recipient)]
-        dns_recipients: Vec<(String, u64)>,
-        #[arg(long = "dns_resolver", default_value = "8.8.8.8")]
-        dns_resolver: String,
-        /// Sends all the funds (or all the selected utxos). Requires only one recipient with value 0.
-        #[arg(long = "send_all", short = 'a')]
-        send_all: bool,
-        /// Enables Replace-By-Fee (BIP125).
-        #[arg(long = "enable_rbf", short = 'r', default_value_t = true)]
-        enable_rbf: bool,
-        /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
-        #[arg(long = "offline_signer")]
-        offline_signer: bool,
-        /// Selects which utxos *must* be spent.
-        #[arg(env = "MUST_SPEND_TXID:VOUT", long = "utxos", value_parser = parse_outpoint)]
-        utxos: Option<Vec<OutPoint>>,
-        /// Marks a utxo as unspendable.
-        #[arg(env = "CANT_SPEND_TXID:VOUT", long = "unspendable", value_parser = parse_outpoint)]
-        unspendable: Option<Vec<OutPoint>>,
-        /// Fee rate to use in sat/vbyte.
-        #[arg(env = "SATS_VBYTE", short = 'f', long = "fee_rate")]
-        fee_rate: Option<f32>,
-        /// Selects which policy should be used to satisfy the external descriptor.
-        #[arg(env = "EXT_POLICY", long = "external_policy")]
-        external_policy: Option<String>,
-        /// Selects which policy should be used to satisfy the internal descriptor.
-        #[arg(env = "INT_POLICY", long = "internal_policy")]
-        internal_policy: Option<String>,
-        /// Optionally create an OP_RETURN output containing given String in utf8 encoding (max 80 bytes)
-        #[arg(
-            env = "ADD_STRING",
-            long = "add_string",
-            short = 's',
-            conflicts_with = "add_data"
-        )]
-        add_string: Option<String>,
-        /// Optionally create an OP_RETURN output containing given base64 encoded String. (max 80 bytes)
-        #[arg(
-            env = "ADD_DATA",
-            long = "add_data",
-            short = 'o',
-            conflicts_with = "add_string"
-        )]
-        add_data: Option<String>, //base 64 econding
-    },
+    CreateTx(CreateTxCommand),
     /// Creates a silent payment transaction
     ///
     /// This sub-command is **EXPERIMENTAL** and should only be used for testing. Do not use this
     /// feature to create transactions that spend actual funds on the Bitcoin mainnet.
-
     // This command DOES NOT return a PSBT. Instead, it directly returns a signed transaction
     // ready for broadcast, as it is not yet possible to perform a shared derivation of a silent
     // payment script pubkey in a secure and trustless manner.
     #[cfg(feature = "silent-payments")]
-    CreateSpTx {
-        /// Adds a recipient to the transaction.
-        // Clap Doesn't support complex vector parsing https://github.com/clap-rs/clap/issues/1704.
-        // Address and amount parsing is done at run time in handler function.
-        #[arg(env = "ADDRESS:SAT", long = "to", required = false, value_parser = parse_recipient)]
-        recipients: Option<Vec<(ScriptBuf, u64)>>,
-        /// Parse silent payment recipients
-        #[arg(long = "to-sp", required = true, value_parser = parse_sp_code_value_pairs)]
-        silent_payment_recipients: Vec<(SilentPaymentCode, u64)>,
-        /// Sends all the funds (or all the selected utxos). Requires only one recipient with value 0.
-        #[arg(long = "send_all", short = 'a')]
-        send_all: bool,
-        /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
-        #[arg(long = "offline_signer")]
-        offline_signer: bool,
-        /// Selects which utxos *must* be spent.
-        #[arg(env = "MUST_SPEND_TXID:VOUT", long = "utxos", value_parser = parse_outpoint)]
-        utxos: Option<Vec<OutPoint>>,
-        /// Marks a utxo as unspendable.
-        #[arg(env = "CANT_SPEND_TXID:VOUT", long = "unspendable", value_parser = parse_outpoint)]
-        unspendable: Option<Vec<OutPoint>>,
-        /// Fee rate to use in sat/vbyte.
-        #[arg(env = "SATS_VBYTE", short = 'f', long = "fee_rate")]
-        fee_rate: Option<f32>,
-        /// Selects which policy should be used to satisfy the external descriptor.
-        #[arg(env = "EXT_POLICY", long = "external_policy")]
-        external_policy: Option<String>,
-        /// Selects which policy should be used to satisfy the internal descriptor.
-        #[arg(env = "INT_POLICY", long = "internal_policy")]
-        internal_policy: Option<String>,
-        /// Optionally create an OP_RETURN output containing given String in utf8 encoding (max 80 bytes)
-        #[arg(
-            env = "ADD_STRING",
-            long = "add_string",
-            short = 's',
-            conflicts_with = "add_data"
-        )]
-        add_string: Option<String>,
-        /// Optionally create an OP_RETURN output containing given base64 encoded String. (max 80 bytes)
-        #[arg(
-            env = "ADD_DATA",
-            long = "add_data",
-            short = 'o',
-            conflicts_with = "add_string"
-        )]
-        add_data: Option<String>, //base 64 econding
-    },
+    CreateSpTx(CreateSpTxCommand),
     /// Bumps the fees of an RBF transaction.
-    BumpFee {
-        /// TXID of the transaction to update.
-        #[arg(env = "TXID", long = "txid")]
-        txid: String,
-        /// Allows the wallet to reduce the amount to the specified address in order to increase fees.
-        #[arg(env = "SHRINK_ADDRESS", long = "shrink", value_parser = parse_address)]
-        shrink_address: Option<Address>,
-        /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
-        #[arg(long = "offline_signer")]
-        offline_signer: bool,
-        /// Selects which utxos *must* be added to the tx. Unconfirmed utxos cannot be used.
-        #[arg(env = "MUST_SPEND_TXID:VOUT", long = "utxos", value_parser = parse_outpoint)]
-        utxos: Option<Vec<OutPoint>>,
-        /// Marks an utxo as unspendable, in case more inputs are needed to cover the extra fees.
-        #[arg(env = "CANT_SPEND_TXID:VOUT", long = "unspendable", value_parser = parse_outpoint)]
-        unspendable: Option<Vec<OutPoint>>,
-        /// The new targeted fee rate in sat/vbyte.
-        #[arg(
-            env = "SATS_VBYTE",
-            short = 'f',
-            long = "fee_rate",
-            default_value = "1.0"
-        )]
-        fee_rate: f32,
-    },
+    BumpFee(BumpFeeCommand),
     /// Returns the available spending policies for the descriptor.
-    Policies,
+    Policies(PoliciesCommand),
     /// Returns the public version of the wallet's descriptor(s).
-    PublicDescriptor,
+    PublicDescriptor(PublicDescriptorCommand),
     /// Signs and tries to finalize a PSBT.
-    Sign {
-        /// Sets the PSBT to sign.
-        #[arg(env = "BASE64_PSBT")]
-        psbt: String,
-        /// Assume the blockchain has reached a specific height. This affects the transaction finalization, if there are timelocks in the descriptor.
-        #[arg(env = "HEIGHT", long = "assume_height")]
-        assume_height: Option<u32>,
-        /// Whether the signer should trust the witness_utxo, if the non_witness_utxo hasn’t been provided.
-        #[arg(env = "WITNESS", long = "trust_witness_utxo")]
-        trust_witness_utxo: Option<bool>,
-    },
+    Sign(SignCommand),
     /// Extracts a raw transaction from a PSBT.
-    ExtractPsbt {
-        /// Sets the PSBT to extract
-        #[arg(env = "BASE64_PSBT")]
-        psbt: String,
-    },
+    ExtractPsbt(ExtractPsbtCommand),
     /// Finalizes a PSBT.
-    FinalizePsbt {
-        /// Sets the PSBT to finalize.
-        #[arg(env = "BASE64_PSBT")]
-        psbt: String,
-        /// Assume the blockchain has reached a specific height.
-        #[arg(env = "HEIGHT", long = "assume_height")]
-        assume_height: Option<u32>,
-        /// Whether the signer should trust the witness_utxo, if the non_witness_utxo hasn’t been provided.
-        #[arg(env = "WITNESS", long = "trust_witness_utxo")]
-        trust_witness_utxo: Option<bool>,
-    },
+    FinalizePsbt(FinalizePsbtCommand),
     /// Combines multiple PSBTs into one.
-    CombinePsbt {
-        /// Add one PSBT to combine. This option can be repeated multiple times, one for each PSBT.
-        #[arg(env = "BASE64_PSBT", required = true)]
-        psbt: Vec<String>,
-    },
+    CombinePsbt(CombinePsbtCommand),
     /// Sign a message using BIP322
     #[cfg(feature = "bip322")]
-    SignMessage {
-        /// The message to sign
-        #[arg(long)]
-        message: String,
-        /// The signature format (e.g., Legacy, Simple, Full)
-        #[arg(long, default_value = "simple")]
-        signature_type: String,
-        /// Address to sign
-        #[arg(long)]
-        address: String,
-        /// Optional list of specific UTXOs for proof-of-funds (only for `FullWithProofOfFunds`)
-        #[arg(long)]
-        utxos: Option<Vec<OutPoint>>,
-    },
+    SignMessage(SignMessageCommand),
     /// Verify a BIP322 signature
     #[cfg(feature = "bip322")]
-    VerifyMessage {
-        /// The signature proof to verify
-        #[arg(long)]
-        proof: String,
-        /// The message that was signed
-        #[arg(long)]
-        message: String,
-        /// The address associated with the signature
-        #[arg(long)]
-        address: String,
-    },
+    VerifyMessage(VerifyMessageCommand),
+    /// Creates a new unsigned transaction from DNS payment instructions.
+    #[cfg(feature = "dns_payment")]
+    CreateDnsTx(CreateDnsTxCommand),
 }
 
 /// Wallet subcommands that needs a blockchain backend.
@@ -638,118 +379,30 @@ pub enum OfflineWalletSubCommand {
 ))]
 pub enum OnlineWalletSubCommand {
     /// Full Scan with the chosen blockchain server.
-    FullScan {
-        /// Stop searching addresses for transactions after finding an unused gap of this length.
-        #[arg(env = "STOP_GAP", long = "scan-stop-gap", default_value = "20")]
-        stop_gap: usize,
-    },
+    FullScan(FullScanCommand),
     /// Syncs with the chosen blockchain server.
-    Sync,
+    Sync(SyncCommand),
     /// Broadcasts a transaction to the network. Takes either a raw transaction or a PSBT to extract.
-    Broadcast {
-        /// Sets the PSBT to sign.
-        #[arg(
-            env = "BASE64_PSBT",
-            long = "psbt",
-            required_unless_present = "tx",
-            conflicts_with = "tx"
-        )]
-        psbt: Option<String>,
-        /// Sets the raw transaction to broadcast.
-        #[arg(
-            env = "RAWTX",
-            long = "tx",
-            required_unless_present = "psbt",
-            conflicts_with = "psbt"
-        )]
-        tx: Option<String>,
-    },
+    Broadcast(BroadcastCommand),
     /// Generates a Payjoin receive URI and processes the sender's Payjoin proposal.
-    ReceivePayjoin {
-        /// Amount to be received in sats.
-        #[arg(env = "PAYJOIN_AMOUNT", long = "amount", required = true)]
-        amount: u64,
-        /// Payjoin directory which will be used to store the PSBTs which are pending action
-        /// from one of the parties.
-        #[arg(env = "PAYJOIN_DIRECTORY", long = "directory", required = true)]
-        directory: String,
-        /// URL of the Payjoin OHTTP relay. Can be repeated multiple times to attempt the
-        /// operation with multiple relays for redundancy.
-        #[arg(env = "PAYJOIN_OHTTP_RELAY", long = "ohttp_relay", required = true)]
-        ohttp_relay: Vec<String>,
-        /// Maximum effective fee rate the receiver is willing to pay for their own input/output contributions.
-        #[arg(env = "PAYJOIN_RECEIVER_MAX_FEE_RATE", long = "max_fee_rate")]
-        max_fee_rate: Option<u64>,
-    },
+    ReceivePayjoin(ReceivePayjoinCommand),
     /// Sends an original PSBT to a BIP 21 URI and broadcasts the returned Payjoin PSBT.
-    SendPayjoin {
-        /// BIP 21 URI for the Payjoin.
-        #[arg(env = "PAYJOIN_URI", long = "uri", required = true)]
-        uri: String,
-        /// URL of the Payjoin OHTTP relay. Can be repeated multiple times to attempt the
-        /// operation with multiple relays for redundancy.
-        #[arg(env = "PAYJOIN_OHTTP_RELAY", long = "ohttp_relay", required = true)]
-        ohttp_relay: Vec<String>,
-        /// Fee rate to use in sat/vbyte.
-        #[arg(
-            env = "PAYJOIN_SENDER_FEE_RATE",
-            short = 'f',
-            long = "fee_rate",
-            required = true
-        )]
-        fee_rate: u64,
-    },
+    SendPayjoin(SendPayjoinCommand),
     /// Resume pending payjoin sessions.
-    ResumePayjoin {
-        /// Payjoin directory for the session
-        #[arg(env = "PAYJOIN_DIRECTORY", long = "directory", required = true)]
-        directory: String,
-        /// URL of the Payjoin OHTTP relay. Can be repeated multiple times.
-        #[arg(env = "PAYJOIN_OHTTP_RELAY", long = "ohttp_relay", required = true)]
-        ohttp_relay: Vec<String>,
-        /// Resume only a specific active session ID (sender and/or receiver).
-        #[arg(env = "PAYJOIN_SESSION_ID", long = "session_id")]
-        session_id: Option<i64>,
-    },
+    ResumePayjoin(ResumePayjoinCommand),
     /// Show payjoin session history.
-    PayjoinHistory,
+    PayjoinHistory(PayjoinHistoryCommand),
 }
 
 /// Subcommands for Key operations.
 #[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
 pub enum KeySubCommand {
     /// Generates new random seed mnemonic phrase and corresponding master extended key.
-    Generate {
-        /// Entropy level based on number of random seed mnemonic words.
-        #[arg(
-            env = "WORD_COUNT",
-            short = 'e',
-            long = "entropy",
-            default_value = "12"
-        )]
-        word_count: usize,
-        /// Seed password.
-        #[arg(env = "PASSWORD", short = 'p', long = "password")]
-        password: Option<String>,
-    },
+    Generate(GenerateKeyCommand),
     /// Restore a master extended key from seed backup mnemonic words.
-    Restore {
-        /// Seed mnemonic words, must be quoted (eg. "word1 word2 ...").
-        #[arg(env = "MNEMONIC", short = 'm', long = "mnemonic")]
-        mnemonic: String,
-        /// Seed password.
-        #[arg(env = "PASSWORD", short = 'p', long = "password")]
-        password: Option<String>,
-    },
+    Restore(RestoreKeyCommand),
     /// Derive a child key pair from a master extended key and a derivation path string (eg. "m/84'/1'/0'/0" or "m/84h/1h/0h/0").
-    Derive {
-        /// Extended private key to derive from.
-        #[arg(env = "XPRV", short = 'x', long = "xprv")]
-        xprv: Xpriv,
-        /// Path to use to derive extended public key from extended private key.
-        #[arg(env = "PATH", short = 'p', long = "path")]
-        path: DerivationPath,
-    },
+    Derive(DeriveKeyCommand),
 }
 
 /// Subcommands available in REPL mode.
@@ -768,18 +421,7 @@ pub enum ReplSubCommand {
         subcommand: KeySubCommand,
     },
     /// Generate descriptors
-    Descriptor {
-        /// Descriptor type (script type).
-        #[arg(
-            long = "type",
-            short = 't',
-            value_parser = ["pkh", "wpkh", "sh", "wsh", "tr"],
-            default_value = "wsh"
-        )]
-        desc_type: String,
-        /// Optional key: xprv, xpub, or mnemonic phrase
-        key: Option<String>,
-    },
+    Descriptor(DescriptorCommand),
     /// Exit REPL loop.
     Exit,
 }

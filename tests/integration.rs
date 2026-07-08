@@ -244,16 +244,4 @@ mod test {
             .unwrap();
         assert_eq!(confirmed_balance, 1000000000u64);
     }
-
-    // #[test]
-    // #[cfg(feature = "regtest-bitcoin")]
-    // fn test_basic_wallet_op_bitcoind() {
-    //     basic_wallet_ops("regtest-bitcoin")
-    // }
-    //
-    // #[test]
-    // #[cfg(feature = "regtest-electrum")]
-    // fn test_basic_wallet_op_electrum() {
-    //     basic_wallet_ops("regtest-electrum")
-    // }
 }

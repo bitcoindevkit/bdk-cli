@@ -10,29 +10,25 @@
 #![doc(html_logo_url = "https://github.com/bitcoindevkit/bdk/raw/master/static/bdk.png")]
 #![warn(missing_docs)]
 
+mod client;
 mod commands;
 mod config;
 mod error;
 mod handlers;
-#[cfg(any(
-    feature = "electrum",
-    feature = "esplora",
-    feature = "cbf",
-    feature = "rpc"
-))]
-mod payjoin;
-#[cfg(any(feature = "sqlite", feature = "redb"))]
 mod persister;
 mod utils;
 
-#[cfg(feature = "dns_payment")]
-mod dns_payment_instructions;
-
 use bdk_wallet::bitcoin::Network;
-use log::{debug, error, warn};
+use log::{debug, warn};
 
-use crate::commands::CliOpts;
-use crate::handlers::*;
+use crate::commands::{CliOpts, CliSubCommand, WalletSubCommand};
+use crate::error::BDKCliError as Error;
+#[cfg(feature = "dns_payment")]
+use crate::handlers::AsyncAppCommand;
+use crate::handlers::{AppCommand, AppContext};
+use crate::utils::output::FormatOutput;
+use crate::utils::runtime::WalletRuntime;
+use crate::utils::{command_requires_db, prepare_home_dir};
 use clap::Parser;
 
 #[tokio::main]
@@ -48,11 +44,175 @@ async fn main() {
         )
     }
 
-    match handle_command(cli_opts).await {
-        Ok(result) => println!("{result}"),
-        Err(e) => {
-            error!("{e}");
-            std::process::exit(1);
+    if let Err(e) = run(cli_opts).await {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+}
+
+async fn run(cli_opts: CliOpts) -> Result<(), Error> {
+    let datadir = cli_opts.datadir.clone();
+    let home_dir = prepare_home_dir(datadir)?;
+
+    match cli_opts.subcommand.clone() {
+        CliSubCommand::Wallet {
+            wallet: wallet_name,
+            subcommand,
+        } => match subcommand {
+            #[cfg(any(
+                feature = "electrum",
+                feature = "esplora",
+                feature = "rpc",
+                feature = "cbf"
+            ))]
+            WalletSubCommand::OnlineWalletSubCommand(cmd) => {
+                let runtime = WalletRuntime::load(&home_dir, &wallet_name)?;
+                let mut wallet = runtime.build_wallet(true)?;
+                let client = runtime.build_client(&wallet)?;
+                {
+                    let mut ctx = AppContext::new_online_wallet(
+                        runtime.network,
+                        runtime.home_dir.clone(),
+                        &mut wallet,
+                        &client,
+                        runtime.wallet_name.clone(),
+                    );
+
+                    cmd.execute(&mut ctx).await?;
+                }
+                wallet.persist()?;
+            }
+
+            WalletSubCommand::OfflineWalletSubCommand(cmd) => {
+                let runtime = WalletRuntime::load(&home_dir, &wallet_name)?;
+                let mut wallet = runtime.build_wallet(command_requires_db(&cmd))?;
+
+                {
+                    let mut ctx = AppContext::new_offline_wallet(
+                        runtime.network,
+                        runtime.home_dir.clone(),
+                        &mut wallet,
+                    );
+
+                    match cmd {
+                        #[cfg(feature = "dns_payment")]
+                        commands::OfflineWalletSubCommand::CreateDnsTx(dns_cmd) => {
+                            dns_cmd
+                                .execute(&mut ctx)
+                                .await?
+                                .write_out(std::io::stdout())?;
+                        }
+                        other => other.execute(&mut ctx)?,
+                    }
+                }
+                wallet.persist()?;
+            }
+
+            WalletSubCommand::Config(mut config_cmd) => {
+                config_cmd.wallet_opts.wallet = Some(wallet_name);
+
+                let mut ctx = AppContext::new(cli_opts.network, home_dir);
+
+                config_cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
+            }
+        },
+
+        CliSubCommand::Key { subcommand } => {
+            let mut ctx = AppContext::new(cli_opts.network, home_dir);
+
+            subcommand.execute(&mut ctx)?;
+        }
+
+        CliSubCommand::Descriptor(cmd) => {
+            let mut ctx = AppContext::new(cli_opts.network, home_dir);
+
+            cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
+        }
+
+        CliSubCommand::Wallets(cmd) => {
+            let mut ctx = AppContext::new(cli_opts.network, home_dir);
+
+            cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
+        }
+
+        #[cfg(feature = "repl")]
+        CliSubCommand::Repl {
+            wallet: wallet_name,
+        } => {
+            let runtime = WalletRuntime::load(&home_dir, &wallet_name)?;
+
+            let mut wallet = runtime.build_wallet(true)?;
+
+            #[cfg(any(
+                feature = "electrum",
+                feature = "esplora",
+                feature = "rpc",
+                feature = "cbf"
+            ))]
+            let client = runtime.build_client(&wallet).ok();
+
+            println!(
+                "Entering REPL mode for wallet '{}'. \
+                     Type 'exit' to quit.",
+                wallet_name
+            );
+
+            loop {
+                let line = crate::handlers::repl::readline()?;
+
+                if line.trim().is_empty() {
+                    continue;
+                }
+
+                let should_exit = crate::handlers::repl::respond(
+                    runtime.network,
+                    &mut wallet,
+                    #[cfg(any(
+                        feature = "electrum",
+                        feature = "esplora",
+                        feature = "rpc",
+                        feature = "cbf"
+                    ))]
+                    client.as_ref(),
+                    &line,
+                    runtime.home_dir.clone(),
+                    #[cfg(any(
+                        feature = "electrum",
+                        feature = "esplora",
+                        feature = "rpc",
+                        feature = "cbf"
+                    ))]
+                    &wallet_name,
+                )
+                .await
+                .map_err(Error::Generic)?;
+
+                if should_exit {
+                    break;
+                }
+            }
+        }
+
+        #[cfg(feature = "compiler")]
+        CliSubCommand::Compile(cmd) => {
+            let mut ctx = AppContext::new(cli_opts.network, home_dir);
+
+            cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
+        }
+        CliSubCommand::Completions { shell: _ } => unimplemented!(),
+
+        #[cfg(feature = "silent-payments")]
+        CliSubCommand::SilentPaymentCode(cmd) => {
+            let mut ctx = AppContext::new(cli_opts.network, home_dir);
+
+            cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
+        }
+        #[cfg(feature = "dns_payment")]
+        CliSubCommand::ResolveDnsRecipient(cmd) => {
+            let mut ctx = AppContext::new(cli_opts.network, home_dir);
+            cmd.execute(&mut ctx).await?.write_out(std::io::stdout())?;
         }
     }
+
+    Ok(())
 }

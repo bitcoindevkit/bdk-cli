@@ -1,6 +1,5 @@
+use crate::client::BlockchainClient;
 use crate::error::BDKCliError as Error;
-use crate::handlers::{broadcast_transaction, sync_wallet};
-use crate::utils::BlockchainClient;
 use bdk_wallet::{
     SignOptions, Wallet,
     bitcoin::{FeeRate, Psbt, Txid, consensus::encode::serialize_hex},
@@ -25,8 +24,8 @@ use payjoin::{HpkePublicKey, ImplementationError, UriExt};
 use serde_json::{json, to_string_pretty};
 use std::{path::PathBuf, sync::Arc};
 
-use crate::payjoin::db::{ReceiverPersister, SenderPersister, open_payjoin_db};
-use crate::payjoin::ohttp::RelayManager;
+use crate::handlers::payjoin::db::{ReceiverPersister, SenderPersister, open_payjoin_db};
+use crate::handlers::payjoin::ohttp::RelayManager;
 
 pub mod db;
 pub mod ohttp;
@@ -39,7 +38,7 @@ pub mod ohttp;
 pub(crate) struct PayjoinManager<'a> {
     wallet: &'a mut Wallet,
     relay_manager: RelayManager,
-    db: Arc<crate::payjoin::db::Database>,
+    db: Arc<crate::handlers::payjoin::db::Database>,
 }
 
 trait StatusText {
@@ -137,7 +136,7 @@ impl<'a> PayjoinManager<'a> {
         self.relay_manager.configure(ohttp_relays)?;
         let ohttp_keys = self.relay_manager.fetch_ohttp_keys(&directory).await?;
 
-        let persister = crate::payjoin::db::ReceiverPersister::new(self.db.clone())?;
+        let persister = crate::handlers::payjoin::db::ReceiverPersister::new(self.db.clone())?;
 
         let checked_max_fee_rate = max_fee_rate
             .map(FeeRate::from_sat_per_kwu)
@@ -621,8 +620,8 @@ impl<'a> PayjoinManager<'a> {
     /// sender.
     ///
     /// This function syncs the wallet at regular intervals and checks for the Payjoin transaction
-    /// in a loop until it is detected or a timeout is reached. Since [`sync_wallet`] now accepts
-    /// a reference to the BlockchainClient, we can call it multiple times in a loop.
+    /// in a loop until it is detected or a timeout is reached. Since [`BlockchainClient::sync_wallet`]
+    /// accepts a reference to the BlockchainClient, we can call it multiple times in a loop.
     async fn monitor_payjoin_proposal(
         &mut self,
         receiver: Receiver<Monitor>,
@@ -642,7 +641,7 @@ impl<'a> PayjoinManager<'a> {
             let mut sync_timer = tokio::time::interval(sync_interval);
             poll_timer.tick().await;
             sync_timer.tick().await;
-            sync_wallet(blockchain_client, self.wallet).await?;
+            blockchain_client.sync_wallet(self.wallet).await?;
 
             loop {
                 tokio::select! {
@@ -673,7 +672,7 @@ impl<'a> PayjoinManager<'a> {
                     }
                     _ = sync_timer.tick() => {
                         // Time to sync wallet
-                        sync_wallet(blockchain_client, self.wallet).await?;
+                        blockchain_client.sync_wallet(self.wallet).await?;
                     }
                 }
             }
@@ -803,7 +802,9 @@ impl<'a> PayjoinManager<'a> {
             ));
         }
 
-        broadcast_transaction(blockchain_client, psbt.extract_tx_fee_rate_limit()?).await
+        blockchain_client
+            .broadcast(psbt.extract_tx_fee_rate_limit()?)
+            .await
     }
 
     async fn send_payjoin_post_request(
