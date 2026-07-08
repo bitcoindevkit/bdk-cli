@@ -814,8 +814,9 @@ mod tests {
             .get_inactive_recv_session_ids()
             .expect("inactive receiver ids should load");
 
-        let table = crate::payjoin::PayjoinManager::history(Some(datadir.clone()), wallet_name)
-            .expect("history should render");
+        let table =
+            crate::handlers::payjoin::PayjoinManager::history(Some(datadir.clone()), wallet_name)
+                .expect("history should render");
 
         assert!(table.contains("Sender"));
         assert!(table.contains("Receiver"));

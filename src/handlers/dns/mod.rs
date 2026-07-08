@@ -1,7 +1,9 @@
-use crate::dns_payment_instructions::{
+mod dns_payment_instructions;
+
+use crate::error::BDKCliError as Error;
+use crate::handlers::dns::dns_payment_instructions::{
     parse_dns_instructions, process_instructions, resolve_dns_recipient,
 };
-use crate::error::BDKCliError as Error;
 use crate::handlers::{AppContext, AsyncAppCommand, Init, OfflineOperations};
 use crate::utils::types::{PsbtResult, StatusResult};
 use crate::utils::{parse_dns_recipient, parse_outpoint, parse_recipient};
@@ -168,6 +170,6 @@ impl AsyncAppCommand<AppContext<OfflineOperations<'_>>> for CreateDnsTxCommand {
         }
 
         let psbt = tx_builder.finish()?;
-        Ok(PsbtResult::new(&psbt, false, Some(false)))
+        Ok(PsbtResult::new(&psbt, Some(false)))
     }
 }

@@ -5,6 +5,13 @@ pub mod dns;
 pub mod key;
 pub mod offline;
 pub mod online;
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+pub mod payjoin;
 pub mod repl;
 
 #[cfg(any(

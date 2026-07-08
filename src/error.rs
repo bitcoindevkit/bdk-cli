@@ -154,7 +154,7 @@ pub enum BDKCliError {
 
     #[cfg(feature = "payjoin")]
     #[error("Payjoin database error: {0}")]
-    PayjoinDb(#[from] crate::payjoin::db::Error),
+    PayjoinDb(#[from] crate::handlers::payjoin::db::Error),
 
     #[cfg(feature = "bip322")]
     #[error("BIP-322 error: {0}")]

@@ -24,8 +24,8 @@ use payjoin::{HpkePublicKey, ImplementationError, UriExt};
 use serde_json::{json, to_string_pretty};
 use std::{path::PathBuf, sync::Arc};
 
-use crate::payjoin::db::{ReceiverPersister, SenderPersister, open_payjoin_db};
-use crate::payjoin::ohttp::RelayManager;
+use crate::handlers::payjoin::db::{ReceiverPersister, SenderPersister, open_payjoin_db};
+use crate::handlers::payjoin::ohttp::RelayManager;
 
 pub mod db;
 pub mod ohttp;
@@ -38,7 +38,7 @@ pub mod ohttp;
 pub(crate) struct PayjoinManager<'a> {
     wallet: &'a mut Wallet,
     relay_manager: RelayManager,
-    db: Arc<crate::payjoin::db::Database>,
+    db: Arc<crate::handlers::payjoin::db::Database>,
 }
 
 trait StatusText {
@@ -136,7 +136,7 @@ impl<'a> PayjoinManager<'a> {
         self.relay_manager.configure(ohttp_relays)?;
         let ohttp_keys = self.relay_manager.fetch_ohttp_keys(&directory).await?;
 
-        let persister = crate::payjoin::db::ReceiverPersister::new(self.db.clone())?;
+        let persister = crate::handlers::payjoin::db::ReceiverPersister::new(self.db.clone())?;
 
         let checked_max_fee_rate = max_fee_rate
             .map(FeeRate::from_sat_per_kwu)

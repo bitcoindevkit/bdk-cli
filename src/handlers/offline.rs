@@ -84,8 +84,7 @@ impl OfflineWalletSubCommand {
                 .write_out(std::io::stdout()),
             #[cfg(feature = "dns_payment")]
             Self::CreateDnsTx(_) => Err(Error::Generic(
-                "CreateDnsTx is dispatched asynchronously through main"
-                    .to_string(),
+                "CreateDnsTx is dispatched asynchronously through main".to_string(),
             )),
         }
     }

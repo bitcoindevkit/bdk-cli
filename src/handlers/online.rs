@@ -2,14 +2,13 @@ use clap::Parser;
 
 #[cfg(feature = "electrum")]
 use crate::client::BlockchainClient::Electrum;
-#[cfg(feature = "rpc")]
-use crate::client::BlockchainClient::RpcClient;
 #[cfg(feature = "cbf")]
 use crate::client::{BlockchainClient::KyotoClient, sync_kyoto_client};
 #[cfg(feature = "esplora")]
 use {crate::client::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
 #[cfg(feature = "rpc")]
 use {
+    crate::client::BlockchainClient::RpcClient,
     bdk_bitcoind_rpc::{Emitter, NO_EXPECTED_MEMPOOL_TXS, bitcoincore_rpc::RpcApi},
     bdk_wallet::chain::{BlockId, CanonicalizationParams, CheckPoint},
 };
@@ -27,11 +26,12 @@ use crate::utils::print_wallet_events;
 use {
     crate::commands::OnlineWalletSubCommand,
     crate::error::BDKCliError as Error,
-    crate::handlers::{AppContext, AsyncAppCommand, OnlineOperations},
-    crate::payjoin::PayjoinManager,
-    crate::utils::is_final,
-    crate::utils::output::FormatOutput,
-    crate::utils::types::{StatusResult, TransactionResult},
+    crate::handlers::{AppContext, AsyncAppCommand, OnlineOperations, payjoin::PayjoinManager},
+    crate::utils::{
+        is_final,
+        output::FormatOutput,
+        types::{StatusResult, TransactionResult},
+    },
     bdk_wallet::bitcoin::{
         Psbt, Transaction, Txid, base64::Engine, base64::prelude::BASE64_STANDARD,
         consensus::Decodable, hex::FromHex,
