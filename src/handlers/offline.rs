@@ -28,12 +28,12 @@ use {
     bdk_wallet::keys::{DescriptorPublicKey, DescriptorSecretKey, SinglePubKey},
     std::collections::HashMap,
 };
-#[cfg(feature = "bip322")]
-use {
-    crate::utils::parse_signature_format,
-    crate::utils::types::MessageResult,
-    bdk_bip322::{BIP322, MessageProof},
-};
+// #[cfg(feature = "bip322")]
+// use {
+//     crate::utils::parse_signature_format,
+//     crate::utils::types::MessageResult,
+//     bdk_bip322::{BIP322, MessageProof},
+// };
 
 impl OfflineWalletSubCommand {
     pub fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<(), Error> {
@@ -73,14 +73,14 @@ impl OfflineWalletSubCommand {
             Self::CombinePsbt(combine_psbt_command) => combine_psbt_command
                 .execute(ctx)?
                 .write_out(std::io::stdout()),
-            #[cfg(feature = "bip322")]
-            Self::SignMessage(sign_message_command) => sign_message_command
-                .execute(ctx)?
-                .write_out(std::io::stdout()),
-            #[cfg(feature = "bip322")]
-            Self::VerifyMessage(verify_message_command) => verify_message_command
-                .execute(ctx)?
-                .write_out(std::io::stdout()),
+            // #[cfg(feature = "bip322")]
+            // Self::SignMessage(sign_message_command) => sign_message_command
+            //     .execute(ctx)?
+            //     .write_out(std::io::stdout()),
+            // #[cfg(feature = "bip322")]
+            // Self::VerifyMessage(verify_message_command) => verify_message_command
+            //     .execute(ctx)?
+            //     .write_out(std::io::stdout()),
             Self::LockUtxo(lock_utxo) => lock_utxo.execute(ctx)?.write_out(std::io::stdout()),
             Self::UnlockUtxo(unlock_utxo) => unlock_utxo.execute(ctx)?.write_out(std::io::stdout()),
             Self::LockedUtxos(locked_utxos) => {
@@ -773,6 +773,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CombinePsbtCommand {
     }
 }
 
+/**
 #[cfg(feature = "bip322")]
 #[derive(Debug, Parser, Clone, PartialEq)]
 pub struct SignMessageCommand {
@@ -860,6 +861,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for VerifyMessageCommand {
         })
     }
 }
+**/
 
 #[derive(Parser, Debug, Clone, PartialEq)]
 pub struct LockUtxoCommand {

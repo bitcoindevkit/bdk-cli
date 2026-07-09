@@ -110,18 +110,18 @@ pub struct KeychainPair<T> {
     pub internal: T,
 }
 
-#[cfg(feature = "bip322")]
-#[derive(Serialize, Debug, Default)]
-pub struct MessageResult {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub proof: Option<String>,
+// #[cfg(feature = "bip322")]
+// #[derive(Serialize, Debug, Default)]
+// pub struct MessageResult {
+//     #[serde(skip_serializing_if = "Option::is_none")]
+//     pub proof: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub valid: Option<bool>,
+//     #[serde(skip_serializing_if = "Option::is_none")]
+//     pub valid: Option<bool>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub proven_amount: Option<u64>,
-}
+//     #[serde(skip_serializing_if = "Option::is_none")]
+//     pub proven_amount: Option<u64>,
+// }
 
 #[derive(Serialize, Debug)]
 pub struct StatusResult {

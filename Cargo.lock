@@ -247,7 +247,6 @@ name = "bdk-cli"
 version = "3.0.0"
 dependencies = [
  "assert_cmd",
- "bdk_bip322",
  "bdk_bitcoind_rpc",
  "bdk_electrum",
  "bdk_esplora",
@@ -255,7 +254,7 @@ dependencies = [
  "bdk_redb",
  "bdk_sp",
  "bdk_testenv",
- "bdk_wallet 3.1.0",
+ "bdk_wallet",
  "bitcoin-payment-instructions",
  "clap",
  "clap_complete",
@@ -277,16 +276,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
-]
-
-[[package]]
-name = "bdk_bip322"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "262ee5f0c1056400b354391cabc541cb732c10488679de6389641e37f7e6c698"
-dependencies = [
- "bdk_wallet 2.4.0",
- "bitcoin",
 ]
 
 [[package]]
@@ -352,7 +341,7 @@ version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "346c1d502ee4613cf2201db9c3b93a2317772d8eaa372114f34bf5f374be94fd"
 dependencies = [
- "bdk_wallet 3.1.0",
+ "bdk_wallet",
  "bip157",
 ]
 
@@ -363,7 +352,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69ac8b88c9594c615fcb5b763e7afa16937e94f7a7f5ca334bf59a7fee69fea1"
 dependencies = [
  "bdk_chain",
- "bdk_wallet 3.1.0",
+ "bdk_wallet",
  "ciborium",
  "redb",
  "thiserror 2.0.18",
@@ -385,20 +374,6 @@ checksum = "543dc273dab3b9ec329772bcb15741a948cc3510deae2a30af3a116f03505fee"
 dependencies = [
  "bdk_chain",
  "electrsd",
-]
-
-[[package]]
-name = "bdk_wallet"
-version = "2.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c99821af39c7df004bd411ece2ef22d9fba5a631b4489f3d9a0ac0d19637e2d0"
-dependencies = [
- "bdk_chain",
- "bitcoin",
- "miniscript",
- "rand_core 0.6.4",
- "serde",
- "serde_json",
 ]
 
 [[package]]

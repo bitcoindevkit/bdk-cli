@@ -1,6 +1,6 @@
 use crate::{commands::WalletOpts, config::WalletConfig, error::BDKCliError as Error};
-#[cfg(feature = "bip322")]
-use bdk_bip322::SignatureFormat;
+// #[cfg(feature = "bip322")]
+// use bdk_bip322::SignatureFormat;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{Info, Receiver, UnboundedReceiver, Warning};
 #[cfg(feature = "silent-payments")]
@@ -12,7 +12,7 @@ use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
     feature = "cbf",
     feature = "rpc"
 ))]
-use bdk_wallet::{bitcoin::Psbt, event::WalletEvent};
+use bdk_wallet::{WalletEvent, bitcoin::Psbt};
 
 use crate::commands::OfflineWalletSubCommand;
 use std::{
@@ -197,20 +197,20 @@ pub(crate) fn parse_sp_code_value_pairs(s: &str) -> Result<(SilentPaymentCode, u
     Ok((key, value))
 }
 
-/// Function to parse the signature format from a string
-#[cfg(feature = "bip322")]
-pub(crate) fn parse_signature_format(format_str: &str) -> Result<SignatureFormat, Error> {
-    match format_str.to_lowercase().as_str() {
-        "legacy" => Ok(SignatureFormat::Legacy),
-        "simple" => Ok(SignatureFormat::Simple),
-        "full" => Ok(SignatureFormat::Full),
-        "fullproofoffunds" => Ok(SignatureFormat::FullProofOfFunds),
-        _ => Err(Error::Generic(
-            "Invalid signature format. Use 'legacy', 'simple', 'full', or 'fullproofoffunds'"
-                .to_string(),
-        )),
-    }
-}
+// /// Function to parse the signature format from a string
+// #[cfg(feature = "bip322")]
+// pub(crate) fn parse_signature_format(format_str: &str) -> Result<SignatureFormat, Error> {
+//     match format_str.to_lowercase().as_str() {
+//         "legacy" => Ok(SignatureFormat::Legacy),
+//         "simple" => Ok(SignatureFormat::Simple),
+//         "full" => Ok(SignatureFormat::Full),
+//         "fullproofoffunds" => Ok(SignatureFormat::FullProofOfFunds),
+//         _ => Err(Error::Generic(
+//             "Invalid signature format. Use 'legacy', 'simple', 'full', or 'fullproofoffunds'"
+//                 .to_string(),
+//         )),
+//     }
+// }
 
 pub fn command_requires_db(command: &OfflineWalletSubCommand) -> bool {
     match command {
@@ -232,11 +232,11 @@ pub fn command_requires_db(command: &OfflineWalletSubCommand) -> bool {
         | OfflineWalletSubCommand::FinalizePsbt(_)
         | OfflineWalletSubCommand::CombinePsbt(_) => false,
 
-        #[cfg(feature = "bip322")]
-        OfflineWalletSubCommand::SignMessage(_) => true,
+        // #[cfg(feature = "bip322")]
+        // OfflineWalletSubCommand::SignMessage(_) => true,
 
-        #[cfg(feature = "bip322")]
-        OfflineWalletSubCommand::VerifyMessage(_) => true,
+        // #[cfg(feature = "bip322")]
+        // OfflineWalletSubCommand::VerifyMessage(_) => true,
         #[cfg(feature = "silent-payments")]
         OfflineWalletSubCommand::CreateSpTx(_) => true,
         #[cfg(feature = "dns_payment")]

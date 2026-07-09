@@ -813,111 +813,111 @@ mod test_online {
             );
         }
     }
+    /**
+        #[cfg(feature = "bip322")]
+        #[test]
+        fn test_verify_message_proof_of_funds_uses_persisted_utxos() {
+            let env = TestEnv::new().expect("Failed to start bdk_testenv");
+            let server_url = env.electrsd.electrum_url.as_str();
+            let temp_dir = TempDir::new().unwrap();
+            let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
 
-    #[cfg(feature = "bip322")]
-    #[test]
-    fn test_verify_message_proof_of_funds_uses_persisted_utxos() {
-        let env = TestEnv::new().expect("Failed to start bdk_testenv");
-        let server_url = env.electrsd.electrum_url.as_str();
-        let temp_dir = TempDir::new().unwrap();
-        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+            // A wpkh wallet
+            let desc = cli.cmd("descriptor", &["--type", "wpkh"]).output().unwrap();
+            let desc_val: Value = serde_json::from_slice(&desc.stdout).unwrap();
+            let ext_desc = desc_val["private_descriptors"]["external"]
+                .as_str()
+                .unwrap();
+            let int_desc = desc_val["private_descriptors"]["internal"]
+                .as_str()
+                .unwrap();
+            cli.build_base_cmd()
+                .arg("wallet")
+                .arg("--wallet")
+                .arg(WALLET_NAME)
+                .arg("config")
+                .arg("--ext-descriptor")
+                .arg(ext_desc)
+                .arg("--int-descriptor")
+                .arg(int_desc)
+                .arg("--client-type")
+                .arg("electrum")
+                .arg("--database-type")
+                .arg("sqlite")
+                .arg("--url")
+                .arg(server_url)
+                .assert()
+                .success();
 
-        // A wpkh wallet
-        let desc = cli.cmd("descriptor", &["--type", "wpkh"]).output().unwrap();
-        let desc_val: Value = serde_json::from_slice(&desc.stdout).unwrap();
-        let ext_desc = desc_val["private_descriptors"]["external"]
-            .as_str()
-            .unwrap();
-        let int_desc = desc_val["private_descriptors"]["internal"]
-            .as_str()
-            .unwrap();
-        cli.build_base_cmd()
-            .arg("wallet")
-            .arg("--wallet")
-            .arg(WALLET_NAME)
-            .arg("config")
-            .arg("--ext-descriptor")
-            .arg(ext_desc)
-            .arg("--int-descriptor")
-            .arg(int_desc)
-            .arg("--client-type")
-            .arg("electrum")
-            .arg("--database-type")
-            .arg("sqlite")
-            .arg("--url")
-            .arg(server_url)
-            .assert()
-            .success();
+            // Fund a single small UTXO
+            let address = cli_new_address(&cli);
+            let node_addr = env
+                .rpc_client()
+                .get_new_address(None, None)
+                .unwrap()
+                .assume_checked();
+            env.mine_blocks(101, Some(node_addr)).unwrap();
+            env.wait_until_electrum_sees_block(Duration::from_secs(10))
+                .unwrap();
+            let txid = env.send(&address, Amount::from_sat(5_000)).unwrap();
+            env.wait_until_electrum_sees_txid(txid, Duration::from_secs(10))
+                .unwrap();
+            env.mine_blocks(3, None).unwrap();
+            env.wait_until_electrum_sees_block(Duration::from_secs(10))
+                .unwrap();
+            cli_full_scan(&cli);
 
-        // Fund a single small UTXO
-        let address = cli_new_address(&cli);
-        let node_addr = env
-            .rpc_client()
-            .get_new_address(None, None)
-            .unwrap()
-            .assume_checked();
-        env.mine_blocks(101, Some(node_addr)).unwrap();
-        env.wait_until_electrum_sees_block(Duration::from_secs(10))
-            .unwrap();
-        let txid = env.send(&address, Amount::from_sat(5_000)).unwrap();
-        env.wait_until_electrum_sees_txid(txid, Duration::from_secs(10))
-            .unwrap();
-        env.mine_blocks(3, None).unwrap();
-        env.wait_until_electrum_sees_block(Duration::from_secs(10))
-            .unwrap();
-        cli_full_scan(&cli);
+            // The funded outpoint to prove control of.
+            let unspent = run_wallet_json(&cli, &["unspent"]);
+            let outpoint = unspent["items"][0]["outpoint"]
+                .as_str()
+                .expect("funded wallet should have one UTXO")
+                .to_string();
+            let addr = address.to_string();
 
-        // The funded outpoint to prove control of.
-        let unspent = run_wallet_json(&cli, &["unspent"]);
-        let outpoint = unspent["items"][0]["outpoint"]
-            .as_str()
-            .expect("funded wallet should have one UTXO")
-            .to_string();
-        let addr = address.to_string();
+            // Produce a proof-of-funds over that UTXO.
+            let proof = run_wallet_json(
+                &cli,
+                &[
+                    "sign_message",
+                    "--message",
+                    "proof-of-funds",
+                    "--address",
+                    &addr,
+                    "--signature-type",
+                    "fullproofoffunds",
+                    "--utxos",
+                    &outpoint,
+                ],
+            )["proof"]
+                .as_str()
+                .expect("sign_message should return a proof")
+                .to_string();
 
-        // Produce a proof-of-funds over that UTXO.
-        let proof = run_wallet_json(
-            &cli,
-            &[
-                "sign_message",
-                "--message",
-                "proof-of-funds",
-                "--address",
-                &addr,
-                "--signature-type",
-                "fullproofoffunds",
-                "--utxos",
-                &outpoint,
-            ],
-        )["proof"]
-            .as_str()
-            .expect("sign_message should return a proof")
-            .to_string();
-
-        let result = run_wallet_json(
-            &cli,
-            &[
-                "verify_message",
-                "--proof",
-                &proof,
-                "--message",
-                "proof-of-funds",
-                "--address",
-                &addr,
-            ],
-        );
-        assert_eq!(
-            result["valid"].as_bool(),
-            Some(true),
-            "proof-of-funds should verify against the persisted wallet: {result}"
-        );
-        assert_eq!(
-            result["proven_amount"].as_u64(),
-            Some(5_000),
-            "proven_amount should equal the funded UTXO value: {result}"
-        );
-    }
-
+            let result = run_wallet_json(
+                &cli,
+                &[
+                    "verify_message",
+                    "--proof",
+                    &proof,
+                    "--message",
+                    "proof-of-funds",
+                    "--address",
+                    &addr,
+                ],
+            );
+            assert_eq!(
+                result["valid"].as_bool(),
+                Some(true),
+                "proof-of-funds should verify against the persisted wallet: {result}"
+            );
+            assert_eq!(
+                result["proven_amount"].as_u64(),
+                Some(5_000),
+                "proven_amount should equal the funded UTXO value: {result}"
+            );
+        }
+    */
     // `create_dns_tx` with a plain `--to` recipient
     #[cfg(feature = "dns_payment")]
     #[test]
