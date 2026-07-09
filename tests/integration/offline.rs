@@ -152,7 +152,7 @@ mod test_offline {
     }
     /**
         #[cfg(feature = "bip322")]
-        #[test]
+        // #[test]
         fn test_sign_message_and_verify_message() {
             let (cli, mut cmd_init) = setup_wallet_config();
             cmd_init.assert().success();
@@ -217,7 +217,7 @@ mod test_offline {
         }
 
         #[cfg(feature = "bip322")]
-        #[test]
+        // #[test]
         fn test_verify_message_rejects_tampered_message() {
             let (cli, mut cmd_init) = setup_wallet_config();
             cmd_init.assert().success();
