@@ -1,17 +1,13 @@
 use crate::commands::KeySubCommand;
 use crate::error::BDKCliError as Error;
-use crate::handlers::Init;
-use crate::handlers::{AppCommand, AppContext};
-use crate::utils::output::FormatOutput;
-use crate::utils::types::KeyResult;
+use crate::handlers::{AppCommand, AppContext, Init};
+use crate::utils::{output::FormatOutput, types::KeyResult};
 use bdk_wallet::bip39::{Language, Mnemonic};
-use bdk_wallet::bitcoin::bip32::DerivationPath;
-use bdk_wallet::bitcoin::bip32::KeySource;
-use bdk_wallet::bitcoin::bip32::Xpriv;
+use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource, Xpriv};
 use bdk_wallet::bitcoin::key::Secp256k1;
-use bdk_wallet::keys::bip39::WordCount;
-use bdk_wallet::keys::{DerivableKey, GeneratableKey};
-use bdk_wallet::keys::{DescriptorKey, ExtendedKey, GeneratedKey};
+use bdk_wallet::keys::{
+    DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey, bip39::WordCount,
+};
 use bdk_wallet::miniscript::{self, Segwitv0};
 use clap::Parser;
 

@@ -2,20 +2,21 @@ use clap::Parser;
 
 #[cfg(feature = "electrum")]
 use crate::client::BlockchainClient::Electrum;
-#[cfg(feature = "rpc")]
-use crate::client::BlockchainClient::RpcClient;
 #[cfg(feature = "cbf")]
 use crate::client::{BlockchainClient::KyotoClient, sync_kyoto_client};
 #[cfg(feature = "esplora")]
 use {crate::client::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
 #[cfg(feature = "rpc")]
 use {
+    crate::client::BlockchainClient::RpcClient,
     bdk_bitcoind_rpc::{Emitter, NO_EXPECTED_MEMPOOL_TXS, bitcoincore_rpc::RpcApi},
     bdk_wallet::chain::{BlockId, CanonicalizationParams, CheckPoint},
 };
 #[cfg(any(feature = "electrum", feature = "esplora"))]
 use {bdk_wallet::KeychainKind, std::collections::HashSet, std::io::Write};
 
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
+use crate::utils::print_wallet_events;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -25,16 +26,16 @@ use {bdk_wallet::KeychainKind, std::collections::HashSet, std::io::Write};
 use {
     crate::commands::OnlineWalletSubCommand,
     crate::error::BDKCliError as Error,
-    crate::handlers::{AppContext, AsyncAppCommand, OnlineOperations},
-    crate::payjoin::{PayjoinManager, ohttp::RelayManager},
-    crate::utils::is_final,
-    crate::utils::output::FormatOutput,
-    crate::utils::types::{StatusResult, TransactionResult},
+    crate::handlers::{AppContext, AsyncAppCommand, OnlineOperations, payjoin::PayjoinManager},
+    crate::utils::{
+        is_final,
+        output::FormatOutput,
+        types::{StatusResult, TransactionResult},
+    },
     bdk_wallet::bitcoin::{
         Psbt, Transaction, Txid, base64::Engine, base64::prelude::BASE64_STANDARD,
         consensus::Decodable, hex::FromHex,
     },
-    std::sync::{Arc, Mutex},
 };
 #[cfg(any(
     feature = "electrum",
@@ -65,6 +66,14 @@ impl OnlineWalletSubCommand {
                 let response: StatusResult = send_payjoin_command.execute(ctx).await?;
                 response.write_out(std::io::stdout())
             }
+            OnlineWalletSubCommand::ResumePayjoin(resume_payjoin_command) => {
+                let response: StatusResult = resume_payjoin_command.execute(ctx).await?;
+                response.write_out(std::io::stdout())
+            }
+            OnlineWalletSubCommand::PayjoinHistory(payjoin_history_command) => {
+                let response: StatusResult = payjoin_history_command.execute(ctx).await?;
+                response.write_out(std::io::stdout())
+            }
         }
     }
 }
@@ -74,8 +83,8 @@ pub struct FullScanCommand {
     /// Stop searching addresses for transactions after finding an unused gap of this length.
     #[arg(env = "STOP_GAP", long = "scan-stop-gap", default_value = "20")]
     stop_gap: usize,
-    // #[clap(long, default_value = "5")]
-    // pub parallel_request: usize,
+    #[clap(long, default_value = "5")]
+    pub parallel_request: usize,
 }
 
 #[cfg(any(
@@ -112,7 +121,8 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
             Electrum { client, batch_size } => {
                 client.populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
                 let update = client.full_scan(request, self.stop_gap, *batch_size, false)?;
-                wallet.apply_update(update)?;
+                let events = wallet.apply_update_events(update)?;
+                print_wallet_events(&events);
             }
 
             #[cfg(feature = "esplora")]
@@ -124,7 +134,8 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
                     .full_scan(request, self.stop_gap, *parallel_requests)
                     .await
                     .map_err(|e| *e)?;
-                wallet.apply_update(update)?;
+                let events = wallet.apply_update_events(update)?;
+                print_wallet_events(&events);
             }
             #[cfg(feature = "rpc")]
             RpcClient { client } => {
@@ -142,27 +153,35 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
                     NO_EXPECTED_MEMPOOL_TXS,
                 );
 
-                while let Some(block_event) = emitter.next_block()? {
-                    if block_event.block_height() % 10_000 == 0 {
-                        let percent_done = f64::from(block_event.block_height())
-                            / f64::from(blockchain_info.headers as u32)
-                            * 100f64;
-                        println!(
-                            "Applying block at height: {}, {:.2}% done.",
-                            block_event.block_height(),
-                            percent_done
-                        );
-                    }
+                let block_events = wallet.events_helper(|w| {
+                    while let Some(block_event) = emitter.next_block()? {
+                        if block_event.block_height() % 10_000 == 0 {
+                            let percent_done = f64::from(block_event.block_height())
+                                / f64::from(blockchain_info.headers as u32)
+                                * 100f64;
+                            println!(
+                                "Applying block at height: {}, {:.2}% done.",
+                                block_event.block_height(),
+                                percent_done
+                            );
+                        }
 
-                    wallet.apply_block_connected_to(
-                        &block_event.block,
-                        block_event.block_height(),
-                        block_event.connected_to(),
-                    )?;
-                }
+                        w.apply_block_connected_to(
+                            &block_event.block,
+                            block_event.block_height(),
+                            block_event.connected_to(),
+                        )?;
+                    }
+                    Ok::<_, Error>(())
+                })?;
+                print_wallet_events(&block_events);
 
                 let mempool_txs = emitter.mempool()?;
-                wallet.apply_unconfirmed_txs(mempool_txs.update);
+                let mempool_events = wallet.apply_unconfirmed_txs_events(mempool_txs.update);
+                print_wallet_events(&mempool_events);
+
+                let evicted_events = wallet.apply_evicted_txs_events(mempool_txs.evicted);
+                print_wallet_events(&evicted_events);
             }
 
             #[cfg(feature = "cbf")]
@@ -177,7 +196,7 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
 }
 
 #[derive(Parser, Debug, PartialEq, Eq, Clone)]
-pub struct SyncCommand {}
+pub struct SyncCommand;
 
 #[cfg(any(
     feature = "electrum",
@@ -210,9 +229,8 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for SyncCommand {
                 client.populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
 
                 let update = client.sync(request, *batch_size, false)?;
-                wallet
-                    .apply_update(update)
-                    .map_err(|e| Error::Generic(e.to_string()))?;
+                let events = wallet.apply_update_events(update)?;
+                print_wallet_events(&events);
             }
             #[cfg(feature = "esplora")]
             Esplora {
@@ -223,9 +241,8 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for SyncCommand {
                     .sync(request, *parallel_requests)
                     .await
                     .map_err(|e| *e)?;
-                wallet
-                    .apply_update(update)
-                    .map_err(|e| Error::Generic(e.to_string()))?;
+                let events = wallet.apply_update_events(update)?;
+                print_wallet_events(&events);
             }
             #[cfg(feature = "rpc")]
             RpcClient { client } => {
@@ -247,27 +264,35 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for SyncCommand {
                         .filter(|tx| tx.chain_position.is_unconfirmed()),
                 );
 
-                while let Some(block_event) = emitter.next_block()? {
-                    if block_event.block_height() % 10_000 == 0 {
-                        let percent_done = f64::from(block_event.block_height())
-                            / f64::from(blockchain_info.headers as u32)
-                            * 100f64;
-                        println!(
-                            "Applying block at height: {}, {:.2}% done.",
-                            block_event.block_height(),
-                            percent_done
-                        );
-                    }
+                let block_events = wallet.events_helper(|w| {
+                    while let Some(block_event) = emitter.next_block()? {
+                        if block_event.block_height() % 10_000 == 0 {
+                            let percent_done = f64::from(block_event.block_height())
+                                / f64::from(blockchain_info.headers as u32)
+                                * 100f64;
+                            println!(
+                                "Applying block at height: {}, {:.2}% done.",
+                                block_event.block_height(),
+                                percent_done
+                            );
+                        }
 
-                    wallet.apply_block_connected_to(
-                        &block_event.block,
-                        block_event.block_height(),
-                        block_event.connected_to(),
-                    )?;
-                }
+                        w.apply_block_connected_to(
+                            &block_event.block,
+                            block_event.block_height(),
+                            block_event.connected_to(),
+                        )?;
+                    }
+                    Ok::<_, Error>(())
+                })?;
+                print_wallet_events(&block_events);
 
                 let mempool_txs = emitter.mempool()?;
-                wallet.apply_unconfirmed_txs(mempool_txs.update);
+                let mempool_events = wallet.apply_unconfirmed_txs_events(mempool_txs.update);
+                print_wallet_events(&mempool_events);
+
+                let evicted_events = wallet.apply_evicted_txs_events(mempool_txs.evicted);
+                print_wallet_events(&evicted_events);
             }
             #[cfg(feature = "cbf")]
             KyotoClient { client } => sync_kyoto_client(wallet, client)
@@ -379,11 +404,12 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for ReceivePayjoinCommand
         &self,
         ctx: &mut AppContext<OnlineOperations<'_>>,
     ) -> Result<Self::Output, Error> {
+        let wallet_name = ctx.state.wallet_name.clone();
+        let datadir = ctx.datadir.clone();
         let wallet = &mut ctx.state.wallet;
         let client = ctx.state.client;
 
-        let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
-        let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);
+        let mut payjoin_manager = PayjoinManager::new(wallet, Some(datadir), &wallet_name)?;
         let result = payjoin_manager
             .receive_payjoin(
                 self.amount,
@@ -429,11 +455,12 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for SendPayjoinCommand {
         &self,
         ctx: &mut AppContext<OnlineOperations<'_>>,
     ) -> Result<Self::Output, Error> {
+        let wallet_name = ctx.state.wallet_name.clone();
+        let datadir = ctx.datadir.clone();
         let wallet = &mut ctx.state.wallet;
         let client = ctx.state.client;
 
-        let relay_manager = Arc::new(Mutex::new(RelayManager::new()));
-        let mut payjoin_manager = PayjoinManager::new(wallet, relay_manager);
+        let mut payjoin_manager = PayjoinManager::new(wallet, Some(datadir), &wallet_name)?;
         let result = payjoin_manager
             .send_payjoin(
                 self.uri.clone(),
@@ -442,6 +469,76 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for SendPayjoinCommand {
                 client,
             )
             .await?;
+
+        Ok(StatusResult { message: result })
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq, Eq)]
+pub struct ResumePayjoinCommand {
+    /// Payjoin directory for the session
+    #[arg(env = "PAYJOIN_DIRECTORY", long = "directory", required = true)]
+    directory: String,
+    /// URL of the Payjoin OHTTP relay. Can be repeated multiple times.
+    #[arg(env = "PAYJOIN_OHTTP_RELAY", long = "ohttp_relay", required = true)]
+    ohttp_relay: Vec<String>,
+    /// Resume only a specific active session ID (sender and/or receiver).
+    #[arg(env = "PAYJOIN_SESSION_ID", long = "session_id")]
+    session_id: Option<i64>,
+}
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for ResumePayjoinCommand {
+    type Output = StatusResult;
+
+    async fn execute(
+        &self,
+        ctx: &mut AppContext<OnlineOperations<'_>>,
+    ) -> Result<Self::Output, Error> {
+        let wallet_name = ctx.state.wallet_name.clone();
+        let datadir = ctx.datadir.clone();
+        let wallet = &mut ctx.state.wallet;
+        let client = ctx.state.client;
+
+        let mut payjoin_manager = PayjoinManager::new(wallet, Some(datadir), &wallet_name)?;
+        let result = payjoin_manager
+            .resume_payjoins(
+                self.directory.clone(),
+                self.ohttp_relay.clone(),
+                self.session_id,
+                client,
+            )
+            .await?;
+
+        Ok(StatusResult { message: result })
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq, Eq)]
+pub struct PayjoinHistoryCommand;
+
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for PayjoinHistoryCommand {
+    type Output = StatusResult;
+
+    async fn execute(
+        &self,
+        ctx: &mut AppContext<OnlineOperations<'_>>,
+    ) -> Result<Self::Output, Error> {
+        let wallet_name = ctx.state.wallet_name.clone();
+        let datadir = ctx.datadir.clone();
+
+        let result = PayjoinManager::history(Some(datadir), &wallet_name)?;
 
         Ok(StatusResult { message: result })
     }

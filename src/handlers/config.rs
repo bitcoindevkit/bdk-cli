@@ -12,7 +12,7 @@ use crate::config::{WalletConfig, WalletConfigInner};
 use crate::error::BDKCliError as Error;
 use crate::handlers::Init;
 use crate::handlers::{AppCommand, AppContext};
-#[cfg(feature = "sqlite")]
+#[cfg(any(feature = "sqlite", feature = "redb"))]
 use crate::persister::DatabaseType;
 use crate::utils::types::{StatusResult, WalletsListResult};
 use bdk_wallet::bitcoin::Network;
@@ -158,7 +158,7 @@ impl AppCommand<AppContext<Init>> for SaveConfigCommand {
 }
 
 #[derive(Args, Debug, Clone, PartialEq)]
-pub struct ListWalletsCommand {}
+pub struct ListWalletsCommand;
 
 impl AppCommand<AppContext<Init>> for ListWalletsCommand {
     type Output = WalletsListResult;

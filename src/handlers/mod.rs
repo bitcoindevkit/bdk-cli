@@ -1,8 +1,17 @@
 pub mod config;
 pub mod descriptor;
+#[cfg(feature = "dns_payment")]
+pub mod dns;
 pub mod key;
 pub mod offline;
 pub mod online;
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "cbf",
+    feature = "rpc"
+))]
+pub mod payjoin;
 pub mod repl;
 
 #[cfg(any(
@@ -37,6 +46,7 @@ pub struct OfflineOperations<'a> {
 pub struct OnlineOperations<'a> {
     pub wallet: &'a mut Wallet,
     pub client: &'a BlockchainClient,
+    pub wallet_name: String,
 }
 
 /// The generic context
@@ -79,11 +89,16 @@ impl<'a> AppContext<OnlineOperations<'a>> {
         datadir: PathBuf,
         wallet: &'a mut Wallet,
         client: &'a BlockchainClient,
+        wallet_name: String,
     ) -> Self {
         Self {
             network,
             datadir,
-            state: OnlineOperations { wallet, client },
+            state: OnlineOperations {
+                wallet,
+                client,
+                wallet_name,
+            },
         }
     }
 }
@@ -98,7 +113,8 @@ pub trait AppCommand<C> {
     feature = "electrum",
     feature = "esplora",
     feature = "rpc",
-    feature = "cbf"
+    feature = "cbf",
+    feature = "dns_payment"
 ))]
 pub trait AsyncAppCommand<C> {
     type Output: FormatOutput;

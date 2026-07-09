@@ -49,6 +49,9 @@ pub enum BDKCliError {
     #[error("Miniscript error: {0}")]
     MiniscriptError(#[from] bdk_wallet::miniscript::Error),
 
+    #[error("Miniscript compiler error: {0}")]
+    MiniscriptCompilerError(#[from] bdk_wallet::miniscript::policy::compiler::CompilerError),
+
     #[error("ParseError: {0}")]
     ParseError(#[from] bdk_wallet::bitcoin::address::ParseError),
 
@@ -81,6 +84,10 @@ pub enum BDKCliError {
 
     #[error("Signer error: {0}")]
     SignerError(#[from] bdk_wallet::signer::SignerError),
+
+    #[cfg(feature = "compiler")]
+    #[error("Secp256k1 error: {0}")]
+    Secp256k1Error(#[from] bdk_wallet::bitcoin::secp256k1::Error),
 
     #[cfg(feature = "electrum")]
     #[error("Electrum error: {0}")]
@@ -145,6 +152,10 @@ pub enum BDKCliError {
     #[error("Payjoin create request error: {0}")]
     PayjoinCreateRequest(#[from] payjoin::send::v2::CreateRequestError),
 
+    #[cfg(feature = "payjoin")]
+    #[error("Payjoin database error: {0}")]
+    PayjoinDb(#[from] crate::handlers::payjoin::db::Error),
+
     #[cfg(feature = "bip322")]
     #[error("BIP-322 error: {0}")]
     Bip322Error(#[from] bdk_bip322::error::Error),
@@ -174,5 +185,18 @@ impl From<bdk_redb::redb::DatabaseError> for BDKCliError {
 impl From<bdk_wallet::rusqlite::Error> for BDKCliError {
     fn from(err: bdk_wallet::rusqlite::Error) -> Self {
         BDKCliError::RusqliteError(Box::new(err))
+    }
+}
+
+#[cfg(feature = "payjoin")]
+impl<ApiErr, StorageErr, ErrorState>
+    From<payjoin::persist::PersistedError<ApiErr, StorageErr, ErrorState>> for BDKCliError
+where
+    ApiErr: std::error::Error,
+    StorageErr: std::error::Error,
+    ErrorState: std::fmt::Debug,
+{
+    fn from(e: payjoin::persist::PersistedError<ApiErr, StorageErr, ErrorState>) -> Self {
+        BDKCliError::Generic(e.to_string())
     }
 }

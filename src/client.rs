@@ -297,9 +297,10 @@ pub async fn sync_kyoto_client(
 
     let update = handle.update_subscriber.lock().await.update().await?;
     tracing::info!("Received update: applying to wallet");
-    wallet
-        .apply_update(update)
+    let events = wallet
+        .apply_update_events(update)
         .map_err(|e| Error::Generic(format!("Failed to apply update: {e}")))?;
+    crate::utils::print_wallet_events(&events);
 
     tracing::info!(
         "Chain tip: {}, Transactions: {}, Balance: {}",

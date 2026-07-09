@@ -5,14 +5,14 @@ use bdk_bip322::SignatureFormat;
 use bdk_kyoto::{Info, Receiver, UnboundedReceiver, Warning};
 #[cfg(feature = "silent-payments")]
 use bdk_sp::encoding::SilentPaymentCode;
+use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
     feature = "cbf",
     feature = "rpc"
 ))]
-use bdk_wallet::bitcoin::Psbt;
-use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
+use bdk_wallet::{bitcoin::Psbt, event::WalletEvent};
 
 use crate::commands::OfflineWalletSubCommand;
 use std::{
@@ -236,8 +236,82 @@ pub fn command_requires_db(command: &OfflineWalletSubCommand) -> bool {
         OfflineWalletSubCommand::SignMessage(_) => true,
 
         #[cfg(feature = "bip322")]
-        OfflineWalletSubCommand::VerifyMessage(_) => false,
+        OfflineWalletSubCommand::VerifyMessage(_) => true,
         #[cfg(feature = "silent-payments")]
-        OfflineWalletSubCommand::CreateSpTx(_) => false,
+        OfflineWalletSubCommand::CreateSpTx(_) => true,
+        #[cfg(feature = "dns_payment")]
+        OfflineWalletSubCommand::CreateDnsTx(_) => true,
     }
+}
+
+/// Print a human-readable summary of the wallet events produced by a sync or scan.
+///
+/// Emitted to stderr so it does not pollute the JSON result on stdout.
+#[cfg(any(
+    feature = "electrum",
+    feature = "esplora",
+    feature = "rpc",
+    feature = "cbf"
+))]
+pub fn print_wallet_events(events: &[WalletEvent]) {
+    for event in events {
+        match event {
+            WalletEvent::ChainTipChanged { old_tip, new_tip } => {
+                eprintln!(
+                    "Chain tip advanced from height {} to {}",
+                    old_tip.height, new_tip.height
+                );
+            }
+            WalletEvent::TxConfirmed {
+                txid,
+                block_time,
+                old_block_time,
+                ..
+            } => match old_block_time {
+                Some(old) => eprintln!(
+                    "Transaction {txid} re-confirmed at height {} (was height {}, likely a reorg)",
+                    block_time.block_id.height, old.block_id.height
+                ),
+                None => eprintln!(
+                    "Transaction {txid} confirmed at height {}",
+                    block_time.block_id.height
+                ),
+            },
+            WalletEvent::TxUnconfirmed {
+                txid,
+                old_block_time,
+                ..
+            } => match old_block_time {
+                Some(old) => eprintln!(
+                    "Transaction {txid} became unconfirmed (was confirmed at height {}, likely a reorg)",
+                    old.block_id.height
+                ),
+                None => eprintln!("Transaction {txid} seen in mempool"),
+            },
+            WalletEvent::TxReplaced {
+                txid, conflicts, ..
+            } => {
+                let ids: Vec<String> = conflicts.iter().map(|(_, c)| c.to_string()).collect();
+                eprintln!(
+                    "Transaction {txid} was replaced (conflicts with: {})",
+                    ids.join(", ")
+                );
+            }
+            WalletEvent::TxDropped { txid, .. } => {
+                eprintln!("Transaction {txid} dropped from the mempool");
+            }
+            _ => {}
+        }
+    }
+}
+
+#[cfg(feature = "dns_payment")]
+/// Parse dns recipients in the form "test@me.com:10000" from cli input
+pub(crate) fn parse_dns_recipient(s: &str) -> Result<(String, u64), String> {
+    let parts: Vec<_> = s.split(':').collect();
+    if parts.len() != 2 {
+        return Err("Invalid format".to_string());
+    }
+    let sending_amount = u64::from_str(parts[1]).map_err(|e| e.to_string())?;
+    Ok((parts[0].to_string(), sending_amount))
 }

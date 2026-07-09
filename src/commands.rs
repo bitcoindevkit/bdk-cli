@@ -39,7 +39,8 @@ use crate::handlers::{descriptor::SilentPaymentCodeCommand, offline::CreateSpTxC
 use crate::{
     client::ClientType,
     handlers::online::{
-        BroadcastCommand, FullScanCommand, ReceivePayjoinCommand, SendPayjoinCommand, SyncCommand,
+        BroadcastCommand, FullScanCommand, PayjoinHistoryCommand, ReceivePayjoinCommand,
+        ResumePayjoinCommand, SendPayjoinCommand, SyncCommand,
     },
 };
 
@@ -51,6 +52,9 @@ use crate::persister::DatabaseType;
 use bdk_wallet::bitcoin::Network;
 use clap::{Args, Parser, Subcommand, value_parser};
 use clap_complete::Shell;
+
+#[cfg(feature = "dns_payment")]
+use crate::handlers::dns::{CreateDnsTxCommand, ResolveDnsRecipientCommand};
 
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
@@ -199,6 +203,9 @@ pub enum CliSubCommand {
     /// Useful to create silent payment transactions using fake silent payment codes.
     #[cfg(feature = "silent-payments")]
     SilentPaymentCode(SilentPaymentCodeCommand),
+    /// Resolves BIP-353 DNS payment instructions for a human-readable name.
+    #[cfg(feature = "dns_payment")]
+    ResolveDnsRecipient(ResolveDnsRecipientCommand),
 }
 
 /// Wallet operation subcommands.
@@ -366,6 +373,9 @@ pub enum OfflineWalletSubCommand {
     UnlockUtxo(UnlockUtxoCommand),
     /// List currently locked UTXOs.
     LockedUtxos(LockedUtxosCommand),
+    /// Creates a new unsigned transaction from DNS payment instructions.
+    #[cfg(feature = "dns_payment")]
+    CreateDnsTx(CreateDnsTxCommand),
 }
 
 /// Wallet subcommands that needs a blockchain backend.
@@ -388,6 +398,10 @@ pub enum OnlineWalletSubCommand {
     ReceivePayjoin(ReceivePayjoinCommand),
     /// Sends an original PSBT to a BIP 21 URI and broadcasts the returned Payjoin PSBT.
     SendPayjoin(SendPayjoinCommand),
+    /// Resume pending payjoin sessions.
+    ResumePayjoin(ResumePayjoinCommand),
+    /// Show payjoin session history.
+    PayjoinHistory(PayjoinHistoryCommand),
 }
 
 /// Subcommands for Key operations.

@@ -28,7 +28,7 @@ test:
 pre-push:
     cargo test --features default
     cargo test --no-default-features
-    cargo test --all-features
+    cargo test --all-features -- --test-threads=2
     cargo clippy --no-default-features --all-targets -- -D warnings
     cargo clippy --all-features --all-targets -- -D warnings
     cargo fmt --all -- --check
