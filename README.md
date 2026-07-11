@@ -47,7 +47,7 @@ bdk-cli can be compiled with different features to suit your experimental needs.
   - Blockchain Client Options
      - `esplora` : Connects the wallet to an esplora server.
      - `electrum` : Connects the wallet to an electrum server.
-     - `kyoto`: Connects the wallet to a kyoto client and server.
+     - `cbf`: Connects the wallet to a kyoto client and server.
      - `rpc`: Connects the wallet to Bitcoind server.
   - Extra Utility Tools
      - `repl` : use bdk-cli as a [REPL](https://codewith.mu/en/tutorials/1.0/repl) shell (useful for quick manual testing of wallet operations).
@@ -89,7 +89,7 @@ RUST_LOG=debug cargo run --features electrum -- wallet -w testnetwallet balance
 ```
 
 Available blockchain client features are:
-`electrum`, `esplora`, `kyoto`, `rpc`.
+`electrum`, `esplora`, `cbf`, `rpc`.
 
 ### From crates.io
 
@@ -161,18 +161,18 @@ cargo run --features rpc -- wallet --wallet payjoin_wallet2 send_payjoin --ohttp
 
 To experiment with silent payments, you can get two public keys in compressed or uncompressed format, `A1` and `A2`, and produce a silent payment code by calling:
 ```shell
-cargo run --features sp -- --network signet silent_payment_code --scan_public_key '<A1>' --spend_public_key '<A2>'
+cargo run --features silent-payments -- --network signet silent_payment_code --scan_key '<A1>' --spend_key '<A2>'
 ```
 
 Once you have a silent payment code, `SP_CODE_1` and an amount `AMOUNT_1` to send, you can create a valid transaction locking funds to a silent payment code derived address with the following command:
 
 ```shell
-cargo run --features electrum,sp -- --network testnet4 wallet --wallet sample_wallet --ext-descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" --database-type sqlite --client-type electrum --url "ssl://mempool.space:40002" create_sp_tx --to-sp <SP_CODE_1>:<AMOUNT_1>
+cargo run --features electrum,silent-payments -- --network testnet4 wallet --wallet sample_wallet --ext-descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" --database-type sqlite --client-type electrum --url "ssl://mempool.space:40002" create_sp_tx --to-sp <SP_CODE_1>:<AMOUNT_1>
 ```
 
 It's also possible to drain all balance to a silent payment wallet by using the `--send_all` flag:
 ```shell
-cargo run --features electrum,sp -- --network testnet4 wallet --wallet sample_wallet --ext-descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" --database-type sqlite --client-type electrum --url "ssl://mempool.space:40002" create_sp_tx --send_all --to-sp <SP_CODE_1>:0
+cargo run --features electrum,silent-payments -- --network testnet4 wallet --wallet sample_wallet --ext-descriptor "wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)" --database-type sqlite --client-type electrum --url "ssl://mempool.space:40002" create_sp_tx --send_all --to-sp <SP_CODE_1>:0
 ```
 
 ### Payjoin
