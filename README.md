@@ -161,7 +161,7 @@ cargo run --features rpc -- wallet --wallet payjoin_wallet2 send_payjoin --ohttp
 
 To experiment with silent payments, you can get two public keys in compressed or uncompressed format, `A1` and `A2`, and produce a silent payment code by calling:
 ```shell
-cargo run --features silent-payments -- --network signet silent_payment_code --scan_public_key '<A1>' --spend_public_key '<A2>'
+cargo run --features silent-payments -- --network signet silent_payment_code --scan_key '<A1>' --spend_key '<A2>'
 ```
 
 Once you have a silent payment code, `SP_CODE_1` and an amount `AMOUNT_1` to send, you can create a valid transaction locking funds to a silent payment code derived address with the following command:
