@@ -1,8 +1,8 @@
 use crate::{commands::WalletOpts, config::WalletConfig, error::BDKCliError as Error};
-#[cfg(feature = "message_signer")]
-use bdk_message_signer::SignatureFormat;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{Info, Receiver, UnboundedReceiver, Warning};
+#[cfg(feature = "message_signer")]
+use bdk_message_signer::SignatureFormat;
 #[cfg(feature = "silent-payments")]
 use bdk_sp::encoding::SilentPaymentCode;
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};

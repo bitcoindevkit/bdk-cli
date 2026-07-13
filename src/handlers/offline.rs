@@ -32,7 +32,7 @@ use {
 use {
     crate::utils::parse_signature_format,
     crate::utils::types::MessageResult,
-    bdk_message_signer::{MessageSigner, MessageProof},
+    bdk_message_signer::{MessageProof, MessageSigner},
 };
 
 impl OfflineWalletSubCommand {
