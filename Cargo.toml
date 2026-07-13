@@ -61,7 +61,7 @@ dns_payment = ["bitcoin-payment-instructions"]
 
 # Internal features
 _payjoin-dependencies = ["payjoin", "reqwest", "url", "sqlite"]
-bip322 = ["bdk_message_signer"]
+message_signer = ["bdk_message_signer"]
 
 # Use this to consensus verify transactions at sync time
 verify = []

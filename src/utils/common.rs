@@ -1,8 +1,8 @@
 use crate::{commands::WalletOpts, config::WalletConfig, error::BDKCliError as Error};
+#[cfg(feature = "message_signer")]
+use bdk_message_signer::SignatureFormat;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{Info, Receiver, UnboundedReceiver, Warning};
-#[cfg(feature = "bip322")]
-use bdk_message_signer::SignatureFormat;
 #[cfg(feature = "silent-payments")]
 use bdk_sp::encoding::SilentPaymentCode;
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
@@ -198,7 +198,7 @@ pub(crate) fn parse_sp_code_value_pairs(s: &str) -> Result<(SilentPaymentCode, u
 }
 
 /// Function to parse the signature format from a string
-#[cfg(feature = "bip322")]
+#[cfg(feature = "message_signer")]
 pub(crate) fn parse_signature_format(format_str: &str) -> Result<SignatureFormat, Error> {
     match format_str.to_lowercase().as_str() {
         "legacy" => Ok(SignatureFormat::Legacy),
@@ -232,10 +232,10 @@ pub fn command_requires_db(command: &OfflineWalletSubCommand) -> bool {
         | OfflineWalletSubCommand::FinalizePsbt(_)
         | OfflineWalletSubCommand::CombinePsbt(_) => false,
 
-        #[cfg(feature = "bip322")]
+        #[cfg(feature = "message_signer")]
         OfflineWalletSubCommand::SignMessage(_) => true,
 
-        #[cfg(feature = "bip322")]
+        #[cfg(feature = "message_signer")]
         OfflineWalletSubCommand::VerifyMessage(_) => true,
         #[cfg(feature = "silent-payments")]
         OfflineWalletSubCommand::CreateSpTx(_) => true,

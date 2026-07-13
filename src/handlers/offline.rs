@@ -28,11 +28,11 @@ use {
     bdk_wallet::keys::{DescriptorPublicKey, DescriptorSecretKey, SinglePubKey},
     std::collections::HashMap,
 };
-#[cfg(feature = "bip322")]
+#[cfg(feature = "message_signer")]
 use {
     crate::utils::parse_signature_format,
     crate::utils::types::MessageResult,
-    bdk_message_signer::{MessageProof, MessageSigner},
+    bdk_message_signer::{MessageSigner, MessageProof},
 };
 
 impl OfflineWalletSubCommand {
@@ -73,11 +73,11 @@ impl OfflineWalletSubCommand {
             Self::CombinePsbt(combine_psbt_command) => combine_psbt_command
                 .execute(ctx)?
                 .write_out(std::io::stdout()),
-            #[cfg(feature = "bip322")]
+            #[cfg(feature = "message_signer")]
             Self::SignMessage(sign_message_command) => sign_message_command
                 .execute(ctx)?
                 .write_out(std::io::stdout()),
-            #[cfg(feature = "bip322")]
+            #[cfg(feature = "message_signer")]
             Self::VerifyMessage(verify_message_command) => verify_message_command
                 .execute(ctx)?
                 .write_out(std::io::stdout()),
@@ -773,7 +773,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CombinePsbtCommand {
     }
 }
 
-#[cfg(feature = "bip322")]
+#[cfg(feature = "message_signer")]
 #[derive(Debug, Parser, Clone, PartialEq)]
 pub struct SignMessageCommand {
     /// The message to sign
@@ -793,7 +793,7 @@ pub struct SignMessageCommand {
     pub utxos: Option<Vec<OutPoint>>,
 }
 
-#[cfg(feature = "bip322")]
+#[cfg(feature = "message_signer")]
 impl AppCommand<AppContext<OfflineOperations<'_>>> for SignMessageCommand {
     type Output = MessageResult;
 
@@ -823,7 +823,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for SignMessageCommand {
     }
 }
 
-#[cfg(feature = "bip322")]
+#[cfg(feature = "message_signer")]
 #[derive(Debug, Parser, Clone, PartialEq)]
 pub struct VerifyMessageCommand {
     /// The signature proof to verify
@@ -839,7 +839,7 @@ pub struct VerifyMessageCommand {
     pub address: String,
 }
 
-#[cfg(feature = "bip322")]
+#[cfg(feature = "message_signer")]
 impl AppCommand<AppContext<OfflineOperations<'_>>> for VerifyMessageCommand {
     type Output = MessageResult;
 
