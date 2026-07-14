@@ -150,117 +150,117 @@ mod test_offline {
         .failure()
         .stderr(predicate::str::contains("Invalid"));
     }
-    /**
-        #[cfg(feature = "bip322")]
-        // #[test]
-        fn test_sign_message_and_verify_message() {
-            let (cli, mut cmd_init) = setup_wallet_config();
-            cmd_init.assert().success();
 
-            let message = "bdk-cli integration test";
+    #[cfg(feature = "bip322")]
+    #[test]
+    fn test_sign_message_and_verify_message() {
+        let (cli, mut cmd_init) = setup_wallet_config();
+        cmd_init.assert().success();
 
-            // Reveal exactly one address and reuse it for both sign and verify.
-            let addr_output = cli
-                .wallet_cmd(&["--wallet", WALLET_NAME, "new_address"])
-                .output()
-                .expect("Failed to generate address");
-            assert!(
-                addr_output.status.success(),
-                "new_address failed: {}",
-                String::from_utf8_lossy(&addr_output.stderr)
-            );
-            let addr_json: Value = serde_json::from_slice(&addr_output.stdout).unwrap();
-            let address = addr_json["address"]
-                .as_str()
-                .expect("missing address")
-                .to_string();
-            println!("DEBUG signing address: {address}");
+        let message = "bdk-cli integration test";
 
-            // Sign (default signature_type = "simple").
-            let sign_output = cli
-                .wallet_cmd(&[
-                    "--wallet",
-                    WALLET_NAME,
-                    "sign_message",
-                    "--message",
-                    message,
-                    "--address",
-                    &address,
-                ])
-                .output()
-                .expect("Failed to sign message");
-            assert!(
-                sign_output.status.success(),
-                "sign_message failed: {}",
-                String::from_utf8_lossy(&sign_output.stderr)
-            );
-            let sign_json: Value = serde_json::from_slice(&sign_output.stdout).unwrap();
-            let proof = sign_json["proof"].as_str().expect("missing proof");
-            println!("DEBUG proof: {proof}");
-            println!("DEBUG verifying same address: {address}");
+        // Reveal exactly one address and reuse it for both sign and verify.
+        let addr_output = cli
+            .wallet_cmd(&["--wallet", WALLET_NAME, "new_address"])
+            .output()
+            .expect("Failed to generate address");
+        assert!(
+            addr_output.status.success(),
+            "new_address failed: {}",
+            String::from_utf8_lossy(&addr_output.stderr)
+        );
+        let addr_json: Value = serde_json::from_slice(&addr_output.stdout).unwrap();
+        let address = addr_json["address"]
+            .as_str()
+            .expect("missing address")
+            .to_string();
+        println!("DEBUG signing address: {address}");
 
-            // Verify with the identical address + message.
-            cli.wallet_cmd(&[
+        // Sign (default signature_type = "simple").
+        let sign_output = cli
+            .wallet_cmd(&[
                 "--wallet",
                 WALLET_NAME,
-                "verify_message",
-                "--address",
-                &address,
+                "sign_message",
                 "--message",
                 message,
-                "--proof",
-                proof,
+                "--address",
+                &address,
             ])
-            .assert()
-            .success()
-            .stdout(predicate::str::contains("\"valid\": true"));
-        }
+            .output()
+            .expect("Failed to sign message");
+        assert!(
+            sign_output.status.success(),
+            "sign_message failed: {}",
+            String::from_utf8_lossy(&sign_output.stderr)
+        );
+        let sign_json: Value = serde_json::from_slice(&sign_output.stdout).unwrap();
+        let proof = sign_json["proof"].as_str().expect("missing proof");
+        println!("DEBUG proof: {proof}");
+        println!("DEBUG verifying same address: {address}");
 
-        #[cfg(feature = "bip322")]
-        // #[test]
-        fn test_verify_message_rejects_tampered_message() {
-            let (cli, mut cmd_init) = setup_wallet_config();
-            cmd_init.assert().success();
+        // Verify with the identical address + message.
+        cli.wallet_cmd(&[
+            "--wallet",
+            WALLET_NAME,
+            "verify_message",
+            "--address",
+            &address,
+            "--message",
+            message,
+            "--proof",
+            proof,
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"valid\": true"));
+    }
 
-            let addr_output = cli
-                .wallet_cmd(&["--wallet", WALLET_NAME, "new_address"])
-                .output()
-                .expect("Failed to generate address");
-            let addr_json: Value = serde_json::from_slice(&addr_output.stdout).unwrap();
-            let address = addr_json["address"].as_str().unwrap();
+    #[cfg(feature = "bip322")]
+    #[test]
+    fn test_verify_message_rejects_tampered_message() {
+        let (cli, mut cmd_init) = setup_wallet_config();
+        cmd_init.assert().success();
 
-            let sign_output = cli
-                .wallet_cmd(&[
-                    "--wallet",
-                    WALLET_NAME,
-                    "sign_message",
-                    "--message",
-                    "original message",
-                    "--address",
-                    address,
-                ])
-                .output()
-                .expect("Failed to sign message");
-            let sign_json: Value = serde_json::from_slice(&sign_output.stdout).unwrap();
-            let proof = sign_json["proof"].as_str().unwrap();
+        let addr_output = cli
+            .wallet_cmd(&["--wallet", WALLET_NAME, "new_address"])
+            .output()
+            .expect("Failed to generate address");
+        let addr_json: Value = serde_json::from_slice(&addr_output.stdout).unwrap();
+        let address = addr_json["address"].as_str().unwrap();
 
-            // A tampered message should fail
-            cli.wallet_cmd(&[
+        let sign_output = cli
+            .wallet_cmd(&[
                 "--wallet",
                 WALLET_NAME,
-                "verify_message",
-                "--proof",
-                proof,
+                "sign_message",
                 "--message",
-                "tampered message",
+                "original message",
                 "--address",
                 address,
             ])
-            .assert()
-            .success()
-            .stdout(predicate::str::contains("\"valid\": false"));
-        }
-    **/
+            .output()
+            .expect("Failed to sign message");
+        let sign_json: Value = serde_json::from_slice(&sign_output.stdout).unwrap();
+        let proof = sign_json["proof"].as_str().unwrap();
+
+        // A tampered message should fail
+        cli.wallet_cmd(&[
+            "--wallet",
+            WALLET_NAME,
+            "verify_message",
+            "--proof",
+            proof,
+            "--message",
+            "tampered message",
+            "--address",
+            address,
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"valid\": false"));
+    }
+
     #[test]
     fn test_create_tx_send_all_rejects_multiple_recipients() {
         let (cli, mut cmd_init) = setup_wallet_config();

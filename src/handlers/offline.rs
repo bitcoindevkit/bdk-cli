@@ -28,12 +28,12 @@ use {
     bdk_wallet::keys::{DescriptorPublicKey, DescriptorSecretKey, SinglePubKey},
     std::collections::HashMap,
 };
-// #[cfg(feature = "bip322")]
-// use {
-//     crate::utils::parse_signature_format,
-//     crate::utils::types::MessageResult,
-//     bdk_bip322::{BIP322, MessageProof},
-// };
+#[cfg(feature = "bip322")]
+use {
+    crate::utils::parse_signature_format,
+    crate::utils::types::MessageResult,
+    bdk_message_signer::{MessageProof, MessageSigner},
+};
 
 impl OfflineWalletSubCommand {
     pub fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<(), Error> {
@@ -73,14 +73,14 @@ impl OfflineWalletSubCommand {
             Self::CombinePsbt(combine_psbt_command) => combine_psbt_command
                 .execute(ctx)?
                 .write_out(std::io::stdout()),
-            // #[cfg(feature = "bip322")]
-            // Self::SignMessage(sign_message_command) => sign_message_command
-            //     .execute(ctx)?
-            //     .write_out(std::io::stdout()),
-            // #[cfg(feature = "bip322")]
-            // Self::VerifyMessage(verify_message_command) => verify_message_command
-            //     .execute(ctx)?
-            //     .write_out(std::io::stdout()),
+            #[cfg(feature = "bip322")]
+            Self::SignMessage(sign_message_command) => sign_message_command
+                .execute(ctx)?
+                .write_out(std::io::stdout()),
+            #[cfg(feature = "bip322")]
+            Self::VerifyMessage(verify_message_command) => verify_message_command
+                .execute(ctx)?
+                .write_out(std::io::stdout()),
             Self::LockUtxo(lock_utxo) => lock_utxo.execute(ctx)?.write_out(std::io::stdout()),
             Self::UnlockUtxo(unlock_utxo) => unlock_utxo.execute(ctx)?.write_out(std::io::stdout()),
             Self::LockedUtxos(locked_utxos) => {
@@ -204,7 +204,7 @@ pub struct CreateTxCommand {
     #[arg(long = "enable_rbf", short = 'r', default_value_t = true)]
     pub enable_rbf: bool,
 
-    /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
+    /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `PSBT_GLOBAL_XPUB` and more details to let the signer identify the change output.
     #[arg(long = "offline_signer")]
     pub offline_signer: bool,
 
@@ -773,7 +773,6 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CombinePsbtCommand {
     }
 }
 
-/**
 #[cfg(feature = "bip322")]
 #[derive(Debug, Parser, Clone, PartialEq)]
 pub struct SignMessageCommand {
@@ -861,12 +860,11 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for VerifyMessageCommand {
         })
     }
 }
-**/
 
 #[derive(Parser, Debug, Clone, PartialEq)]
 pub struct LockUtxoCommand {
     /// Outpoint(s) to lock, format TXID:VOUT.
-    #[arg(env = "TXID:VOUT", long = "utxo", required = true, value_parser = parse_outpoint)]
+    #[arg(env = "TXID", long = "utxo", required = true, value_parser = parse_outpoint)]
     pub utxos: Vec<OutPoint>,
 }
 
@@ -891,7 +889,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for LockUtxoCommand {
 #[derive(Parser, Debug, Clone, PartialEq)]
 pub struct UnlockUtxoCommand {
     /// Outpoint(s) to unlock, format TXID:VOUT.
-    #[arg(env = "TXID:VOUT", long = "utxo", required = true, value_parser = parse_outpoint)]
+    #[arg(env = "TXID", long = "utxo", required = true, value_parser = parse_outpoint)]
     pub utxos: Vec<OutPoint>,
 }
 
