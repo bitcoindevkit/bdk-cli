@@ -874,7 +874,8 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for LockUtxoCommand {
         let wallet = &mut ctx.state.wallet;
         for out_point in &self.utxos {
             if wallet.get_utxo(*out_point).is_none() {
-                eprintln!("warning: {out_point} is not a known wallet UTXO; locking anyway");
+                eprintln!("warning: {out_point} is not a known wallet UTXO; skipping");
+                continue;
             }
             wallet.lock_outpoint(*out_point);
         }
