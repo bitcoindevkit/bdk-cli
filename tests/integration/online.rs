@@ -965,6 +965,92 @@ mod test_online {
             String::from_utf8_lossy(&out.stderr)
         );
     }
+
+    // lock → list → unlock cycle.
+    #[test]
+    fn test_lock_unlock_and_list_utxos() {
+        let (cli, mut cmd_init, env) = setup_online_wallet();
+        cmd_init.assert().success();
+        fund_and_sync_wallet(&cli, &env);
+
+        let unspent = run_wallet_json(&cli, &["unspent"]);
+        let outpoint = unspent["items"][0]["outpoint"]
+            .as_str()
+            .expect("one utxo")
+            .to_string();
+
+        let locked = run_wallet_json(&cli, &["lock_utxo", "--utxo", &outpoint]);
+        assert_eq!(locked["count"].as_u64(), Some(1), "lock output: {locked}");
+
+        // separate process — must still be locked (persistence)
+        let listed = run_wallet_json(&cli, &["locked_utxos"]);
+        assert_eq!(
+            listed["count"].as_u64(),
+            Some(1),
+            "lock must persist across processes: {listed}"
+        );
+        assert!(
+            listed["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|i| i.as_str() == Some(outpoint.as_str())),
+            "locked_utxos should list {outpoint}: {listed}"
+        );
+
+        let after = run_wallet_json(&cli, &["unlock_utxo", "--utxo", &outpoint]);
+        assert_eq!(
+            after["count"].as_u64(),
+            Some(0),
+            "unlock should clear it: {after}"
+        );
+        let final_list = run_wallet_json(&cli, &["locked_utxos"]);
+        assert_eq!(
+            final_list["count"].as_u64(),
+            Some(0),
+            "empty after unlock: {final_list}"
+        );
+    }
+
+    // a locked UTXO is excluded from coin selection.
+    #[test]
+    fn test_locked_utxo_excluded_from_coin_selection() {
+        let (cli, mut cmd_init, env) = setup_online_wallet();
+        cmd_init.assert().success();
+        fund_and_sync_wallet(&cli, &env);
+
+        let unspent = run_wallet_json(&cli, &["unspent"]);
+        let outpoint = unspent["items"][0]["outpoint"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        run_wallet_json(&cli, &["lock_utxo", "--utxo", &outpoint]);
+
+        // only UTXO is locked → create_tx must fail
+        let out = cli
+            .wallet_cmd(&[
+                "--wallet",
+                WALLET_NAME,
+                "create_tx",
+                "--to",
+                &format!("{RECIPIENT}:20000"),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            !out.status.success(),
+            "create_tx must fail when the only UTXO is locked"
+        );
+
+        // unlock → create_tx succeeds
+        run_wallet_json(&cli, &["unlock_utxo", "--utxo", &outpoint]);
+        let psbt = run_wallet_json(&cli, &["create_tx", "--to", &format!("{RECIPIENT}:20000")]);
+        assert!(
+            psbt["psbt"].as_str().is_some(),
+            "create_tx should succeed after unlock: {psbt}"
+        );
+    }
 }
 
 #[cfg(feature = "esplora")]

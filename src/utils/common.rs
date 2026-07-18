@@ -1,8 +1,8 @@
 use crate::{commands::WalletOpts, config::WalletConfig, error::BDKCliError as Error};
-#[cfg(feature = "bip322")]
-use bdk_bip322::SignatureFormat;
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{Info, Receiver, UnboundedReceiver, Warning};
+#[cfg(feature = "bip322")]
+use bdk_message_signer::SignatureFormat;
 #[cfg(feature = "silent-payments")]
 use bdk_sp::encoding::SilentPaymentCode;
 use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
@@ -12,7 +12,7 @@ use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
     feature = "cbf",
     feature = "rpc"
 ))]
-use bdk_wallet::{bitcoin::Psbt, event::WalletEvent};
+use bdk_wallet::{WalletEvent, bitcoin::Psbt};
 
 use crate::commands::OfflineWalletSubCommand;
 use std::{
@@ -220,7 +220,10 @@ pub fn command_requires_db(command: &OfflineWalletSubCommand) -> bool {
         | OfflineWalletSubCommand::BumpFee(_)
         | OfflineWalletSubCommand::NewAddress(_)
         | OfflineWalletSubCommand::UnusedAddress(_)
-        | OfflineWalletSubCommand::CreateTx(_) => true,
+        | OfflineWalletSubCommand::CreateTx(_)
+        | OfflineWalletSubCommand::LockUtxo(_)
+        | OfflineWalletSubCommand::UnlockUtxo(_)
+        | OfflineWalletSubCommand::LockedUtxos(_) => true,
 
         OfflineWalletSubCommand::Policies(_)
         | OfflineWalletSubCommand::PublicDescriptor(_)

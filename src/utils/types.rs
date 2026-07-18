@@ -55,10 +55,11 @@ pub struct UnspentDetails {
     pub is_spent: bool,
     pub derivation_index: u32,
     pub chain_position: serde_json::Value,
+    pub is_locked: bool,
 }
 
 impl UnspentDetails {
-    pub fn from_local_output(utxo: &LocalOutput, _network: Network) -> Self {
+    pub fn from_local_output(utxo: &LocalOutput, _network: Network, is_locked: bool) -> Self {
         let outpoint_str = utxo.outpoint.to_string();
 
         Self {
@@ -68,6 +69,7 @@ impl UnspentDetails {
             is_spent: utxo.is_spent,
             derivation_index: utxo.derivation_index,
             chain_position: serde_json::to_value(utxo.chain_position).unwrap_or(json!({})),
+            is_locked,
         }
     }
 }

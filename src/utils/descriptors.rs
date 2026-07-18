@@ -6,7 +6,7 @@ use bdk_wallet::{
     KeychainKind,
     bip39::{Language, Mnemonic},
     bitcoin::{
-        Network,
+        NetworkKind,
         bip32::{DerivationPath, Xpriv, Xpub},
         secp256k1::Secp256k1,
     },
@@ -25,7 +25,7 @@ use crate::utils::types::KeychainPair;
 pub fn generate_descriptors(
     desc_type: &str,
     key: &str,
-    network: Network,
+    network: NetworkKind,
 ) -> Result<DescriptorResult, Error> {
     let is_private = key.starts_with("xprv") || key.starts_with("tprv");
 
@@ -40,7 +40,7 @@ pub fn generate_descriptors(
             _ => 84u32,
         };
         let coin_type = match network {
-            Network::Bitcoin => 0u32,
+            NetworkKind::Main => 0u32,
             _ => 1u32,
         };
         let derivation_path = DerivationPath::from_str(&format!("m/{purpose}h/{coin_type}h/0h"))?;
@@ -52,7 +52,7 @@ pub fn generate_descriptors(
 fn generate_private_descriptors(
     desc_type: &str,
     key: &str,
-    network: Network,
+    network: NetworkKind,
 ) -> Result<DescriptorResult, Error> {
     use bdk_wallet::template::{Bip44, Bip49, Bip84, Bip86};
 
@@ -168,7 +168,7 @@ pub fn build_public_descriptor(
 
 /// Generate new mnemonic and descriptors
 pub fn generate_descriptor_with_mnemonic(
-    network: Network,
+    network: NetworkKind,
     desc_type: &str,
 ) -> Result<DescriptorResult, Error> {
     let mnemonic: GeneratedKey<Mnemonic, Segwitv0> =
@@ -185,7 +185,7 @@ pub fn generate_descriptor_with_mnemonic(
 /// Generate descriptors from existing mnemonic
 pub fn generate_descriptor_from_mnemonic(
     mnemonic_str: &str,
-    network: Network,
+    network: NetworkKind,
     desc_type: &str,
 ) -> Result<DescriptorResult, Error> {
     let mnemonic = Mnemonic::parse_in(Language::English, mnemonic_str)?;

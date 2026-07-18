@@ -53,12 +53,12 @@ impl AppCommand<AppContext<Init>> for DescriptorCommand {
         match &self.key {
             Some(key) => {
                 if is_mnemonic(key) {
-                    generate_descriptor_from_mnemonic(key, ctx.network, &self.desc_type)
+                    generate_descriptor_from_mnemonic(key, ctx.network.into(), &self.desc_type)
                 } else {
-                    generate_descriptors(&self.desc_type, key, ctx.network)
+                    generate_descriptors(&self.desc_type, key, ctx.network.into())
                 }
             }
-            None => generate_descriptor_with_mnemonic(ctx.network, &self.desc_type),
+            None => generate_descriptor_with_mnemonic(ctx.network.into(), &self.desc_type),
         }
     }
 }

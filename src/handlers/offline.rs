@@ -32,7 +32,7 @@ use {
 use {
     crate::utils::parse_signature_format,
     crate::utils::types::MessageResult,
-    bdk_bip322::{BIP322, MessageProof},
+    bdk_message_signer::{MessageProof, MessageSigner},
 };
 
 impl OfflineWalletSubCommand {
@@ -81,6 +81,11 @@ impl OfflineWalletSubCommand {
             Self::VerifyMessage(verify_message_command) => verify_message_command
                 .execute(ctx)?
                 .write_out(std::io::stdout()),
+            Self::LockUtxo(lock_utxo) => lock_utxo.execute(ctx)?.write_out(std::io::stdout()),
+            Self::UnlockUtxo(unlock_utxo) => unlock_utxo.execute(ctx)?.write_out(std::io::stdout()),
+            Self::LockedUtxos(locked_utxos) => {
+                locked_utxos.execute(ctx)?.write_out(std::io::stdout())
+            }
             #[cfg(feature = "dns_payment")]
             Self::CreateDnsTx(_) => Err(Error::Generic(
                 "CreateDnsTx is dispatched asynchronously through main".to_string(),
@@ -123,9 +128,13 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for UnspentCommand {
 
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
         let wallet = &mut ctx.state.wallet;
-        let utxos = wallet
-            .list_unspent()
-            .map(|utxo| UnspentDetails::from_local_output(&utxo, ctx.network))
+        let outputs: Vec<_> = wallet.list_unspent().collect();
+        let utxos = outputs
+            .into_iter()
+            .map(|utxo| {
+                let is_locked = wallet.is_outpoint_locked(utxo.outpoint);
+                UnspentDetails::from_local_output(&utxo, ctx.network, is_locked)
+            })
             .collect();
 
         Ok(ListResult::new(utxos))
@@ -195,7 +204,7 @@ pub struct CreateTxCommand {
     #[arg(long = "enable_rbf", short = 'r', default_value_t = true)]
     pub enable_rbf: bool,
 
-    /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
+    /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `PSBT_GLOBAL_XPUB` and more details to let the signer identify the change output.
     #[arg(long = "offline_signer")]
     pub offline_signer: bool,
 
@@ -269,7 +278,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
         }
 
         if self.offline_signer {
-            tx_builder.include_output_redeem_witness_script();
+            tx_builder.add_global_xpubs();
         }
 
         if let Some(fee_rate) = self.fee_rate
@@ -424,7 +433,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
         tx_builder.set_exact_sequence(Sequence::MAX);
 
         if self.offline_signer {
-            tx_builder.include_output_redeem_witness_script();
+            tx_builder.add_global_xpubs();
         }
 
         if let Some(fee_rate) = self.fee_rate
@@ -586,7 +595,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for BumpFeeCommand {
         }
 
         if self.offline_signer {
-            tx_builder.include_output_redeem_witness_script();
+            tx_builder.add_global_xpubs();
         }
 
         if let Some(utxos) = &self.utxos {
@@ -849,5 +858,68 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for VerifyMessageCommand {
             proven_amount: is_valid.proven_amount.map(|a| a.to_sat()),
             ..Default::default()
         })
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq)]
+pub struct LockUtxoCommand {
+    /// Outpoint(s) to lock, format TXID:VOUT.
+    #[arg(env = "TXID", long = "utxo", required = true, value_parser = parse_outpoint)]
+    pub utxos: Vec<OutPoint>,
+}
+
+impl AppCommand<AppContext<OfflineOperations<'_>>> for LockUtxoCommand {
+    type Output = ListResult<String>;
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let wallet = &mut ctx.state.wallet;
+        for out_point in &self.utxos {
+            if wallet.get_utxo(*out_point).is_none() {
+                eprintln!("warning: {out_point} is not a known wallet UTXO; skipping");
+                continue;
+            }
+            wallet.lock_outpoint(*out_point);
+        }
+        let locked = wallet
+            .list_locked_outpoints()
+            .map(|o| o.to_string())
+            .collect();
+        Ok(ListResult::new(locked))
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq)]
+pub struct UnlockUtxoCommand {
+    /// Outpoint(s) to unlock, format TXID:VOUT.
+    #[arg(env = "TXID", long = "utxo", required = true, value_parser = parse_outpoint)]
+    pub utxos: Vec<OutPoint>,
+}
+
+impl AppCommand<AppContext<OfflineOperations<'_>>> for UnlockUtxoCommand {
+    type Output = ListResult<String>;
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let wallet = &mut ctx.state.wallet;
+        for out_point in &self.utxos {
+            wallet.unlock_outpoint(*out_point);
+        }
+        let locked = wallet
+            .list_locked_outpoints()
+            .map(|o| o.to_string())
+            .collect();
+        Ok(ListResult::new(locked))
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq)]
+pub struct LockedUtxosCommand {}
+
+impl AppCommand<AppContext<OfflineOperations<'_>>> for LockedUtxosCommand {
+    type Output = ListResult<String>;
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let wallet = &mut ctx.state.wallet;
+        let locked = wallet
+            .list_locked_outpoints()
+            .map(|o| o.to_string())
+            .collect();
+        Ok(ListResult::new(locked))
     }
 }

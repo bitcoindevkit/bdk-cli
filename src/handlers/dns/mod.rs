@@ -127,7 +127,7 @@ impl AsyncAppCommand<AppContext<OfflineOperations<'_>>> for CreateDnsTxCommand {
             tx_builder.set_exact_sequence(Sequence::MAX);
         }
         if self.offline_signer {
-            tx_builder.include_output_redeem_witness_script();
+            tx_builder.add_global_xpubs();
         }
         if let Some(fee_rate) = self.fee_rate
             && let Some(fee_rate) = FeeRate::from_sat_per_vb(fee_rate as u64)
