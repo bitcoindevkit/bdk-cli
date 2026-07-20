@@ -814,7 +814,7 @@ mod test_online {
         }
     }
 
-    #[cfg(feature = "bip322")]
+    #[cfg(feature = "message_signer")]
     #[test]
     fn test_verify_message_proof_of_funds_uses_persisted_utxos() {
         let env = TestEnv::new().expect("Failed to start bdk_testenv");

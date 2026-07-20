@@ -5,6 +5,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [Unreleased]
  - Fixed `create_tx --send_all` to reject multiple recipients instead of silently using only the first one
+ - Renamed the `bip322` feature to `message_signer`
 
 ## [3.0.0]
 

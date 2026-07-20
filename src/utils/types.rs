@@ -110,7 +110,7 @@ pub struct KeychainPair<T> {
     pub internal: T,
 }
 
-#[cfg(feature = "bip322")]
+#[cfg(feature = "message_signer")]
 #[derive(Serialize, Debug, Default)]
 pub struct MessageResult {
     #[serde(skip_serializing_if = "Option::is_none")]

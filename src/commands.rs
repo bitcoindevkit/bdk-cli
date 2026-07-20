@@ -13,7 +13,7 @@
 //! All subcommands are defined in the below enums.
 
 #![allow(clippy::large_enum_variant)]
-#[cfg(feature = "bip322")]
+#[cfg(feature = "message_signer")]
 use crate::handlers::offline::{SignMessageCommand, VerifyMessageCommand};
 use crate::handlers::{
     config::{ListWalletsCommand, SaveConfigCommand},
@@ -362,10 +362,10 @@ pub enum OfflineWalletSubCommand {
     /// Combines multiple PSBTs into one.
     CombinePsbt(CombinePsbtCommand),
     /// Sign a message using BIP322
-    #[cfg(feature = "bip322")]
+    #[cfg(feature = "message_signer")]
     SignMessage(SignMessageCommand),
     /// Verify a BIP322 signature
-    #[cfg(feature = "bip322")]
+    #[cfg(feature = "message_signer")]
     VerifyMessage(VerifyMessageCommand),
     /// Lock UTXO(s) so they're excluded from coin selection.
     LockUtxo(LockUtxoCommand),

@@ -155,9 +155,10 @@ pub enum BDKCliError {
     #[cfg(feature = "payjoin")]
     #[error("Payjoin database error: {0}")]
     PayjoinDb(#[from] crate::handlers::payjoin::db::Error),
-    #[cfg(feature = "bip322")]
+
+    #[cfg(feature = "message_signer")]
     #[error("BIP-322 error: {0}")]
-    Bip322Error(#[from] bdk_message_signer::error::Error),
+    MessageSignerError(#[from] bdk_message_signer::error::Error),
 }
 
 impl From<ExtractTxError> for BDKCliError {

@@ -151,7 +151,7 @@ mod test_offline {
         .stderr(predicate::str::contains("Invalid"));
     }
 
-    #[cfg(feature = "bip322")]
+    #[cfg(feature = "message_signer")]
     #[test]
     fn test_sign_message_and_verify_message() {
         let (cli, mut cmd_init) = setup_wallet_config();
@@ -216,7 +216,7 @@ mod test_offline {
         .stdout(predicate::str::contains("\"valid\": true"));
     }
 
-    #[cfg(feature = "bip322")]
+    #[cfg(feature = "message_signer")]
     #[test]
     fn test_verify_message_rejects_tampered_message() {
         let (cli, mut cmd_init) = setup_wallet_config();
