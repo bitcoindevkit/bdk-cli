@@ -21,7 +21,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Updated `bdk_bitcoind_rpc` to v0.22.0, `bdk_electrum` to v0.24.0 
 - Dropped wallet `verbose` flag 
 - Fixed saving and reusing `proxy_opts` in wallet config 
-- Limit `test-threads` for running tests in parallel to 2 by 
+- Limit `test-threads` for running tests in parallel to 2 
 - Replaced `Network` enum with `NetworkKind` 
 - Replaced `broadcast_random` with `submit_package` for broadcasting transactions in KyotoClient 
 - Dropped `include_output_redeem_witness_script` and added `add_global_xpubs` to TxBuilder in `create_tx` command 
@@ -162,7 +162,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 ## [0.1.0-beta.1]
 
 [Unreleased]: https://github.com/bitcoindevkit/bdk-cli/compare/v4.0.0...HEAD
-[4.0.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v4.0.0...v3.0.0
+[4.0.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v3.0.0...v4.0.0
 [3.0.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/bitcoindevkit/bdk-cli/compare/v0.27.1...v1.0.0
