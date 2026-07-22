@@ -331,4 +331,7 @@ To view all saved wallet configurations:
 ```shell
 cargo run wallets`
 ```
-You can also use the `--pretty` flag for a formatted output.
+
+## Adding new features/command
+
+This [guide](./NEW_FEATURE.md) explains how to add a new command/feature to bdk-cli's modular architecture.
