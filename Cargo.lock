@@ -244,7 +244,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
 name = "bdk-cli"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "assert_cmd",
  "bdk_bitcoind_rpc",
