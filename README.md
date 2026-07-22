@@ -28,7 +28,7 @@
 
 **EXPERIMENTAL**
 
-This crate has been updated to use `bdk_wallet` 2.x. Only use  for testing on test networks.
+This crate has been updated to use `bdk_wallet` 3.x. Only use  for testing on test networks.
 
 This project provides a command-line Bitcoin wallet application using the latest [BDK Wallet APIs](https://docs.rs/bdk_wallet/1.0.0/bdk_wallet/index.html) and chain sources ([RPC](https://docs.rs/bdk_bitcoind_rpc/0.18.0/bdk_bitcoind_rpc/index.html), [Electrum](https://docs.rs/bdk_electrum/0.21.0/bdk_electrum/index.html), [Esplora](https://docs.rs/bdk_esplora/0.21.0/bdk_esplora/), [Kyoto](https://docs.rs/bdk_kyoto/0.9.0/bdk_kyoto/)). This might look tiny and innocent, but by harnessing the power of BDK it provides a powerful generic descriptor based command line wallet tool.
 And yes, it can do Taproot!!
@@ -36,7 +36,8 @@ And yes, it can do Taproot!!
 This crate can be used for the following purposes:
  - Instantly create a miniscript based wallet and connect to your backend of choice (Electrum, Esplora, Core RPC, Kyoto etc) and quickly play around with your own complex bitcoin scripting workflow. With one or many wallets, connected with one or many backends.
  - The `tests/integration.rs` module is used to document high level complex workflows between BDK and different Bitcoin infrastructure systems, like Core, Electrum and Lightning(soon TM).
- - Receive and send Async Payjoins with session persistence. Sessions can be resumed if interrupted.
+ - Receive and send async Payjoins with session persistence. Sessions can be resumed if interrupted.
+ - Creating (experimental) silent payment transactions and sending Bitcoin to silent payment addresses
  - (Planned) Expose the basic command handler via `wasm` to integrate `bdk-cli` functionality natively into the web platform. See also the [playground](https://bitcoindevkit.org/bdk-cli/playground/) page.
 
 If you are considering using BDK in your own wallet project bdk-cli is a nice playground to get started with. It allows easy testnet and regtest wallet operations, to try out what's possible with descriptors, miniscript, and BDK APIs. For more information on BDK refer to the [website](https://bitcoindevkit.org/) and the [rust docs](https://docs.rs/bdk_wallet/1.0.0/bdk_wallet/index.html)
@@ -47,11 +48,14 @@ bdk-cli can be compiled with different features to suit your experimental needs.
   - Blockchain Client Options
      - `esplora` : Connects the wallet to an esplora server.
      - `electrum` : Connects the wallet to an electrum server.
-     - `cbf`: Connects the wallet to a kyoto client and server.
+     - `cbf`: BIP157/158 compact block filters (Kyoto light client)
      - `rpc`: Connects the wallet to Bitcoind server.
   - Extra Utility Tools
      - `repl` : use bdk-cli as a [REPL](https://codewith.mu/en/tutorials/1.0/repl) shell (useful for quick manual testing of wallet operations).
      - `compiler` : opens up bdk-cli policy compiler commands.
+     - `message_signer`: BIP322 message signing/verification.
+     - `silent-payment`: Experimental BIP-352 silent payment sending
+     -  `dns_payment`: BIP-353 DNS payment instructions
     
 The `default` feature set is `repl` and `sqlite`. With the `default` features, `bdk-cli` can be used as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
 
