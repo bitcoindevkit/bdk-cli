@@ -54,8 +54,8 @@ bdk-cli can be compiled with different features to suit your experimental needs.
      - `repl` : use bdk-cli as a [REPL](https://codewith.mu/en/tutorials/1.0/repl) shell (useful for quick manual testing of wallet operations).
      - `compiler` : opens up bdk-cli policy compiler commands.
      - `message_signer`: BIP322 message signing/verification.
-     - `silent-payment`: Experimental BIP-352 silent payment sending
-     -  `dns_payment`: BIP-353 DNS payment instructions
+     - `silent-payments`: Experimental BIP-352 silent payment sending
+     - `dns_payment`: BIP-353 DNS payment instructions
     
 The `default` feature set is `repl` and `sqlite`. With the `default` features, `bdk-cli` can be used as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
 
