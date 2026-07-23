@@ -371,8 +371,9 @@ dependencies = [
 
 [[package]]
 name = "bdk_sp"
-version = "0.1.0"
-source = "git+https://github.com/bitcoindevkit/bdk-sp?tag=v0.1.0#79cfaf1e8829dd771c4461e6cd2a46c8abb00503"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c401af00a119ceee1bd9aa35dd15c9130b5d8381003b141fb5456a938ab8efed"
 dependencies = [
  "bitcoin",
 ]
