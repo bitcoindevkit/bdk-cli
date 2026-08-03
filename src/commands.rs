@@ -60,6 +60,9 @@ use crate::handlers::dns::{CreateDnsTxCommand, ResolveDnsRecipientCommand};
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
 
+#[cfg(feature = "hwi")]
+use crate::handlers::hwi::HwiCommand;
+
 /// The BDK Command Line Wallet App
 ///
 /// bdk-cli is a lightweight command line bitcoin wallet, powered by BDK.
@@ -207,6 +210,12 @@ pub enum CliSubCommand {
     /// Resolves BIP-353 DNS payment instructions for a human-readable name.
     #[cfg(feature = "dns_payment")]
     ResolveDnsRecipient(ResolveDnsRecipientCommand),
+    /// Hardware wallet (HWI) operations.
+    ///
+    /// List connected devices, register a wallet policy, display a receive
+    /// address for verification, or sign a PSBT with a hardware wallet.
+    #[cfg(feature = "hwi")]
+    Hwi(HwiCommand),
 }
 
 /// Wallet operation subcommands.

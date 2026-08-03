@@ -23,7 +23,7 @@ use log::{debug, warn};
 
 use crate::commands::{CliOpts, CliSubCommand, WalletSubCommand};
 use crate::error::BDKCliError as Error;
-#[cfg(feature = "dns_payment")]
+#[cfg(any(feature = "dns_payment", feature = "hwi"))]
 use crate::handlers::AsyncAppCommand;
 use crate::handlers::{AppCommand, AppContext};
 use crate::utils::output::FormatOutput;
@@ -215,6 +215,11 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
         }
         #[cfg(feature = "dns_payment")]
         CliSubCommand::ResolveDnsRecipient(cmd) => {
+            let mut ctx = AppContext::new(cli_opts.network, home_dir);
+            cmd.execute(&mut ctx).await?.write_out(std::io::stdout())?;
+        }
+        #[cfg(feature = "hwi")]
+        CliSubCommand::Hwi(cmd) => {
             let mut ctx = AppContext::new(cli_opts.network, home_dir);
             cmd.execute(&mut ctx).await?.write_out(std::io::stdout())?;
         }
