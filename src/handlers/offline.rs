@@ -42,7 +42,6 @@ const DEFAULT_OFFLINE_SIGNER: bool = true;
 #[cfg(not(feature = "hwi"))]
 const DEFAULT_OFFLINE_SIGNER: bool = false;
 
-
 impl OfflineWalletSubCommand {
     pub fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<(), Error> {
         match self {
@@ -551,7 +550,7 @@ pub struct BumpFeeCommand {
     pub shrink_address: Option<Address>,
 
     /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
-    #[arg(long = "offline_signer", default_value_t = DEFAULT_OFFLINE_SIGNER))]
+    #[arg(long = "offline_signer", default_value_t = DEFAULT_OFFLINE_SIGNER)]
     pub offline_signer: bool,
 
     /// Selects which utxos *must* be added to the tx. Unconfirmed utxos cannot be used.
