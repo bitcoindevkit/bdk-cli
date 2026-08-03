@@ -57,11 +57,11 @@ pub async fn enumerate_hwi_devices(
                 let device = device.with_network(network);
                 match device.get_info().await {
                     Ok(info) => {
-                        if info.jade_state == jade::api::JadeState::Locked {
-                            if let Err(e) = device.auth().await {
-                                warn!("Jade authentication failed: {e:?}");
-                                continue;
-                            }
+                        if info.jade_state == jade::api::JadeState::Locked
+                            && let Err(e) = device.auth().await
+                        {
+                            warn!("Jade authentication failed: {e:?}");
+                            continue;
                         }
                         devices.push(device.into());
                     }
@@ -82,38 +82,33 @@ pub async fn enumerate_hwi_devices(
 
     for device_info in api.device_list() {
         // BitBox02
-        if async_hwi::bitbox::is_bitbox02(device_info) {
-            if let Ok(handle) = device_info.open_device(&api) {
-                if let Ok(pairing) =
-                    PairingBitbox02WithLocalCache::<runtime::TokioRuntime>::connect(handle, None)
-                        .await
-                {
-                    if let Ok((device, _)) = pairing.wait_confirm().await {
-                        let mut bb02 = BitBox02::from(device).with_network(network);
-                        if let Some(policy) = wallet.policy {
-                            bb02 = bb02.with_policy(policy).map_err(map_device_err)?;
-                        }
-                        devices.push(bb02.into());
-                    }
-                }
+        if async_hwi::bitbox::is_bitbox02(device_info)
+            && let Ok(handle) = device_info.open_device(&api)
+            && let Ok(pairing) =
+                PairingBitbox02WithLocalCache::<runtime::TokioRuntime>::connect(handle, None).await
+            && let Ok((device, _)) = pairing.wait_confirm().await
+        {
+            let mut bb02 = BitBox02::from(device).with_network(network);
+            if let Some(policy) = wallet.policy {
+                bb02 = bb02.with_policy(policy).map_err(map_device_err)?;
             }
+            devices.push(bb02.into());
         }
 
         // Coldcard
         if device_info.vendor_id() == coldcard::api::COINKITE_VID
             && device_info.product_id() == coldcard::api::CKCC_PID
+            && let Some(sn) = device_info.serial_number()
         {
-            if let Some(sn) = device_info.serial_number() {
-                match coldcard::api::Coldcard::open(&api, sn, None) {
-                    Ok((cc, _)) => {
-                        let mut hw = coldcard::Coldcard::from(cc);
-                        if let Some(name) = wallet.name {
-                            hw = hw.with_wallet_name(name.to_string());
-                        }
-                        devices.push(hw.into());
+            match coldcard::api::Coldcard::open(&api, sn, None) {
+                Ok((cc, _)) => {
+                    let mut hw = coldcard::Coldcard::from(cc);
+                    if let Some(name) = wallet.name {
+                        hw = hw.with_wallet_name(name.to_string());
                     }
-                    Err(e) => warn!("Failed to open Coldcard (SN {sn}): {e:?}"),
+                    devices.push(hw.into());
                 }
+                Err(e) => warn!("Failed to open Coldcard (SN {sn}): {e:?}"),
             }
         }
     }
