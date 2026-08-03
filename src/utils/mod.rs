@@ -4,5 +4,5 @@ pub mod output;
 pub use common::*;
 pub mod runtime;
 pub mod types;
-// #[cfg(feature = "hwi")]
+#[cfg(feature = "hwi")]
 pub mod hwi;
