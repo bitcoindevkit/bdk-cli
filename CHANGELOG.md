@@ -13,6 +13,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Routed compact filter (cbf) traffic through the configured SOCKS5 proxy
 - Rejected `--proxy` on the `rpc` backend, and unsupported proxy options (`--proxy_auth`, `--timeout`) on the `rpc` and `cbf` backends, instead of silently ignoring them
 - Fixed `compile` rejecting policies that are valid for the requested script type
+- Added `hwi` feature with a hardware wallet `hwi` command to list connected devices, register a wallet policy, display a receive address, and sign PSBTs. Supports Ledger, Coldcard, BitBox02, Jade and Specter.
 
 ## [4.0.0]
 

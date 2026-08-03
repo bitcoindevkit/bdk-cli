@@ -56,6 +56,7 @@ bdk-cli can be compiled with different features to suit your experimental needs.
      - `message_signer`: BIP322 message signing/verification.
      - `silent-payments`: Experimental BIP-352 silent payment sending
      - `dns_payment`: BIP-353 DNS payment instructions
+     - `hwi`: Hardware wallet support (Ledger, Coldcard, BitBox02, Jade, Specter) to list devices, register a wallet policy, display a receive address, and sign PSBTs.
     
 The `default` feature set is `repl` and `sqlite`. With the `default` features, `bdk-cli` can be used as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
 
@@ -204,6 +205,38 @@ Sessions are processed sequentially (not concurrently) due to BDK-CLI's architec
 View all payjoin sessions (active and completed) and also see their status:
 ```
 cargo run -- wallet --wallet <wallet_name> payjoin_history
+```
+
+## Hardware wallet (HWI)
+
+Compile with the `hwi` feature to interact with a connected hardware wallet
+(Ledger, Coldcard, BitBox02, Jade or Specter). On Linux you need the USB/HID
+system libraries first:
+
+```shell
+sudo apt-get install -y libudev-dev libusb-1.0-0-dev pkg-config
+```
+List every connected device (fingerprint and model):
+
+```shell
+cargo run --features hwi -- hwi devices
+```
+Register a wallet policy on the device. This returns an HMAC that some devices (e.g. Ledger) require to reuse the policy on later calls:
+
+```shell
+cargo run --features hwi -- hwi --wallet my_wallet --ext-descriptor <policy> register
+```
+
+Display a receive address on the device for verification (defaults to external keychain, index 0):
+
+```shell
+cargo run --features hwi -- hwi --ext-descriptor <policy> address 
+```
+
+Sign a PSBT with the device:
+
+```shell
+cargo run --features hwi -- hwi --wallet my_wallet --ext-descriptor <policy> --hmac <hmac> sign <base64-psbt>
 ```
 
 ## Justfile
