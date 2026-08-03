@@ -13,6 +13,9 @@ pub mod online;
 ))]
 pub mod payjoin;
 pub mod repl;
+#[cfg(feature = "hwi")]
+pub mod hwi;
+
 
 #[cfg(any(
     feature = "electrum",
