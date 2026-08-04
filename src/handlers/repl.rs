@@ -86,6 +86,12 @@ pub(crate) async fn respond(
                 .map_err(|e| e.to_string())?;
                 Some(())
             }
+            #[cfg(feature = "hwi")]
+            WalletSubCommand::Hwi(_) => {
+                writeln!(std::io::stdout(), "hwi is not available in REPL mode")
+                    .map_err(|e| e.to_string())?;
+                Some(())
+            }
         },
 
         ReplSubCommand::Descriptor(cmd) => {
