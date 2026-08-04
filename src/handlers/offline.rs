@@ -212,7 +212,7 @@ pub struct CreateTxCommand {
     pub enable_rbf: bool,
 
     /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `PSBT_GLOBAL_XPUB` and more details to let the signer identify the change output.
-    #[arg(long = "offline_signer")]
+    #[arg(long = "offline_signer", default_value_t = DEFAULT_OFFLINE_SIGNER)]
     pub offline_signer: bool,
 
     /// Selects which utxos *must* be spent.
@@ -550,7 +550,7 @@ pub struct BumpFeeCommand {
     pub shrink_address: Option<Address>,
 
     /// Make a PSBT that can be signed by offline signers and hardware wallets. Forces the addition of `non_witness_utxo` and more details to let the signer identify the change output.
-    #[arg(long = "offline_signer", default_value_t = DEFAULT_OFFLINE_SIGNER)]
+    #[arg(long = "offline_signer")]
     pub offline_signer: bool,
 
     /// Selects which utxos *must* be added to the tx. Unconfirmed utxos cannot be used.
