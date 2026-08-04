@@ -61,7 +61,7 @@ use crate::handlers::dns::{CreateDnsTxCommand, ResolveDnsRecipientCommand};
 use crate::utils::parse_proxy_auth;
 
 #[cfg(feature = "hwi")]
-use crate::handlers::hwi::HwiCommand;
+use crate::handlers::hwi::{HwiCommand, WalletHwiCommand};
 
 /// The BDK Command Line Wallet App
 ///
@@ -223,6 +223,12 @@ pub enum CliSubCommand {
 pub enum WalletSubCommand {
     /// Save wallet configuration to `config.toml`.
     Config(SaveConfigCommand),
+    /// Hardware wallet (HWI) operations for this wallet.
+    ///
+    /// Register the wallet's policy on a device, display a receive
+    /// address, or sign a PSBT.
+    #[cfg(feature = "hwi")]
+    Hwi(WalletHwiCommand),
     #[cfg(any(
         feature = "electrum",
         feature = "esplora",
