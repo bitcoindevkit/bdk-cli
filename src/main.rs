@@ -115,6 +115,21 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
 
                 config_cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
             }
+            #[cfg(feature = "hwi")]
+            WalletSubCommand::Hwi(cmd) => {
+                let runtime = WalletRuntime::load(&home_dir, &wallet_name)?;
+                let mut wallet = runtime.build_wallet(false)?;
+
+                let mut ctx = AppContext::new_offline_wallet(
+                    runtime.network,
+                    runtime.home_dir.clone(),
+                    &mut wallet,
+                );
+
+                cmd.run(&mut ctx, &wallet_name)
+                    .await?
+                    .write_out(std::io::stdout())?;
+            }
         },
 
         CliSubCommand::Key { subcommand } => {
