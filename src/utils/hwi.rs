@@ -7,9 +7,11 @@
 //! that new devices supported upstream become available here with minimal
 //! changes.
 
+use async_hwi::bitbox::api::BitBox as BitBoxApi;
+use async_hwi::bitbox::api::runtime::TokioRuntime;
 use async_hwi::{
     HWI,
-    bitbox::{BitBox02, PairingBitbox02WithLocalCache, api::runtime},
+    bitbox::{BitBox02, NoiseConfigNoCache, PairingBitbox02WithLocalCache, api::runtime},
     coldcard,
     jade::{self, Jade},
     ledger::{HidApi, Ledger, LedgerSimulator, TransportHID},
@@ -75,6 +77,38 @@ pub async fn enumerate_hwi_devices(
     // Ledger simulator (Speculos).
     if let Ok(device) = LedgerSimulator::try_connect().await {
         devices.push(device.into());
+    }
+
+    // BitBox02 simulator (TCP, defaults to 127.0.0.1:15423). async-hwi only
+    // connects a physical BitBox over USB, so the simulator is reached directly
+    // through the re-exported bitbox-api. A connection error just means the
+    // simulator isn't running, so we ignore it and keep probing other devices.
+    {
+        if let Ok(bitbox) =
+            BitBoxApi::<TokioRuntime>::from_simulator(None, Box::new(NoiseConfigNoCache {})).await
+        {
+            match bitbox.unlock_and_pair().await {
+                Ok(pairing) => match pairing.wait_confirm().await {
+                    Ok(paired) => {
+                        // A freshly started simulator is unseeded, so key operations fail.
+                        // Applicable to only simulators
+                        if let Ok(info) = paired.device_info().await
+                            && !info.initialized
+                            && let Err(e) = paired.restore_from_mnemonic().await
+                        {
+                            warn!("BitBox simulator seeding failed: {e:?}");
+                        }
+                        let mut bb02 = BitBox02::from(paired).with_network(network);
+                        if let Some(policy) = wallet.policy {
+                            bb02 = bb02.with_policy(policy).map_err(map_device_err)?;
+                        }
+                        devices.push(bb02.into());
+                    }
+                    Err(e) => warn!("BitBox simulator pairing confirmation failed: {e:?}"),
+                },
+                Err(e) => warn!("BitBox simulator unlock/pair failed: {e:?}"),
+            }
+        }
     }
 
     // USB (HID) devices: BitBox02 and Coldcard.
