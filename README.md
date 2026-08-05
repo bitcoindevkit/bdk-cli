@@ -209,9 +209,7 @@ cargo run -- wallet --wallet <wallet_name> payjoin_history
 
 ## Hardware wallet (HWI)
 
-Compile with the `hwi` feature to interact with a connected hardware wallet
-(Ledger, Coldcard, BitBox02, Jade or Specter). On Linux you need the USB/HID
-system libraries first:
+Compile with the `hwi` feature to interact with a connected hardware wallet (Ledger, Coldcard, BitBox02, Jade or Specter). On Linux you need the USB/HID system libraries first:
 
 ```shell
 sudo apt-get install -y libudev-dev libusb-1.0-0-dev pkg-config
@@ -221,22 +219,22 @@ List every connected device (fingerprint and model):
 ```shell
 cargo run --features hwi -- hwi devices
 ```
-Register a wallet policy on the device. This returns an HMAC that some devices (e.g. Ledger) require to reuse the policy on later calls:
+Register a wallet policy on the device. 
 
 ```shell
-cargo run --features hwi -- hwi --wallet my_wallet --ext-descriptor <policy> register
+cargo run --features hwi -- wallet --wallet my_wallet hwi register
 ```
 
-Display a receive address on the device for verification (defaults to external keychain, index 0):
+Display a receive address on the device:
 
 ```shell
-cargo run --features hwi -- hwi --ext-descriptor <policy> address 
+cargo run --features hwi -- wallet --wallet my_wallet hwi address
 ```
 
 Sign a PSBT with the device:
 
 ```shell
-cargo run --features hwi -- hwi --wallet my_wallet --ext-descriptor <policy> --hmac <hmac> sign <base64-psbt>
+cargo run --features hwi -- wallet --wallet my_wallet hwi sign <base64-psbt>
 ```
 
 ## Justfile
