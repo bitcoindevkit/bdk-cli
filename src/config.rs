@@ -7,7 +7,7 @@
 use crate::client::ClientType;
 use crate::commands::WalletOpts;
 use crate::error::BDKCliError as Error;
-#[cfg(feature = "sqlite")]
+#[cfg(any(feature = "sqlite", feature = "redb"))]
 use crate::persister::DatabaseType;
 use crate::utils::{FILE_MODE, create_restricted_dir, limit_access, write_file_content};
 use bdk_wallet::bitcoin::Network;
@@ -197,6 +197,40 @@ impl TryFrom<&WalletConfigInner> for WalletOpts {
     }
 }
 
+pub(crate) fn remove_wallet_from_config_file(
+    datadir: &std::path::Path,
+    wallet_name: &str,
+) -> Result<(), Error> {
+    let config_path = datadir.join("config.toml");
+    let config_content = std::fs::read_to_string(&config_path)
+        .map_err(|error| Error::Generic(format!("Failed to read config file: {error}")))?;
+    let mut raw_config: toml::Table = toml::from_str(&config_content)
+        .map_err(|error| Error::Generic(format!("Failed to parse config file: {error}")))?;
+    let wallets = raw_config
+        .get_mut("wallets")
+        .and_then(toml::Value::as_table_mut)
+        .ok_or_else(|| Error::Generic("Config does not contain a wallets table".into()))?;
+
+    if wallets.remove(wallet_name).is_none() {
+        return Err(Error::Generic(format!(
+            "Wallet '{wallet_name}' not found in config"
+        )));
+    }
+
+    if wallets.is_empty() {
+        return fs::remove_file(&config_path).map_err(|error| {
+            Error::Generic(format!(
+                "Failed to remove config at {config_path:?}: {error}"
+            ))
+        });
+    }
+
+    let updated_config = toml::to_string_pretty(&raw_config)
+        .map_err(|error| Error::Generic(format!("Failed to serialize config: {error}")))?;
+    write_file_content(&config_path, &updated_config)
+        .map_err(|error| Error::Generic(format!("Failed to write config file: {error}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,8 +265,10 @@ mod tests {
             network: "testnet4".to_string(),
             ext_descriptor: EXT_DESCRIPTOR.to_string(),
             int_descriptor: Some(INT_DESCRIPTOR.to_string()),
-            #[cfg(any(feature = "sqlite", feature = "redb"))]
+            #[cfg(feature = "sqlite")]
             database_type: "sqlite".to_string(),
+            #[cfg(all(feature = "redb", not(feature = "sqlite")))]
+            database_type: "redb".to_string(),
 
             #[cfg(any(
                 feature = "electrum",
@@ -318,8 +354,10 @@ mod tests {
             network: "regtest".to_string(),
             ext_descriptor: "desc".to_string(),
             int_descriptor: None,
-            #[cfg(any(feature = "sqlite", feature = "redb"))]
+            #[cfg(feature = "sqlite")]
             database_type: "sqlite".to_string(),
+            #[cfg(all(feature = "redb", not(feature = "sqlite")))]
+            database_type: "redb".to_string(),
             #[cfg(any(
                 feature = "electrum",
                 feature = "esplora",

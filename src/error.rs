@@ -94,6 +94,17 @@ pub enum BDKCliError {
     #[error("Redb dabtabase error: {0}")]
     RedbDatabaseError(Box<bdk_redb::redb::DatabaseError>),
 
+    #[cfg(feature = "redb")]
+    #[error(
+        "Failed to inspect shared Redb store while determining whether wallet '{wallet_name}' has persisted data at {db_path:?}: {source}"
+    )]
+    RedbInspection {
+        wallet_name: String,
+        db_path: std::path::PathBuf,
+        #[source]
+        source: Box<bdk_redb::redb::Error>,
+    },
+
     #[error("Serde json error: {0}")]
     SerdeJson(#[from] serde_json::Error),
 
