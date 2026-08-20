@@ -96,6 +96,19 @@ impl WalletConfig {
     }
 
     /// Get config for a wallet
+    pub fn delete(datadir: &Path) -> Result<(), Error> {
+        let config_path = datadir.join("config.toml");
+        if config_path.exists() {
+            std::fs::remove_file(&config_path).map_err(|e| {
+                Error::Generic(format!("Failed to delete config file {config_path:?}: {e}"))
+            })?;
+            log::info!("Deleted config file at {config_path:?}");
+        } else {
+            log::warn!("Config file {config_path:?} does not exist");
+        }
+        Ok(())
+    }
+
     pub fn get_wallet_opts(&self, wallet_name: &str) -> Result<WalletOpts, Error> {
         self.wallets
             .get(wallet_name)

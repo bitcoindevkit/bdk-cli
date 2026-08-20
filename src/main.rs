@@ -52,7 +52,7 @@ async fn main() {
 
 async fn run(cli_opts: CliOpts) -> Result<(), Error> {
     let datadir = cli_opts.datadir.clone();
-    let home_dir = prepare_home_dir(datadir)?;
+    let home_dir = prepare_home_dir(datadir.clone())?;
 
     match cli_opts.subcommand.clone() {
         CliSubCommand::Wallet {
@@ -199,6 +199,11 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
 
             cmd.execute(&mut ctx)?.write_out(std::io::stdout())?;
         }
+        CliSubCommand::Delete => {
+            if let Some(dir) = datadir.as_deref() {
+                crate::config::WalletConfig::delete(dir)?;
+            }
+        },
         CliSubCommand::Completions { shell } => {
             clap_complete::generate(
                 shell,

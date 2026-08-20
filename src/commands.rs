@@ -95,6 +95,8 @@ pub struct CliOpts {
 #[derive(Debug, Subcommand, Clone, PartialEq)]
 #[command(rename_all = "snake")]
 pub enum CliSubCommand {
+    /// Delete configuration file.
+    Delete,
     /// Wallet operations.
     ///
     /// bdk-cli wallet operations includes all the basic wallet level tasks.
