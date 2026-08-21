@@ -12,6 +12,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Fixed routing electrum and esplora traffic through configured socks5 proxy
 - Routed compact filter (cbf) traffic through the configured SOCKS5 proxy
 - Rejected `--proxy` on the `rpc` backend, and unsupported proxy options (`--proxy_auth`, `--timeout`) on the `rpc` and `cbf` backends, instead of silently ignoring them
+- Fixed `compile` rejecting policies that are valid for the requested script type
 
 ## [4.0.0]
 
