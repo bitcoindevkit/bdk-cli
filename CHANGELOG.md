@@ -7,6 +7,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 - Added support for Multipath (two-paths) descriptors.
 - Fixed the data directory and config.toml permission being world-readable (0755/0644) to 0700/0600 on Unix.
+- Fixed `compile` rejecting policies that are valid for the requested script type
 
 ## [4.0.0]
 
