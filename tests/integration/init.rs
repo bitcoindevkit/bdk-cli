@@ -203,6 +203,32 @@ mod test_compile {
             .stdout(predicate::str::contains("wsh("));
     }
 
+    /// A policy can be valid for tr or wsh type and still exceed the limits of the
+    /// legacy context, whose 520-byte redeemScript cap does not apply to it.
+    #[test]
+    fn test_compile_policy_beyond_legacy_limits() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let keys = (1..=20)
+            .map(|i| format!("pk(K{i:02})"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let policy = format!("thresh(2,{keys})");
+
+        // compile tr
+        cli.cmd("compile", &[&policy, "--type", "tr"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("tr("));
+
+        // compile wsh
+        cli.cmd("compile", &[&policy, "--type", "wsh"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("wsh("));
+    }
+
     #[test]
     fn test_compile_invalid_policy() {
         let temp_dir = TempDir::new().unwrap();
