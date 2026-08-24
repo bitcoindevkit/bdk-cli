@@ -5,6 +5,8 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [Unreleased]
 
+- Fixed `compile` rejecting policies that are valid for the requested script type
+
 ## [4.0.0]
 
 - Added persistance to existing async payjoin integration
