@@ -43,6 +43,10 @@ pub enum BDKCliError {
     #[error("Key error: {0}")]
     KeyError(#[from] bdk_wallet::keys::KeyError),
 
+    #[cfg(feature = "hwi")]
+    #[error("Hardware wallet error: {0}")]
+    HwiError(#[from] async_hwi::Error),
+
     #[error("LocalChain error: {0}")]
     LocalChainError(#[from] bdk_wallet::chain::local_chain::ApplyHeaderError),
 

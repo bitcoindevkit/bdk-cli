@@ -40,6 +40,7 @@ reqwest = { version = "0.13.2", default-features = false, features = ["rustls"],
 url = { version = "2.5.8", optional = true }
 bdk_message_signer = { version = "0.2.0", optional = true }
 bitcoin-payment-instructions = { version = "0.7.0", optional = true}
+async-hwi = { version = "0.0.32", features = ["specter", "coldcard", "ledger", "jade", "bitbox", "service"], optional = true}
 
 [features]
 default = ["repl", "sqlite"]
@@ -71,6 +72,9 @@ compiler = []
 
 # Experimental silent payment sending capabilities
 silent-payments = ["bdk_sp"]
+
+# Use a hardware wallet (HWI) to display addresses, register wallets and sign PSBTs
+hwi = ["async-hwi"]
 
 [dev-dependencies]
 predicates = "3.0"
