@@ -15,6 +15,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Fixed `compile` rejecting policies that are valid for the requested script type
 - Fixed `warn!` messages, including the mainnet notice, being hidden unless `RUST_LOG` was set; warnings are now shown by default
 - Added `hwi` feature with a hardware wallet `hwi` command to list connected devices, register a wallet policy, display a receive address, and sign PSBTs. Supports Ledger, Coldcard, BitBox02, Jade and Specter.
+- Replaced plain `wallets` with `wallets list`, and added `wallets delete <wallet_name>` for unused saved wallet configurations.
 
 ## [4.0.0]
 
