@@ -12,6 +12,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Fixed routing electrum and esplora traffic through configured socks5 proxy
 - Routed compact filter (cbf) traffic through the configured SOCKS5 proxy
 - Rejected `--proxy` on the `rpc` backend, and unsupported proxy options (`--proxy_auth`, `--timeout`) on the `rpc` and `cbf` backends, instead of silently ignoring them
+- Replaced plain `wallets` with `wallets list`, and added `wallets delete <wallet_name>` for unused saved wallet configurations.
 
 ## [4.0.0]
 
