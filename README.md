@@ -328,12 +328,18 @@ cargo run --features electrum wallet -w my_wallet full_scan
 
 Note that each wallet has its own configuration, allowing multiple wallets with different configurations.
 
-#### View all saved Wallet Configs
+#### Manage saved Wallet Configs
 
 To view all saved wallet configurations:
 
 ```shell
-cargo run wallets`
+cargo run -- wallets list
+```
+
+To delete a saved wallet configuration:
+
+```shell
+cargo run -- wallets delete <wallet_name>
 ```
 
 ## Adding new features/command
