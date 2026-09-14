@@ -16,7 +16,7 @@
 #[cfg(feature = "message_signer")]
 use crate::handlers::offline::{SignMessageCommand, VerifyMessageCommand};
 use crate::handlers::{
-    config::{ListWalletsCommand, SaveConfigCommand},
+    config::{DeleteWalletConfigCommand, ListWalletsCommand, SaveConfigCommand},
     descriptor::DescriptorCommand,
     key::{DeriveKeyCommand, GenerateKeyCommand, RestoreKeyCommand},
     offline::{
@@ -141,8 +141,12 @@ pub enum CliSubCommand {
     /// This feature is intended for development and testing purposes only.
     Descriptor(DescriptorCommand),
 
-    /// List all saved wallet configurations.
-    Wallets(ListWalletsCommand),
+    /// Saved wallet configuration operations.
+    Wallets {
+        #[command(subcommand)]
+        subcommand: WalletsSubCommand,
+    },
+
     /// Generate tab-completion scripts for your shell.
     ///
     /// The completion script is output on stdout, allowing you to redirect
@@ -206,6 +210,19 @@ pub enum CliSubCommand {
     /// Resolves BIP-353 DNS payment instructions for a human-readable name.
     #[cfg(feature = "dns_payment")]
     ResolveDnsRecipient(ResolveDnsRecipientCommand),
+}
+
+/// Saved wallet configuration subcommands.
+#[derive(Debug, Subcommand, Clone, PartialEq)]
+pub enum WalletsSubCommand {
+    /// List saved wallet configurations.
+    List(ListWalletsCommand),
+
+    /// Delete an unused saved wallet configuration.
+    ///
+    /// The command refuses deletion once persistent wallet data exists.
+    /// Wallet database files are never deleted.
+    Delete(DeleteWalletConfigCommand),
 }
 
 /// Wallet operation subcommands.

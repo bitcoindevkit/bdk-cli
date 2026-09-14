@@ -7,7 +7,7 @@
 use crate::client::ClientType;
 use crate::commands::WalletOpts;
 use crate::error::BDKCliError as Error;
-#[cfg(feature = "sqlite")]
+#[cfg(any(feature = "sqlite", feature = "redb"))]
 use crate::persister::DatabaseType;
 use bdk_wallet::bitcoin::Network;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
@@ -223,8 +223,10 @@ mod tests {
             network: "testnet4".to_string(),
             ext_descriptor: EXT_DESCRIPTOR.to_string(),
             int_descriptor: Some(INT_DESCRIPTOR.to_string()),
-            #[cfg(any(feature = "sqlite", feature = "redb"))]
+            #[cfg(feature = "sqlite")]
             database_type: "sqlite".to_string(),
+            #[cfg(all(feature = "redb", not(feature = "sqlite")))]
+            database_type: "redb".to_string(),
 
             #[cfg(any(
                 feature = "electrum",
@@ -310,8 +312,10 @@ mod tests {
             network: "regtest".to_string(),
             ext_descriptor: "desc".to_string(),
             int_descriptor: None,
-            #[cfg(any(feature = "sqlite", feature = "redb"))]
+            #[cfg(feature = "sqlite")]
             database_type: "sqlite".to_string(),
+            #[cfg(all(feature = "redb", not(feature = "sqlite")))]
+            database_type: "redb".to_string(),
             #[cfg(any(
                 feature = "electrum",
                 feature = "esplora",
