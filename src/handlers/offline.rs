@@ -765,7 +765,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CombinePsbtCommand {
             psbts
                 .into_iter()
                 .try_fold::<_, _, Result<Psbt, Error>>(init_psbt, |mut acc, x| {
-                    let _ = acc.combine(x);
+                    acc.combine(x)?;
                     Ok(acc)
                 })?;
 

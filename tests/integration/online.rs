@@ -359,6 +359,35 @@ mod test_online {
     }
 
     #[test]
+    fn test_combine_psbt_rejects_mismatched_psbts() {
+        let (cli, mut cmd_init, env) = setup_online_wallet();
+        cmd_init.assert().success();
+        fund_and_sync_wallet(&cli, &env);
+
+        // Two PSBTs spending the same UTXO but paying different amounts: their
+        // unsigned transactions differ, so BIP174 forbids combining them.
+        let psbt_a = cli_create_tx(&cli, &format!("{RECIPIENT}:15000"));
+        let psbt_b = cli_create_tx(&cli, &format!("{RECIPIENT}:25000"));
+
+        let output = cli
+            .wallet_cmd(&["--wallet", WALLET_NAME, "combine_psbt", &psbt_a, &psbt_b])
+            .output()
+            .expect("failed to spawn `combine_psbt`");
+
+        assert!(
+            !output.status.success(),
+            "combine_psbt should fail on PSBTs with different unsigned transactions, got: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("different unsigned transaction"),
+            "unexpected error message: {stderr}"
+        );
+    }
+
+    #[test]
     fn test_bump_fee_replaces_unconfirmed_tx() {
         let (cli, mut cmd_init, env) = setup_online_wallet();
         cmd_init.assert().success();
