@@ -40,9 +40,13 @@ reqwest = { version = "0.13.2", default-features = false, features = ["rustls"],
 url = { version = "2.5.8", optional = true }
 bdk_message_signer = { version = "0.2.0", optional = true }
 bitcoin-payment-instructions = { version = "0.7.0", optional = true}
+dotenvy = { version = "0.15.7", optional = true }
 
 [features]
-default = ["repl", "sqlite"]
+default = ["repl", "sqlite", "env"]
+
+# Load arguments from a .env file instead of typing them manually
+env = ["dotenvy"]
 
 # To use the app in a REPL mode
 repl = ["shlex"]
@@ -56,7 +60,7 @@ cbf = ["bdk_kyoto", "_payjoin-dependencies"]
 electrum = ["bdk_electrum", "_payjoin-dependencies"]
 esplora = ["bdk_esplora", "_payjoin-dependencies"]
 rpc = ["bdk_bitcoind_rpc", "_payjoin-dependencies"]
-dns_payment = ["bitcoin-payment-instructions"] 
+dns_payment = ["bitcoin-payment-instructions"]
 
 # Internal features
 _payjoin-dependencies = ["payjoin", "reqwest", "url", "sqlite"]

@@ -6,6 +6,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 ## [Unreleased]
 
 - Added support for Multipath (two-paths) descriptors.
+- Add `env` feature that loads arguments from a .env file via dotenvy
 
 
 ## [4.0.0]
