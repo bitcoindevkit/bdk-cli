@@ -43,7 +43,7 @@ bitcoin-payment-instructions = { version = "0.7.0", optional = true}
 dotenvy = { version = "0.15.7", optional = true }
 
 [features]
-default = ["repl", "sqlite"]
+default = ["repl", "sqlite", "env"]
 
 # Load arguments from a .env file instead of typing them manually
 env = ["dotenvy"]

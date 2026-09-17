@@ -52,12 +52,13 @@ bdk-cli can be compiled with different features to suit your experimental needs.
      - `rpc`: Connects the wallet to Bitcoind server.
   - Extra Utility Tools
      - `repl` : use bdk-cli as a [REPL](https://codewith.mu/en/tutorials/1.0/repl) shell (useful for quick manual testing of wallet operations).
+     - `env` : loads arguments from a .env file via dotenvy
      - `compiler` : opens up bdk-cli policy compiler commands.
      - `message_signer`: BIP322 message signing/verification.
      - `silent-payments`: Experimental BIP-352 silent payment sending
      - `dns_payment`: BIP-353 DNS payment instructions
     
-The `default` feature set is `repl` and `sqlite`. With the `default` features, `bdk-cli` can be used as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
+The `default` feature set is `repl`, `env` and `sqlite`. With the `default` features, `bdk-cli` can be used as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
 
 
 ## Install bdk-cli
