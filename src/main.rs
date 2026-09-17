@@ -34,6 +34,8 @@ use clap::{CommandFactory, Parser};
 #[tokio::main]
 async fn main() {
     env_logger::init();
+    #[cfg(feature = "env")]
+    dotenvy::dotenv().ok();
     let cli_opts: CliOpts = CliOpts::parse();
 
     let network = &cli_opts.network;
