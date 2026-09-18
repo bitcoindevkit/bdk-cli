@@ -254,23 +254,6 @@ fn esplora_proxy_url(proxy_opts: &ProxyOpts) -> Option<String> {
     })
 }
 
-/// Reject a proxy the backend client does not understand.
-///
-/// `bitcoind`'s RPC client and the compact block filter backend have no SOCKS5
-/// support here, so a proxy set against them would silently do nothing.
-#[cfg(all(
-    any(feature = "electrum", feature = "esplora"),
-    any(feature = "rpc", feature = "cbf")
-))]
-fn reject_unsupported_proxy(proxy_opts: &ProxyOpts, backend: &str) -> Result<(), Error> {
-    match proxy_opts.proxy {
-        Some(_) => Err(Error::Generic(format!(
-            "The {backend} backend does not support a SOCKS5 proxy. Remove --proxy, or use the electrum or esplora backend."
-        ))),
-        None => Ok(()),
-    }
-}
-
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -315,8 +298,7 @@ pub(crate) fn new_blockchain_client(
 
         #[cfg(feature = "rpc")]
         ClientType::Rpc => {
-            #[cfg(any(feature = "electrum", feature = "esplora"))]
-            reject_unsupported_proxy(&wallet_opts.proxy_opts, "rpc")?;
+            wallet_opts.reject_proxy("rpc")?;
             let auth = match &wallet_opts.cookie {
                 Some(cookie) => bdk_bitcoind_rpc::bitcoincore_rpc::Auth::CookieFile(cookie.into()),
                 None => bdk_bitcoind_rpc::bitcoincore_rpc::Auth::UserPass(
@@ -333,10 +315,13 @@ pub(crate) fn new_blockchain_client(
 
         #[cfg(feature = "cbf")]
         ClientType::Cbf => {
-            #[cfg(any(feature = "electrum", feature = "esplora"))]
-            reject_unsupported_proxy(&wallet_opts.proxy_opts, "cbf")?;
+            wallet_opts.reject_proxy_auth("cbf")?;
+
             let scan_type = bdk_kyoto::ScanType::Sync;
-            let builder = bdk_kyoto::builder::Builder::new(_wallet.network());
+            let mut builder = bdk_kyoto::builder::Builder::new(_wallet.network());
+            if let Some(proxy) = wallet_opts.proxy_opts.socket_addr()? {
+                builder = builder.socks5_proxy(proxy);
+            }
 
             let light_client = builder
                 .required_peers(wallet_opts.compactfilter_opts.conn_count)

@@ -8,8 +8,8 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Added support for Multipath (two-paths) descriptors.
 - Fixed the data directory and config.toml permission being world-readable (0755/0644) to 0700/0600 on Unix.
 - Fixed routing electrum and esplora traffic through configured socks5 proxy
-- Rejected `--proxy` on the `rpc` and `cbf` backends
-
+- Routed compact filter (cbf) traffic through the configured SOCKS5 proxy
+- Rejected `--proxy` on the `rpc` backend, and unsupported proxy options (`--proxy_auth`, `--timeout`) on the `rpc` and `cbf` backends, instead of silently ignoring them
 
 ## [4.0.0]
 
