@@ -17,4 +17,5 @@ mod integration {
     mod init;
     mod offline;
     mod online;
+    mod proxy;
 }
