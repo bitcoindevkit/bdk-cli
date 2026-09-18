@@ -10,8 +10,8 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Fixed `create_tx` and `bump_fee` panicking on malformed `--utxos` and `--add_data` values instead of returning an error
 - Fixed `--fee_rate` silently truncating to a whole sat/vB, falling back to a default, or producing a zero-fee transaction, unusable values are now rejected
 - Fixed routing electrum and esplora traffic through configured socks5 proxy
-- Rejected `--proxy` on the `rpc` and `cbf` backends
-
+- Routed compact filter (cbf) traffic through the configured SOCKS5 proxy
+- Rejected `--proxy` on the `rpc` backend, and unsupported proxy options (`--proxy_auth`, `--timeout`) on the `rpc` and `cbf` backends, instead of silently ignoring them
 
 ## [4.0.0]
 

@@ -51,7 +51,7 @@ pub struct WalletConfigInner {
     pub parallel_requests: Option<usize>,
     #[cfg(feature = "rpc")]
     pub cookie: Option<String>,
-    #[cfg(any(feature = "electrum", feature = "esplora"))]
+    #[cfg(any(feature = "electrum", feature = "esplora", feature = "cbf"))]
     #[serde(default)]
     pub proxy: Option<String>,
     #[cfg(any(feature = "electrum", feature = "esplora"))]
@@ -175,14 +175,17 @@ impl TryFrom<&WalletConfigInner> for WalletOpts {
             #[cfg(feature = "rpc")]
             cookie: config.cookie.clone(),
 
-            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            #[cfg(any(feature = "electrum", feature = "esplora", feature = "cbf"))]
             proxy_opts: crate::commands::ProxyOpts {
                 proxy: config.proxy.clone(),
+                #[cfg(any(feature = "electrum", feature = "esplora"))]
                 proxy_auth: match &config.proxy_auth {
                     Some(s) => Some(crate::utils::parse_proxy_auth(s)?),
                     None => None,
                 },
+                #[cfg(any(feature = "electrum", feature = "esplora"))]
                 retries: config.proxy_retries.unwrap_or(5),
+                #[cfg(any(feature = "electrum", feature = "esplora"))]
                 timeout: config.proxy_timeout,
             },
 
@@ -251,7 +254,7 @@ mod tests {
             rpc_password: None,
             #[cfg(feature = "rpc")]
             cookie: None,
-            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            #[cfg(any(feature = "electrum", feature = "esplora", feature = "cbf"))]
             proxy: None,
             #[cfg(any(feature = "electrum", feature = "esplora"))]
             proxy_auth: None,
@@ -336,7 +339,7 @@ mod tests {
             rpc_password: None,
             #[cfg(feature = "rpc")]
             cookie: None,
-            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            #[cfg(any(feature = "electrum", feature = "esplora", feature = "cbf"))]
             proxy: None,
             #[cfg(any(feature = "electrum", feature = "esplora"))]
             proxy_auth: None,

@@ -53,9 +53,10 @@ use bdk_wallet::bitcoin::Network;
 use clap::{Args, Parser, Subcommand, value_parser};
 use clap_complete::Shell;
 
+#[cfg(any(feature = "rpc", feature = "cbf"))]
+use crate::error::BDKCliError as Error;
 #[cfg(feature = "dns_payment")]
 use crate::handlers::dns::{CreateDnsTxCommand, ResolveDnsRecipientCommand};
-
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
 
@@ -284,13 +285,68 @@ pub struct WalletOpts {
     #[cfg(feature = "cbf")]
     #[clap(flatten)]
     pub compactfilter_opts: CompactFilterOpts,
-    #[cfg(any(feature = "electrum", feature = "esplora"))]
+    #[cfg(any(feature = "electrum", feature = "esplora", feature = "cbf"))]
     #[command(flatten)]
     pub proxy_opts: ProxyOpts,
 }
 
+#[cfg(any(feature = "rpc", feature = "cbf"))]
+impl WalletOpts {
+    /// Reject a proxy the selected backend cannot honour at all, rather than
+    /// silently ignoring it.
+    ///
+    /// `--retries` cannot be checked the same way: it defaults to 5, so a
+    /// user-supplied value cannot be told apart from the default.
+    #[cfg(feature = "rpc")]
+    pub(crate) fn reject_proxy(&self, _backend: &str) -> Result<(), Error> {
+        #[cfg(any(feature = "electrum", feature = "esplora", feature = "cbf"))]
+        if self.proxy_opts.proxy.is_some() {
+            return Err(Error::Generic(format!(
+                "The {_backend} backend does not support a SOCKS5 proxy. \
+                 Remove --proxy, or use the electrum, esplora or cbf backend."
+            )));
+        }
+        #[cfg(any(feature = "electrum", feature = "esplora"))]
+        if self.proxy_opts.proxy_auth.is_some() {
+            return Err(Error::Generic(format!(
+                "The {_backend} backend does not support --proxy_auth."
+            )));
+        }
+        #[cfg(any(feature = "electrum", feature = "esplora"))]
+        if self.proxy_opts.timeout.is_some() {
+            return Err(Error::Generic(format!(
+                "The {_backend} backend does not support --timeout."
+            )));
+        }
+        Ok(())
+    }
+
+    /// Reject proxy options the cbf backend cannot honour, even though it does
+    /// support `--proxy` itself.
+    ///
+    /// Kyoto takes the proxy as a bare `SocketAddr`, so it has nowhere to put a
+    /// username and password, and no proxy-specific timeout knob. `--retries`
+    /// cannot be checked for the same reason noted on `reject_proxy`.
+    #[cfg(feature = "cbf")]
+    pub(crate) fn reject_proxy_auth(&self, _backend: &str) -> Result<(), Error> {
+        #[cfg(any(feature = "electrum", feature = "esplora"))]
+        if self.proxy_opts.proxy_auth.is_some() {
+            return Err(Error::Generic(format!(
+                "The {_backend} backend does not support --proxy_auth."
+            )));
+        }
+        #[cfg(any(feature = "electrum", feature = "esplora"))]
+        if self.proxy_opts.timeout.is_some() {
+            return Err(Error::Generic(format!(
+                "The {_backend} backend does not support --timeout."
+            )));
+        }
+        Ok(())
+    }
+}
+
 /// Options to configure a SOCKS5 proxy for a blockchain client connection.
-#[cfg(any(feature = "electrum", feature = "esplora"))]
+#[cfg(any(feature = "electrum", feature = "esplora", feature = "cbf"))]
 #[derive(Debug, Args, Clone, PartialEq, Eq)]
 pub struct ProxyOpts {
     /// Sets the SOCKS5 proxy for a blockchain client.
@@ -298,10 +354,12 @@ pub struct ProxyOpts {
     pub proxy: Option<String>,
 
     /// Sets the SOCKS5 proxy credential.
+    #[cfg(any(feature = "electrum", feature = "esplora"))]
     #[arg(env = "PROXY_USER:PASSWD", long="proxy_auth", value_parser = parse_proxy_auth)]
     pub proxy_auth: Option<(String, String)>,
 
     /// Sets the SOCKS5 proxy retries for the blockchain client.
+    #[cfg(any(feature = "electrum", feature = "esplora"))]
     #[arg(
         env = "PROXY_RETRIES",
         short = 'r',
@@ -311,10 +369,32 @@ pub struct ProxyOpts {
     pub retries: u8,
 
     /// Sets the SOCKS5 proxy timeout for the blockchain client.
+    #[cfg(any(feature = "electrum", feature = "esplora"))]
     #[arg(env = "PROXY_TIMEOUT", short = 't', long = "timeout")]
     pub timeout: Option<u8>,
 }
 
+#[cfg(feature = "cbf")]
+impl ProxyOpts {
+    /// The proxy as a [`SocketAddr`] for kyoto.
+    ///
+    /// Unlike the electrum and esplora backends this cannot take a hostname.
+    pub(crate) fn socket_addr(&self) -> Result<Option<std::net::SocketAddr>, Error> {
+        let Some(addr) = self.proxy.as_ref() else {
+            return Ok(None);
+        };
+        let addr = addr
+            .strip_prefix("socks5h://")
+            .or_else(|| addr.strip_prefix("socks5://"))
+            .unwrap_or(addr);
+
+        addr.parse().map(Some).map_err(|_| {
+            Error::Generic(format!(
+                "The cbf backend needs --proxy as an ip:port address, but got '{addr}'."
+            ))
+        })
+    }
+}
 /// Options to configure a BIP157 Compact Filter backend.
 #[cfg(feature = "cbf")]
 #[derive(Debug, Args, Clone, PartialEq, Eq)]
@@ -436,4 +516,68 @@ pub enum ReplSubCommand {
     Descriptor(DescriptorCommand),
     /// Exit REPL loop.
     Exit,
+}
+
+#[cfg(all(test, feature = "cbf"))]
+mod cbf_proxy_tests {
+    use super::*;
+    use std::net::SocketAddr;
+
+    /// `ProxyOpts` carrying only a proxy; the other fields exist for the electrum
+    /// and esplora backends, which kyoto does not share.
+    fn proxy_opts(proxy: &str) -> ProxyOpts {
+        ProxyOpts {
+            proxy: Some(proxy.to_string()),
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            proxy_auth: None,
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            retries: 5,
+            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            timeout: None,
+        }
+    }
+
+    #[test]
+    fn parses_the_spellings_the_other_backends_accept() {
+        let expected = Some(SocketAddr::from(([127, 0, 0, 1], 9050)));
+
+        assert_eq!(
+            proxy_opts("127.0.0.1:9050").socket_addr().unwrap(),
+            expected
+        );
+        assert_eq!(
+            proxy_opts("socks5://127.0.0.1:9050").socket_addr().unwrap(),
+            expected
+        );
+        assert_eq!(
+            proxy_opts("socks5h://127.0.0.1:9050")
+                .socket_addr()
+                .unwrap(),
+            expected
+        );
+    }
+
+    #[test]
+    fn parses_an_ipv6_proxy() {
+        assert_eq!(
+            proxy_opts("[::1]:9050").socket_addr().unwrap(),
+            Some("[::1]:9050".parse::<SocketAddr>().unwrap())
+        );
+    }
+
+    #[test]
+    fn rejects_a_hostname_kyoto_cannot_use() {
+        let err = proxy_opts("tor.local:9050").socket_addr().unwrap_err();
+        assert!(
+            err.to_string().contains("ip:port"),
+            "unhelpful error: {err}"
+        );
+    }
+
+    #[test]
+    fn no_proxy_is_not_an_error() {
+        let mut opts = proxy_opts("127.0.0.1:9050");
+        opts.proxy = None;
+        assert_eq!(opts.socket_addr().unwrap(), None);
+    }
 }
