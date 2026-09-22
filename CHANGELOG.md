@@ -6,7 +6,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 ## [Unreleased]
 
 - Added support for Multipath (two-paths) descriptors.
-
+- Fixed the data directory and config.toml permission being world-readable (0755/0644) to 0700/0600 on Unix.
 
 ## [4.0.0]
 

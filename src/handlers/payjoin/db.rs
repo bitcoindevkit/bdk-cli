@@ -11,7 +11,7 @@ use payjoin::receive::v2::SessionEvent as ReceiverSessionEvent;
 use payjoin::send::v2::SessionEvent as SenderSessionEvent;
 
 use crate::error::BDKCliError;
-use crate::utils::prepare_home_dir;
+use crate::utils::{create_restricted_dir, prepare_home_dir};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -67,7 +67,7 @@ pub fn open_payjoin_db(
     wallet_name: &str,
 ) -> std::result::Result<Arc<Database>, BDKCliError> {
     let wallet_dir = prepare_home_dir(datadir)?.join(wallet_name);
-    std::fs::create_dir_all(&wallet_dir).map_err(|e| BDKCliError::Generic(e.to_string()))?;
+    create_restricted_dir(&wallet_dir).map_err(|e| BDKCliError::Generic(e.to_string()))?;
     let db = Arc::new(Database::create(wallet_dir.join(DB_FILENAME))?);
     db.prune_expired_sessions()?;
     Ok(db)

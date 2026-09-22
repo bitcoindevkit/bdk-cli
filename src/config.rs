@@ -9,6 +9,7 @@ use crate::commands::WalletOpts;
 use crate::error::BDKCliError as Error;
 #[cfg(feature = "sqlite")]
 use crate::persister::DatabaseType;
+use crate::utils::{FILE_MODE, create_restricted_dir, limit_access, write_file_content};
 use bdk_wallet::bitcoin::Network;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 use clap::ValueEnum;
@@ -74,6 +75,9 @@ impl WalletConfig {
         if !config_path.exists() {
             return Ok(None);
         }
+        if let Err(e) = limit_access(&config_path, FILE_MODE) {
+            eprintln!("WARNING: could not restrict {config_path:?}: {e}\n");
+        }
         let config_content = fs::read_to_string(&config_path)
             .map_err(|e| Error::Generic(format!("Failed to read config file: {e}")))?;
         let config: WalletConfig = toml::from_str(&config_content)
@@ -86,9 +90,10 @@ impl WalletConfig {
         let config_path = datadir.join("config.toml");
         let config_content = toml::to_string_pretty(self)
             .map_err(|e| Error::Generic(format!("Failed to serialize config: {e}")))?;
-        fs::create_dir_all(datadir)
+        create_restricted_dir(datadir)
             .map_err(|e| Error::Generic(format!("Failed to create directory {datadir:?}: {e}")))?;
-        fs::write(&config_path, config_content).map_err(|e| {
+        // The config can hold secret descriptors, so it must never be left readable by other users.
+        write_file_content(&config_path, &config_content).map_err(|e| {
             Error::Generic(format!("Failed to write config file {config_path:?}: {e}"))
         })?;
         log::debug!("Saved config to {config_path:?}");
@@ -345,5 +350,44 @@ mod tests {
 
         let result: Result<WalletOpts, Error> = (&inner).try_into();
         assert!(result.is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_config_is_unreadable_by_other_users() {
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        WalletConfig {
+            wallets: HashMap::new(),
+        }
+        .save(temp_dir.path())
+        .unwrap();
+
+        let mode = fs::metadata(&config_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_default_permissions_restricted_on_load_and_save() {
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        fs::write(&config_path, "[wallets]\n").unwrap();
+        fs::set_permissions(&config_path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        let config = WalletConfig::load(temp_dir.path()).unwrap().unwrap();
+        assert_eq!(mode(&config_path), 0o600);
+
+        fs::set_permissions(&config_path, fs::Permissions::from_mode(0o644)).unwrap();
+        config.save(temp_dir.path()).unwrap();
+        assert_eq!(mode(&config_path), 0o600);
     }
 }

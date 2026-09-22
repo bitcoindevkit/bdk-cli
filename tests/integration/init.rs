@@ -291,8 +291,53 @@ mod test_config {
         assert_eq!(config["ext_descriptor"].as_str().unwrap(), ext_desc);
         assert_eq!(config["int_descriptor"].as_str().unwrap(), int_desc);
     }
-}
 
+    #[cfg(unix)]
+    #[test]
+    fn test_config_with_private_keys_is_unreadable_by_other_users() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+
+        let desc = cli
+            .cmd("descriptor", &["--type", "tr"])
+            .output()
+            .expect("Command to generate descriptors failed");
+        let desc_values: Value =
+            serde_json::from_slice(&desc.stdout).expect("Invalid JSON from output descriptor");
+        let priv_desc = &desc_values["private_descriptors"];
+
+        cli.build_base_cmd()
+            .arg("wallet")
+            .arg("--wallet")
+            .arg("secret_wallet")
+            .arg("config")
+            .arg("--ext-descriptor")
+            .arg(priv_desc["external"].as_str().unwrap())
+            .arg("--int-descriptor")
+            .arg(priv_desc["internal"].as_str().unwrap())
+            .arg("--client-type")
+            .arg("rpc")
+            .arg("--database-type")
+            .arg("sqlite")
+            .arg("--url")
+            .arg("http://localhost:18443")
+            .assert()
+            .success()
+            .stderr(predicate::str::contains("PRIVATE KEYS"));
+
+        let mode = std::fs::metadata(temp_dir.path().join("config.toml"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "config.toml holds a private descriptor and must not be readable by other users"
+        );
+    }
+}
 //  SILENT PAYMENTS
 #[cfg(feature = "silent-payments")]
 mod test_silent_payments {
