@@ -10,7 +10,7 @@ Once the project reaches a more mature state (>= `1.0.0`), we will very likely s
 
 The "feature freeze" will happen **one week before the release date**. This means a new branch will be created originating from the `master` tip at that time, and in that branch we will stop adding new features and only focus on ensuring the ones we've added are working properly.
 
-To create a new release a release manager will create a new issue using the `Release` template and follow the template instructions.
+To create a new release a release manager will trigger the `release-plz` workflow to create a new release PR, review and approve it, and then trigger the `release-plz` workflow again to publish it to `crates.io`.
 
 [used by the Rust language]: https://doc.rust-lang.org/book/appendix-07-nightly-rust.html
 [Semantic Versioning]: https://semver.org/
