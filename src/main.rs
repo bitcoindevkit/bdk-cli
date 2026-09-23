@@ -19,7 +19,7 @@ mod persister;
 mod utils;
 
 use bdk_wallet::bitcoin::Network;
-use log::{debug, warn};
+use tracing::{debug, warn};
 
 use crate::commands::{CliOpts, CliSubCommand, WalletSubCommand};
 use crate::error::BDKCliError as Error;
@@ -33,7 +33,6 @@ use clap::{CommandFactory, Parser};
 
 #[tokio::main]
 async fn main() {
-    env_logger::init();
     let cli_opts: CliOpts = CliOpts::parse();
 
     let network = &cli_opts.network;
