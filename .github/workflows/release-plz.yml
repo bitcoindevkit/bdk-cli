@@ -14,7 +14,7 @@ name: Release-plz
 #    Re-run it to refresh the release PR after new commits land on the branch.
 # 2. The `release` job checks whether the release PR has been merged. If so, it
 #    publishes the crate to crates.io (via trusted publishing / OIDC, no token
-#    secret) and creates the `<crate>-vX.Y.Z` git tag and GitHub release.
+#    secret) and creates the `vX.Y.Z` git tag and GitHub release.
 #    The job runs in the `release` GitHub environment, whose required reviewers
 #    are defined in the GitHub repository config; publishing waits until an
 #    authorized GitHub user approves it in the Actions UI.
