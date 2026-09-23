@@ -16,8 +16,6 @@ bdk_wallet = { version = "3.1.0", features = ["rusqlite", "keys-bip39", "compile
 clap = { version = "4.6", features = ["derive","env"] }
 clap_complete = "4.6"
 dirs = {  version = "6.0.0" }
-env_logger = "0.11.10"
-log = "0.4"
 serde_json = "1.0"
 thiserror = "2.0.18"
 tokio = { version = "1", features = ["full"] }
@@ -56,7 +54,7 @@ cbf = ["bdk_kyoto", "_payjoin-dependencies"]
 electrum = ["bdk_electrum", "_payjoin-dependencies"]
 esplora = ["bdk_esplora", "_payjoin-dependencies"]
 rpc = ["bdk_bitcoind_rpc", "_payjoin-dependencies"]
-dns_payment = ["bitcoin-payment-instructions"] 
+dns_payment = ["bitcoin-payment-instructions"]
 
 # Internal features
 _payjoin-dependencies = ["payjoin", "reqwest", "url", "sqlite"]

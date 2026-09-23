@@ -91,7 +91,7 @@ impl WalletConfig {
         fs::write(&config_path, config_content).map_err(|e| {
             Error::Generic(format!("Failed to write config file {config_path:?}: {e}"))
         })?;
-        log::debug!("Saved config to {config_path:?}");
+        tracing::debug!("Saved config to {config_path:?}");
         Ok(())
     }
 
