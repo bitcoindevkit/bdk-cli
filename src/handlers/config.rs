@@ -128,7 +128,7 @@ impl AppCommand<AppContext<Init>> for SaveConfigCommand {
             #[cfg(feature = "rpc")]
             cookie: self.wallet_opts.cookie.clone(),
 
-            #[cfg(any(feature = "electrum", feature = "esplora"))]
+            #[cfg(any(feature = "electrum", feature = "esplora", feature = "cbf"))]
             proxy: self.wallet_opts.proxy_opts.proxy.clone(),
             #[cfg(any(feature = "electrum", feature = "esplora"))]
             proxy_auth: self
