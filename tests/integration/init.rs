@@ -113,7 +113,7 @@ mod test_wallets {
         let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
 
         let mut cmd = cli.build_base_cmd();
-        cmd.arg("wallets");
+        cmd.arg("wallets").arg("list");
 
         cmd.assert()
             .failure()
@@ -157,10 +157,240 @@ mod test_wallets {
 
         cli.build_base_cmd()
             .arg("wallets")
+            .arg("list")
             .assert()
             .success()
             .stdout(predicate::str::contains("wallet_one"))
             .stdout(predicate::str::contains("wallet_two"));
+    }
+}
+
+// --- REDB WALLET CONFIGURATION TESTS ---
+#[cfg(feature = "redb")]
+mod test_redb_wallet_config {
+    use super::*;
+    use serde_json::Value;
+
+    fn save_wallet(cli: &BdkCli, wallet_name: &str) {
+        let descriptor = cli
+            .cmd("descriptor", &["--type", "tr"])
+            .output()
+            .expect("Command to generate descriptors failed");
+        assert!(descriptor.status.success());
+
+        let descriptor_json: Value =
+            serde_json::from_slice(&descriptor.stdout).expect("Invalid descriptor JSON");
+        let public_descriptors = &descriptor_json["public_descriptors"];
+
+        let mut command = cli.build_base_cmd();
+        command
+            .arg("wallet")
+            .arg("--wallet")
+            .arg(wallet_name)
+            .arg("config")
+            .arg("--ext-descriptor")
+            .arg(public_descriptors["external"].as_str().unwrap())
+            .arg("--int-descriptor")
+            .arg(public_descriptors["internal"].as_str().unwrap());
+
+        #[cfg(feature = "rpc")]
+        command
+            .arg("--client-type")
+            .arg("rpc")
+            .arg("--url")
+            .arg("http://localhost:18443");
+
+        #[cfg(all(not(feature = "rpc"), feature = "esplora"))]
+        command
+            .arg("--client-type")
+            .arg("esplora")
+            .arg("--url")
+            .arg("http://localhost:3000");
+
+        #[cfg(all(not(feature = "rpc"), not(feature = "esplora"), feature = "electrum"))]
+        command
+            .arg("--client-type")
+            .arg("electrum")
+            .arg("--url")
+            .arg("tcp://localhost:50001");
+
+        #[cfg(all(
+            not(feature = "rpc"),
+            not(feature = "esplora"),
+            not(feature = "electrum"),
+            feature = "cbf"
+        ))]
+        command.arg("--client-type").arg("cbf");
+
+        command
+            .arg("--database-type")
+            .arg("redb")
+            .assert()
+            .success();
+    }
+
+    #[test]
+    fn test_delete_redb_configs_preserves_shared_database() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+        let persisted_wallet = "persisted_redb_wallet";
+        let unused_wallet = "unused_redb_wallet";
+        let config_path = temp_dir.path().join("config.toml");
+        let database_path = temp_dir.path().join("wallet.redb");
+
+        save_wallet(&cli, persisted_wallet);
+        cli.wallet_cmd(&["--wallet", persisted_wallet, "new_address"])
+            .assert()
+            .success();
+        assert!(database_path.is_file());
+
+        save_wallet(&cli, unused_wallet);
+        cli.build_base_cmd()
+            .args(["wallets", "delete", unused_wallet])
+            .assert()
+            .success();
+
+        assert!(config_path.is_file());
+        assert!(database_path.is_file());
+        cli.build_base_cmd()
+            .args(["wallets", "list"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(persisted_wallet))
+            .stdout(predicate::str::contains(unused_wallet).not());
+
+        cli.build_base_cmd()
+            .args(["wallets", "delete", persisted_wallet])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "Wallet data exists for configuration 'persisted_redb_wallet'; the saved configuration was not deleted",
+            ));
+
+        assert!(config_path.is_file());
+        assert!(database_path.is_file());
+    }
+}
+
+// --- SINGLE-BACKEND CROSS-BACKEND MARKER TESTS ---
+#[cfg(all(feature = "sqlite", not(feature = "redb")))]
+mod test_sqlite_only_cross_backend_marker {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_delete_rejects_foreign_redb_file_with_sqlite_marker() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+        let wallet_name = "sqlite_only_foreign_redb_data";
+        let config_path = temp_dir.path().join("config.toml");
+        let redb_path = temp_dir.path().join("wallet.redb");
+
+        fs::write(
+            &config_path,
+            format!(
+                "[wallets.{wallet_name}]\nwallet = \"{wallet_name}\"\nnetwork = \"regtest\"\next_descriptor = \"wpkh(test)\"\nint_descriptor = \"wpkh(test)\"\ndatabase_type = \"sqlite\"\n"
+            ),
+        )
+        .unwrap();
+        fs::write(&redb_path, []).unwrap();
+
+        cli.build_base_cmd()
+            .args(["wallets", "delete", wallet_name])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "Wallet data exists for configuration 'sqlite_only_foreign_redb_data'; the saved configuration was not deleted",
+            ));
+
+        assert!(config_path.is_file());
+        assert!(redb_path.is_file());
+    }
+}
+
+#[cfg(all(feature = "redb", not(feature = "sqlite")))]
+mod test_redb_only_cross_backend_marker {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_delete_rejects_foreign_sqlite_file_with_redb_marker() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+        let wallet_name = "redb_only_foreign_sqlite_data";
+        let config_path = temp_dir.path().join("config.toml");
+        let sqlite_path = temp_dir.path().join(wallet_name).join("wallet.sqlite");
+
+        fs::write(
+            &config_path,
+            format!(
+                "[wallets.{wallet_name}]\nwallet = \"{wallet_name}\"\nnetwork = \"regtest\"\next_descriptor = \"wpkh(test)\"\nint_descriptor = \"wpkh(test)\"\ndatabase_type = \"redb\"\n"
+            ),
+        )
+        .unwrap();
+        fs::create_dir_all(sqlite_path.parent().unwrap()).unwrap();
+        fs::write(&sqlite_path, []).unwrap();
+
+        cli.build_base_cmd()
+            .args(["wallets", "delete", wallet_name])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "Wallet data exists for configuration 'redb_only_foreign_sqlite_data'; the saved configuration was not deleted",
+            ));
+
+        assert!(config_path.is_file());
+        assert!(sqlite_path.is_file());
+    }
+}
+
+// --- DATABASE-DISABLED WALLET CONFIGURATION TESTS ---
+#[cfg(not(any(feature = "sqlite", feature = "redb")))]
+mod test_database_disabled_wallet_config {
+    use super::*;
+    use std::fs;
+
+    fn write_config(datadir: &std::path::Path, wallet_name: &str, database_type: Option<&str>) {
+        let database_type = database_type
+            .map(|database_type| format!("\ndatabase_type = \"{database_type}\""))
+            .unwrap_or_default();
+
+        fs::write(
+            datadir.join("config.toml"),
+            format!(
+                "[wallets.{wallet_name}]\nwallet = \"{wallet_name}\"\nnetwork = \"regtest\"\next_descriptor = \"wpkh(test)\"\nint_descriptor = \"wpkh(test)\"{database_type}\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_delete_wallet_config_without_database_support() {
+        for (wallet_name, database_type) in [
+            ("marker_wallet", Some("sqlite")),
+            ("database_free_wallet", None),
+        ] {
+            let temp_dir = TempDir::new().unwrap();
+            let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+            let config_path = temp_dir.path().join("config.toml");
+
+            write_config(temp_dir.path(), wallet_name, database_type);
+
+            let assertion = cli
+                .build_base_cmd()
+                .args(["wallets", "delete", wallet_name])
+                .assert();
+
+            if database_type.is_some() {
+                assertion.failure().stderr(predicate::str::contains(
+                    "Wallet data exists for configuration",
+                ));
+                assert!(config_path.is_file());
+            } else {
+                assertion.success();
+                assert!(!config_path.exists());
+            }
+        }
     }
 }
 
@@ -216,11 +446,49 @@ mod test_compile {
 }
 
 // --- CONFIG COMMAND TESTS ---
-#[cfg(feature = "rpc")]
+#[cfg(any(feature = "rpc", feature = "sqlite"))]
 mod test_config {
     use super::*;
     use serde_json::Value;
+    use std::fs;
 
+    fn save_wallet(cli: &BdkCli, wallet_name: &str) {
+        let desc = cli
+            .cmd("descriptor", &["--type", "tr"])
+            .output()
+            .expect("Command to generate descriptors failed");
+
+        let desc_values: Value =
+            serde_json::from_slice(&desc.stdout).expect("Invalid JSON from output descriptor");
+
+        let pub_desc = &desc_values["public_descriptors"];
+
+        let mut command = cli.build_base_cmd();
+        command
+            .arg("wallet")
+            .arg("--wallet")
+            .arg(wallet_name)
+            .arg("config")
+            .arg("--ext-descriptor")
+            .arg(pub_desc["external"].as_str().unwrap())
+            .arg("--int-descriptor")
+            .arg(pub_desc["internal"].as_str().unwrap());
+
+        #[cfg(feature = "rpc")]
+        command
+            .arg("--client-type")
+            .arg("rpc")
+            .arg("--url")
+            .arg("http://localhost:18443");
+
+        command
+            .arg("--database-type")
+            .arg("sqlite")
+            .assert()
+            .success();
+    }
+
+    #[cfg(feature = "rpc")]
     #[test]
     fn test_save_and_read_wallet_config() {
         let temp_dir = TempDir::new().unwrap();
@@ -264,7 +532,7 @@ mod test_config {
 
         // verify saved config
         let mut cmd = cli.build_base_cmd();
-        cmd.arg("wallets");
+        cmd.arg("wallets").arg("list");
 
         let output = cmd.output().expect("Failed to execute wallets command");
 
@@ -292,7 +560,7 @@ mod test_config {
         assert_eq!(config["int_descriptor"].as_str().unwrap(), int_desc);
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "rpc"))]
     #[test]
     fn test_config_with_private_keys_is_unreadable_by_other_users() {
         use std::os::unix::fs::PermissionsExt;
@@ -337,7 +605,194 @@ mod test_config {
             "config.toml holds a private descriptor and must not be readable by other users"
         );
     }
+
+    #[test]
+    fn test_delete_wallet_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+        let remove_wallet_name = "test_delete_wallet";
+        let keep_wallet_name = "test_keep_wallet";
+
+        save_wallet(&cli, remove_wallet_name);
+        save_wallet(&cli, keep_wallet_name);
+
+        // Delete one config: the output is a confirmation message
+        let output = cli
+            .build_base_cmd()
+            .arg("wallets")
+            .arg("delete")
+            .arg(remove_wallet_name)
+            .output()
+            .expect("Failed to execute wallets delete command");
+        assert!(output.status.success(), "wallets delete failed");
+
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            json["message"].as_str().unwrap(),
+            "Wallet configuration 'test_delete_wallet' deleted successfully"
+        );
+
+        // Re-listing no longer contains the deleted wallet
+        let output = cli
+            .build_base_cmd()
+            .arg("wallets")
+            .arg("list")
+            .output()
+            .expect("Failed to execute wallets list command");
+
+        let list: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(list.get(remove_wallet_name).is_none());
+        assert!(list.get(keep_wallet_name).is_some());
+    }
+
+    #[test]
+    fn test_delete_unknown_wallet_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+        save_wallet(&cli, "existing_wallet");
+
+        cli.build_base_cmd()
+            .arg("wallets")
+            .arg("delete")
+            .arg("ghost_wallet")
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("not found in config"));
+    }
+
+    #[test]
+    fn test_delete_last_wallet_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+        let config_path = temp_dir.path().join("config.toml");
+
+        save_wallet(&cli, "last_wallet");
+        assert!(config_path.exists());
+
+        cli.build_base_cmd()
+            .arg("wallets")
+            .arg("delete")
+            .arg("last_wallet")
+            .assert()
+            .success();
+
+        assert!(!config_path.exists());
+
+        cli.build_base_cmd()
+            .arg("wallets")
+            .arg("list")
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("No wallets configured yet."));
+    }
+
+    #[test]
+    fn test_delete_wallet_config_with_persisted_data_fails() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+        let wallet_name = "persisted_wallet";
+
+        save_wallet(&cli, wallet_name);
+
+        let config_path = temp_dir.path().join("config.toml");
+        let database_path = temp_dir.path().join(wallet_name).join("wallet.sqlite");
+
+        assert!(config_path.is_file());
+        assert!(
+            !database_path.exists(),
+            "saving a configuration alone should not create wallet data"
+        );
+
+        cli.wallet_cmd(&["--wallet", wallet_name, "new_address"])
+            .assert()
+            .success();
+
+        assert!(
+            database_path.is_file(),
+            "new_address should initialize the wallet database"
+        );
+
+        cli.build_base_cmd()
+            .arg("wallets")
+            .arg("delete")
+            .arg(wallet_name)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "Wallet data exists for configuration 'persisted_wallet'",
+            ));
+
+        assert!(
+            config_path.is_file(),
+            "failed deletion should preserve config.toml"
+        );
+
+        assert!(
+            database_path.is_file(),
+            "failed deletion should preserve wallet data"
+        );
+
+        cli.build_base_cmd()
+            .arg("wallets")
+            .arg("list")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(wallet_name));
+    }
+
+    #[cfg(feature = "sqlite")]
+    #[test]
+    fn test_delete_preserves_fields_unknown_to_current_build() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+        let config_path = temp_dir.path().join("config.toml");
+
+        fs::write(
+            &config_path,
+            r#"[wallets.remove_wallet]
+wallet = "remove_wallet"
+network = "regtest"
+ext_descriptor = "wpkh(test)"
+int_descriptor = "wpkh(test)"
+database_type = "sqlite"
+
+[wallets.preserved_wallet]
+wallet = "preserved_wallet"
+network = "regtest"
+ext_descriptor = "wpkh(test)"
+int_descriptor = "wpkh(test)"
+database_type = "sqlite"
+client_type = "rpc"
+server_url = "http://localhost:18443"
+rpc_user = "preserved-user"
+rpc_password = "preserved-password"
+"#,
+        )
+        .unwrap();
+
+        cli.build_base_cmd()
+            .args(["wallets", "delete", "remove_wallet"])
+            .assert()
+            .success();
+
+        let raw_config: toml::Table =
+            toml::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
+        let preserved = raw_config["wallets"]["preserved_wallet"]
+            .as_table()
+            .unwrap();
+        assert_eq!(preserved["client_type"].as_str(), Some("rpc"));
+        assert_eq!(
+            preserved["server_url"].as_str(),
+            Some("http://localhost:18443")
+        );
+        assert_eq!(preserved["rpc_user"].as_str(), Some("preserved-user"));
+        assert_eq!(
+            preserved["rpc_password"].as_str(),
+            Some("preserved-password")
+        );
+    }
 }
+
 //  SILENT PAYMENTS
 #[cfg(feature = "silent-payments")]
 mod test_silent_payments {
