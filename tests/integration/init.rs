@@ -203,6 +203,26 @@ mod test_compile {
             .stdout(predicate::str::contains("wsh("));
     }
 
+    /// A policy can be valid for taproot and still exceed the limits of the
+    /// legacy context, whose 520-byte redeemScript cap does not apply to it.
+    /// Compiling for `tr` must not be blocked by the other contexts.
+    #[test]
+    fn test_compile_taproot_policy_beyond_legacy_limits() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let keys = (1..=20)
+            .map(|i| format!("pk(K{i:02})"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let policy = format!("thresh(2,{keys})");
+
+        cli.cmd("compile", &[&policy, "--type", "tr"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("tr("));
+    }
+
     #[test]
     fn test_compile_invalid_policy() {
         let temp_dir = TempDir::new().unwrap();

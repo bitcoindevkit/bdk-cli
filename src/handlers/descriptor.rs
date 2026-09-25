@@ -20,7 +20,7 @@ use {
             key::{Parity, rand},
             secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey},
         },
-        miniscript::{Descriptor, Miniscript, descriptor::TapTree, policy::Concrete},
+        miniscript::{Descriptor, descriptor::TapTree, policy::Concrete},
     },
     std::{str::FromStr, sync::Arc},
 };
@@ -83,22 +83,14 @@ impl AppCommand<AppContext<Init>> for CompileCommand {
         let policy: Concrete<String> = Concrete::from_str(&self.policy)
             .map_err(|e| Error::Generic(format!("Invalid policy: {e}")))?;
 
-        let legacy_policy: Miniscript<String, bdk_wallet::miniscript::Legacy> = policy
-            .compile()
-            .map_err(|e| Error::Generic(e.to_string()))?;
-        let segwit_policy: Miniscript<String, bdk_wallet::miniscript::Segwitv0> = policy
-            .compile()
-            .map_err(|e| Error::Generic(e.to_string()))?;
-        let taproot_policy: Miniscript<String, bdk_wallet::miniscript::Tap> = policy
-            .compile()
-            .map_err(|e| Error::Generic(e.to_string()))?;
-
         let mut r = None;
 
+        // Compile per branch, not once up front: the contexts have different script
+        // limits, and the narrowest one would reject policies valid for the requested type.
         let descriptor = match self.script_type.as_str() {
-            "sh" => Descriptor::new_sh(legacy_policy),
-            "wsh" => Descriptor::new_wsh(segwit_policy),
-            "sh-wsh" => Descriptor::new_sh_wsh(segwit_policy),
+            "sh" => Descriptor::new_sh(policy.compile()?),
+            "wsh" => Descriptor::new_wsh(policy.compile()?),
+            "sh-wsh" => Descriptor::new_sh_wsh(policy.compile()?),
             "tr" => {
                 // Use a randomized unspendable internal key (H + rG) instead of a fixed NUMS
                 // point. This improves privacy by preventing observers from determining whether
@@ -118,7 +110,7 @@ impl AppCommand<AppContext<Init>> for CompileCommand {
                         .map_err(|e| Error::Generic(format!("Failed to tweak NUMS key: {e}")))?;
                 let (xonly_internal_key, _) = internal_key_point.x_only_public_key();
 
-                let tree = TapTree::Leaf(Arc::new(taproot_policy));
+                let tree = TapTree::Leaf(Arc::new(policy.compile()?));
                 Descriptor::new_tr(xonly_internal_key.to_string(), Some(tree))
             }
             _ => {
