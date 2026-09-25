@@ -5,6 +5,26 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [Unreleased]
 
+## [4.1.0](https://github.com/bitcoindevkit/bdk-cli/compare/v4.0.0...v4.1.0) - 2026-09-25
+
+### Added
+
+- *(multipath)* Add checks for desc pair
+- *(multipath)* Add tests for multipath desc
+- *(multipath)* limit multipath desc to two paths
+- *(multipath)* add multipath desc support
+
+### Fixed
+
+- harden datadir and config file permissions
+- *(combine_psbt)* Propagate Psbt::combine errors
+
+### Other
+
+- removed changelog section from pr template
+- bump workflow action versions
+- add release-plz workflow and update release docs
+
 - Added support for Multipath (two-paths) descriptors.
 - Fixed the data directory and config.toml permission being world-readable (0755/0644) to 0700/0600 on Unix.
 
