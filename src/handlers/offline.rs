@@ -7,7 +7,7 @@ use crate::utils::types::{
     AddressResult, BalanceResult, KeychainPair, PsbtResult, RawPsbt, TransactionDetails,
     UnspentDetails,
 };
-use crate::utils::{parse_outpoint, parse_recipient};
+use crate::utils::{parse_fee_rate, parse_outpoint, parse_recipient};
 use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
@@ -217,8 +217,8 @@ pub struct CreateTxCommand {
     pub unspendable: Option<Vec<OutPoint>>,
 
     /// Fee rate to use in sat/vbyte.
-    #[arg(env = "SATS_VBYTE", short = 'f', long = "fee_rate")]
-    pub fee_rate: Option<f32>,
+    #[arg(env = "SATS_VBYTE", short = 'f', long = "fee_rate", value_parser = parse_fee_rate)]
+    pub fee_rate: Option<FeeRate>,
 
     /// Selects which policy should be used to satisfy the external descriptor.
     #[arg(env = "EXT_POLICY", long = "external_policy")]
@@ -281,9 +281,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
             tx_builder.add_global_xpubs();
         }
 
-        if let Some(fee_rate) = self.fee_rate
-            && let Some(fee_rate) = FeeRate::from_sat_per_vb(fee_rate as u64)
-        {
+        if let Some(fee_rate) = self.fee_rate {
             tx_builder.fee_rate(fee_rate);
         }
 
@@ -351,8 +349,8 @@ pub struct CreateSpTxCommand {
     #[arg(env = "CANT_SPEND_TXID:VOUT", long = "unspendable", value_parser = parse_outpoint)]
     pub unspendable: Option<Vec<OutPoint>>,
     /// Fee rate to use in sat/vbyte.
-    #[arg(env = "SATS_VBYTE", short = 'f', long = "fee_rate")]
-    pub fee_rate: Option<f32>,
+    #[arg(env = "SATS_VBYTE", short = 'f', long = "fee_rate", value_parser = parse_fee_rate)]
+    pub fee_rate: Option<FeeRate>,
     /// Selects which policy should be used to satisfy the external descriptor.
     #[arg(env = "EXT_POLICY", long = "external_policy")]
     pub external_policy: Option<String>,
@@ -438,9 +436,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
             tx_builder.add_global_xpubs();
         }
 
-        if let Some(fee_rate) = self.fee_rate
-            && let Some(fee_rate) = FeeRate::from_sat_per_vb(fee_rate as u64)
-        {
+        if let Some(fee_rate) = self.fee_rate {
             tx_builder.fee_rate(fee_rate);
         }
 
@@ -571,9 +567,10 @@ pub struct BumpFeeCommand {
         env = "SATS_VBYTE",
         short = 'f',
         long = "fee_rate",
-        default_value = "1.0"
+        default_value = "1.0",
+        value_parser = parse_fee_rate
     )]
-    pub fee_rate: f32,
+    pub fee_rate: FeeRate,
 }
 
 impl AppCommand<AppContext<OfflineOperations<'_>>> for BumpFeeCommand {
@@ -583,9 +580,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for BumpFeeCommand {
         let wallet = &mut ctx.state.wallet;
 
         let mut tx_builder = wallet.build_fee_bump(self.txid)?;
-        let fee_rate =
-            FeeRate::from_sat_per_vb(self.fee_rate as u64).unwrap_or(FeeRate::BROADCAST_MIN);
-        tx_builder.fee_rate(fee_rate);
+        tx_builder.fee_rate(self.fee_rate);
 
         if let Some(address) = &self.shrink_address {
             let script_pubkey = address.script_pubkey();
