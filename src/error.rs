@@ -5,6 +5,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum BDKCliError {
+    #[error("Add UTXO error: {0}")]
+    AddUtxoError(#[from] bdk_wallet::tx_builder::AddUtxoError),
+
     #[error("Cannot provide both a multipath descriptor and a separate internal descriptor.")]
     AmbiguousDescriptors,
 

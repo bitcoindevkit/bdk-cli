@@ -135,17 +135,13 @@ impl AsyncAppCommand<AppContext<OfflineOperations<'_>>> for CreateDnsTxCommand {
             tx_builder.fee_rate(fee_rate);
         }
         if let Some(utxos) = &self.utxos {
-            tx_builder
-                .add_utxos(&utxos[..])
-                .map_err(|_| bdk_wallet::error::CreateTxError::UnknownUtxo)?;
+            tx_builder.add_utxos(&utxos[..])?;
         }
         if let Some(unspendable) = &self.unspendable {
             tx_builder.unspendable(unspendable.to_vec());
         }
         if let Some(base64_data) = &self.add_data {
-            let op_return_data = BASE64_STANDARD
-                .decode(base64_data)
-                .map_err(|e| Error::Generic(e.to_string()))?;
+            let op_return_data = BASE64_STANDARD.decode(base64_data)?;
             tx_builder.add_data(
                 &PushBytesBuf::try_from(op_return_data)
                     .map_err(|e| Error::Generic(e.to_string()))?,

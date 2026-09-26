@@ -288,7 +288,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
         }
 
         if let Some(utxos) = &self.utxos {
-            tx_builder.add_utxos(&utxos[..]).unwrap();
+            tx_builder.add_utxos(&utxos[..])?;
         }
 
         if let Some(unspendable) = &self.unspendable {
@@ -296,10 +296,14 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
         }
 
         if let Some(base64_data) = &self.add_data {
-            let op_return_data = BASE64_STANDARD.decode(base64_data).unwrap();
-            tx_builder.add_data(&PushBytesBuf::try_from(op_return_data).unwrap());
+            let op_return_data = BASE64_STANDARD.decode(base64_data)?;
+            tx_builder.add_data(
+                &PushBytesBuf::try_from(op_return_data)
+                    .map_err(|e| Error::Generic(e.to_string()))?,
+            );
         } else if let Some(string_data) = &self.add_string {
-            let data = PushBytesBuf::try_from(string_data.as_bytes().to_vec()).unwrap();
+            let data = PushBytesBuf::try_from(string_data.as_bytes().to_vec())
+                .map_err(|e| Error::Generic(e.to_string()))?;
             tx_builder.add_data(&data);
         }
 
@@ -318,8 +322,6 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
         }
 
         let psbt = tx_builder.finish()?;
-
-        // let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
 
         Ok(PsbtResult::new(&psbt, Some(false)))
     }
@@ -443,9 +445,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
         }
 
         if let Some(utxos) = &self.utxos {
-            tx_builder
-                .add_utxos(&utxos[..])
-                .map_err(|_| bdk_wallet::error::CreateTxError::UnknownUtxo)?;
+            tx_builder.add_utxos(&utxos[..])?;
         }
 
         if let Some(unspendable) = &self.unspendable {
@@ -453,9 +453,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
         }
 
         if let Some(base64_data) = &self.add_data {
-            let op_return_data = BASE64_STANDARD
-                .decode(base64_data)
-                .map_err(|e| Error::Generic(e.to_string()))?;
+            let op_return_data = BASE64_STANDARD.decode(base64_data)?;
             tx_builder.add_data(
                 &PushBytesBuf::try_from(op_return_data)
                     .map_err(|e| Error::Generic(e.to_string()))?,
@@ -599,7 +597,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for BumpFeeCommand {
         }
 
         if let Some(utxos) = &self.utxos {
-            tx_builder.add_utxos(&utxos[..]).unwrap();
+            tx_builder.add_utxos(&utxos[..])?;
         }
 
         if let Some(unspendable) = &self.unspendable {
