@@ -189,6 +189,34 @@ mod test_offline {
         .stderr(predicate::str::contains("Base64 decoding error"));
     }
 
+    /// An invalid `--fee_rate` is rejected up front instead of
+    /// silently becoming a zero fee or the builder default.
+    #[test]
+    fn test_create_tx_rejects_unusable_fee_rates() {
+        let (cli, mut cmd_init) = setup_wallet_config();
+        cmd_init.assert().success();
+
+        for (fee_rate, expected) in [
+            ("0", "below the smallest usable rate"),
+            ("NaN", "must be a finite number"),
+            ("1e30", "too large to represent"),
+            ("abc", "expected a number in sat/vB"),
+        ] {
+            cli.wallet_cmd(&[
+                "--wallet",
+                WALLET_NAME,
+                "create_tx",
+                "--to",
+                RECIPIENT,
+                "--fee_rate",
+                fee_rate,
+            ])
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains(expected));
+        }
+    }
+
     #[cfg(feature = "message_signer")]
     #[test]
     fn test_sign_message_and_verify_message() {
