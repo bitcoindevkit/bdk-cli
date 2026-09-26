@@ -6,7 +6,7 @@ use crate::handlers::dns::dns_payment_instructions::{
 };
 use crate::handlers::{AppContext, AsyncAppCommand, Init, OfflineOperations};
 use crate::utils::types::{PsbtResult, StatusResult};
-use crate::utils::{parse_dns_recipient, parse_outpoint, parse_recipient};
+use crate::utils::{parse_dns_recipient, parse_fee_rate, parse_outpoint, parse_recipient};
 use bdk_wallet::KeychainKind;
 use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
@@ -57,8 +57,8 @@ pub struct CreateDnsTxCommand {
     pub utxos: Option<Vec<OutPoint>>,
     #[arg(env = "CANT_SPEND_TXID:VOUT", long = "unspendable", value_parser = parse_outpoint)]
     pub unspendable: Option<Vec<OutPoint>>,
-    #[arg(env = "SATS_VBYTE", short = 'f', long = "fee_rate")]
-    pub fee_rate: Option<f32>,
+    #[arg(env = "SATS_VBYTE", short = 'f', long = "fee_rate", value_parser = parse_fee_rate)]
+    pub fee_rate: Option<FeeRate>,
     #[arg(env = "EXT_POLICY", long = "external_policy")]
     pub external_policy: Option<String>,
     #[arg(env = "INT_POLICY", long = "internal_policy")]
@@ -129,23 +129,17 @@ impl AsyncAppCommand<AppContext<OfflineOperations<'_>>> for CreateDnsTxCommand {
         if self.offline_signer {
             tx_builder.add_global_xpubs();
         }
-        if let Some(fee_rate) = self.fee_rate
-            && let Some(fee_rate) = FeeRate::from_sat_per_vb(fee_rate as u64)
-        {
+        if let Some(fee_rate) = self.fee_rate {
             tx_builder.fee_rate(fee_rate);
         }
         if let Some(utxos) = &self.utxos {
-            tx_builder
-                .add_utxos(&utxos[..])
-                .map_err(|_| bdk_wallet::error::CreateTxError::UnknownUtxo)?;
+            tx_builder.add_utxos(&utxos[..])?;
         }
         if let Some(unspendable) = &self.unspendable {
             tx_builder.unspendable(unspendable.to_vec());
         }
         if let Some(base64_data) = &self.add_data {
-            let op_return_data = BASE64_STANDARD
-                .decode(base64_data)
-                .map_err(|e| Error::Generic(e.to_string()))?;
+            let op_return_data = BASE64_STANDARD.decode(base64_data)?;
             tx_builder.add_data(
                 &PushBytesBuf::try_from(op_return_data)
                     .map_err(|e| Error::Generic(e.to_string()))?,

@@ -5,7 +5,7 @@ use bdk_kyoto::{Info, Receiver, UnboundedReceiver, Warning};
 use bdk_message_signer::SignatureFormat;
 #[cfg(feature = "silent-payments")]
 use bdk_sp::encoding::SilentPaymentCode;
-use bdk_wallet::bitcoin::{Address, Network, OutPoint, ScriptBuf};
+use bdk_wallet::bitcoin::{Address, FeeRate, Network, OutPoint, ScriptBuf};
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -25,6 +25,12 @@ pub(crate) const DIR_MODE: u32 = 0o700;
 
 /// Only owner has full read and write access.
 pub(crate) const FILE_MODE: u32 = 0o600;
+
+/// 1 vB is 1/4 kwu, so 1 sat/vB is 250 sat/kwu.
+const SAT_PER_KWU_PER_SAT_PER_VB: f64 = 250.0;
+
+/// Smallest fee rate `FeeRate` can represent, in sat/vB.
+const MIN_SAT_PER_VB: f64 = 1.0 / SAT_PER_KWU_PER_SAT_PER_VB;
 
 /// Determine if PSBT has final script sigs or witnesses for all unsigned tx inputs.
 #[cfg(any(
@@ -84,7 +90,7 @@ pub(crate) fn parse_proxy_auth(s: &str) -> Result<(String, String), Error> {
     Ok((user, passwd))
 }
 
-/// Parse a outpoint (Txid:Vout) argument from cli input.
+/// Parse a outpoint (Txid:Vout) argument from input.
 pub(crate) fn parse_outpoint(s: &str) -> Result<OutPoint, Error> {
     Ok(OutPoint::from_str(s)?)
 }
@@ -93,6 +99,39 @@ pub(crate) fn parse_outpoint(s: &str) -> Result<OutPoint, Error> {
 pub(crate) fn parse_address(address_str: &str) -> Result<Address, Error> {
     let unchecked_address = Address::from_str(address_str)?;
     Ok(unchecked_address.assume_checked())
+}
+
+/// Parse a fee rate, given in sat/vB, from input.
+///
+/// [`FeeRate`] counts sat/kwu, so fractional rates are kept at 1/250 sat/vB
+/// precision rather than being truncated to a whole sat/vB. A rate that cannot be
+/// represented is rejected instead of silently becoming zero or a default.
+pub(crate) fn parse_fee_rate(s: &str) -> Result<FeeRate, Error> {
+    let sat_vb = f64::from_str(s.trim()).map_err(|_| {
+        Error::Generic(format!(
+            "Invalid fee rate '{s}', expected a number in sat/vB"
+        ))
+    })?;
+
+    if !sat_vb.is_finite() {
+        return Err(Error::Generic(format!(
+            "Invalid fee rate '{s}', must be a finite number of sat/vB"
+        )));
+    }
+    if sat_vb < MIN_SAT_PER_VB {
+        return Err(Error::Generic(format!(
+            "Fee rate '{s}' sat/vB is below the smallest usable rate of {MIN_SAT_PER_VB} sat/vB"
+        )));
+    }
+
+    let sat_kwu = (sat_vb * SAT_PER_KWU_PER_SAT_PER_VB).round();
+    if sat_kwu >= u64::MAX as f64 {
+        return Err(Error::Generic(format!(
+            "Fee rate '{s}' sat/vB is too large to represent"
+        )));
+    }
+
+    Ok(FeeRate::from_sat_per_kwu(sat_kwu as u64))
 }
 
 /// Prepare bdk-cli home directory
@@ -397,111 +436,145 @@ pub(crate) fn write_file_content(path: &Path, contents: &str) -> std::io::Result
     std::fs::write(path, contents)
 }
 
-#[cfg(all(test, unix))]
-mod datadir_file_permissions_tests {
+#[cfg(test)]
+mod tests {
     use super::*;
-    use std::fs;
-    use std::os::unix::fs::PermissionsExt;
-    use tempfile::TempDir;
+    #[cfg(unix)]
+    mod datadir_file_permissions_tests {
+        use super::*;
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::TempDir;
 
-    fn mode_of(path: &Path) -> u32 {
-        fs::metadata(path).unwrap().permissions().mode() & 0o777
+        fn mode_of(path: &Path) -> u32 {
+            fs::metadata(path).unwrap().permissions().mode() & 0o777
+        }
+
+        #[test]
+        fn test_write_file_content_creates_an_owner_only_file() {
+            let temp_dir = TempDir::new().unwrap();
+            let path = temp_dir.path().join("config.toml");
+
+            write_file_content(&path, "tprv").unwrap();
+
+            assert_eq!(mode_of(&path), FILE_MODE);
+            assert_eq!(fs::read_to_string(&path).unwrap(), "tprv");
+        }
+
+        #[test]
+        fn test_limit_access_hardens_only_exposed_file() {
+            let temp_dir = TempDir::new().unwrap();
+            let exposed = temp_dir.path().join("exposed.toml");
+            let private = temp_dir.path().join("private.toml");
+            fs::write(&exposed, "tprv").unwrap();
+            fs::write(&private, "tprv").unwrap();
+            fs::set_permissions(&exposed, fs::Permissions::from_mode(0o644)).unwrap();
+            fs::set_permissions(&private, fs::Permissions::from_mode(0o400)).unwrap();
+
+            limit_access(&exposed, FILE_MODE).unwrap();
+            limit_access(&private, FILE_MODE).unwrap();
+
+            assert_eq!(mode_of(&exposed), FILE_MODE);
+            assert_eq!(
+                mode_of(&private),
+                0o400,
+                "an owner-only file is not updated"
+            );
+        }
+
+        #[test]
+        fn test_limit_access_hardens_a_directory() {
+            let temp_dir = TempDir::new().unwrap();
+            let dir = temp_dir.path().join("datadir");
+            fs::create_dir(&dir).unwrap();
+            fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+
+            limit_access(&dir, DIR_MODE).unwrap();
+
+            assert_eq!(mode_of(&dir), DIR_MODE);
+        }
+
+        #[test]
+        fn test_limit_access_ignores_a_missing_path() {
+            let temp_dir = TempDir::new().unwrap();
+
+            limit_access(&temp_dir.path().join("absent"), FILE_MODE).unwrap();
+        }
+
+        #[test]
+        fn test_write_file_content_restricts_a_pre_existing_exposed_file() {
+            let temp_dir = TempDir::new().unwrap();
+            let path = temp_dir.path().join("config.toml");
+            fs::write(&path, "stale").unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+            write_file_content(&path, "tprv").unwrap();
+
+            assert_eq!(mode_of(&path), FILE_MODE);
+            assert_eq!(fs::read_to_string(&path).unwrap(), "tprv");
+        }
+
+        #[test]
+        fn test_prepare_home_dir_creates_owner_only_datadir() {
+            let temp_dir = TempDir::new().unwrap();
+            let dir = temp_dir.path().join("datadir").join("nested");
+
+            prepare_home_dir(Some(dir.clone())).unwrap();
+
+            assert_eq!(mode_of(&dir), DIR_MODE);
+            assert_eq!(mode_of(dir.parent().unwrap()), DIR_MODE);
+        }
+
+        #[test]
+        fn test_prepare_home_dir_hardens_an_exposed_chosen_datadir() {
+            let temp_dir = TempDir::new().unwrap();
+            let dir = temp_dir.path().join("shared");
+            fs::create_dir(&dir).unwrap();
+            fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+
+            prepare_home_dir(Some(dir.clone())).unwrap();
+
+            assert_eq!(mode_of(&dir), DIR_MODE);
+        }
+
+        #[test]
+        fn test_prepare_wallet_db_dir_is_owner_only() {
+            let temp_dir = TempDir::new().unwrap();
+            let home = temp_dir.path();
+
+            let dir = prepare_wallet_db_dir(home, "hot").unwrap();
+
+            assert_eq!(mode_of(&dir), DIR_MODE);
+        }
     }
 
     #[test]
-    fn test_write_file_content_creates_an_owner_only_file() {
-        let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path().join("config.toml");
-
-        write_file_content(&path, "tprv").unwrap();
-
-        assert_eq!(mode_of(&path), FILE_MODE);
-        assert_eq!(fs::read_to_string(&path).unwrap(), "tprv");
-    }
-
-    #[test]
-    fn test_limit_access_hardens_only_exposed_file() {
-        let temp_dir = TempDir::new().unwrap();
-        let exposed = temp_dir.path().join("exposed.toml");
-        let private = temp_dir.path().join("private.toml");
-        fs::write(&exposed, "tprv").unwrap();
-        fs::write(&private, "tprv").unwrap();
-        fs::set_permissions(&exposed, fs::Permissions::from_mode(0o644)).unwrap();
-        fs::set_permissions(&private, fs::Permissions::from_mode(0o400)).unwrap();
-
-        limit_access(&exposed, FILE_MODE).unwrap();
-        limit_access(&private, FILE_MODE).unwrap();
-
-        assert_eq!(mode_of(&exposed), FILE_MODE);
+    fn parses_whole_and_fractional_fee_rates() {
+        let one_sat_vb = FeeRate::from_sat_per_vb(1).unwrap();
+        assert_eq!(parse_fee_rate("1").unwrap(), one_sat_vb);
+        assert_eq!(parse_fee_rate("1.0").unwrap(), one_sat_vb);
+        assert_eq!(parse_fee_rate(" 1 ").unwrap(), one_sat_vb);
         assert_eq!(
-            mode_of(&private),
-            0o400,
-            "an owner-only file is not updated"
+            parse_fee_rate("2.7").unwrap(),
+            FeeRate::from_sat_per_kwu(675)
+        );
+        assert_eq!(
+            parse_fee_rate("0.004").unwrap(),
+            FeeRate::from_sat_per_kwu(1)
+        );
+        assert_eq!(
+            parse_fee_rate("0.9").unwrap(),
+            FeeRate::from_sat_per_kwu(225)
         );
     }
 
     #[test]
-    fn test_limit_access_hardens_a_directory() {
-        let temp_dir = TempDir::new().unwrap();
-        let dir = temp_dir.path().join("datadir");
-        fs::create_dir(&dir).unwrap();
-        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
-
-        limit_access(&dir, DIR_MODE).unwrap();
-
-        assert_eq!(mode_of(&dir), DIR_MODE);
-    }
-
-    #[test]
-    fn test_limit_access_ignores_a_missing_path() {
-        let temp_dir = TempDir::new().unwrap();
-
-        limit_access(&temp_dir.path().join("absent"), FILE_MODE).unwrap();
-    }
-
-    #[test]
-    fn test_write_file_content_restricts_a_pre_existing_exposed_file() {
-        let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path().join("config.toml");
-        fs::write(&path, "stale").unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
-
-        write_file_content(&path, "tprv").unwrap();
-
-        assert_eq!(mode_of(&path), FILE_MODE);
-        assert_eq!(fs::read_to_string(&path).unwrap(), "tprv");
-    }
-
-    #[test]
-    fn test_prepare_home_dir_creates_owner_only_datadir() {
-        let temp_dir = TempDir::new().unwrap();
-        let dir = temp_dir.path().join("datadir").join("nested");
-
-        prepare_home_dir(Some(dir.clone())).unwrap();
-
-        assert_eq!(mode_of(&dir), DIR_MODE);
-        assert_eq!(mode_of(dir.parent().unwrap()), DIR_MODE);
-    }
-
-    #[test]
-    fn test_prepare_home_dir_hardens_an_exposed_chosen_datadir() {
-        let temp_dir = TempDir::new().unwrap();
-        let dir = temp_dir.path().join("shared");
-        fs::create_dir(&dir).unwrap();
-        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
-
-        prepare_home_dir(Some(dir.clone())).unwrap();
-
-        assert_eq!(mode_of(&dir), DIR_MODE);
-    }
-
-    #[test]
-    fn test_prepare_wallet_db_dir_is_owner_only() {
-        let temp_dir = TempDir::new().unwrap();
-        let home = temp_dir.path();
-
-        let dir = prepare_wallet_db_dir(home, "hot").unwrap();
-
-        assert_eq!(mode_of(&dir), DIR_MODE);
+    fn rejects_fee_rates_that_cannot_be_honoured() {
+        for input in ["0", "-5", "NaN", "inf", "1e30", "abc", ""] {
+            assert!(
+                parse_fee_rate(input).is_err(),
+                "fee rate '{input}' should be rejected"
+            );
+        }
     }
 }
