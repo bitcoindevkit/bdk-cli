@@ -172,7 +172,7 @@ impl<'a> PayjoinManager<'a> {
     pub async fn send_payjoin(
         &mut self,
         uri: String,
-        fee_rate: u64,
+        fee_rate: FeeRate,
         ohttp_relays: Vec<String>,
         blockchain_client: &BlockchainClient,
     ) -> Result<String, Error> {
@@ -188,8 +188,6 @@ impl<'a> PayjoinManager<'a> {
         let sats = uri
             .amount
             .ok_or_else(|| Error::Generic("Amount is not specified in the URI.".to_string()))?;
-
-        let fee_rate = FeeRate::from_sat_per_vb(fee_rate).expect("Provided fee rate is not valid.");
 
         // Build and sign the original PSBT which pays to the receiver.
         let mut original_psbt = {

@@ -7,6 +7,8 @@ mod test_offline {
     use tempfile::TempDir;
 
     static WALLET_NAME: &str = "test_config_wallet";
+    /// A `--to` argument, the wallet is unfunded, so nothing is spent.
+    static RECIPIENT: &str = "tb1p4tp4l6glyr2gs94neqcpr5gha7344nfyznfkc8szkreflscsdkgqsdent4:10000";
 
     /// Helper to spin up a sandboxed CLI with the generated descriptors
     fn setup_wallet_config() -> (BdkCli, Command) {
@@ -149,6 +151,70 @@ mod test_offline {
         .assert()
         .failure()
         .stderr(predicate::str::contains("Invalid"));
+    }
+
+    /// A malformed `create_tx` argument must be reported as an error (exit 1),
+    /// never as a panic (exit 101).
+    #[test]
+    fn test_create_tx_rejects_malformed_input_without_panicking() {
+        let (cli, mut cmd_init) = setup_wallet_config();
+        cmd_init.assert().success();
+
+        // Unknown outpoint
+        cli.wallet_cmd(&[
+            "--wallet",
+            WALLET_NAME,
+            "create_tx",
+            "--to",
+            RECIPIENT,
+            "--utxos",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("UTXO not found"));
+
+        // Malformed base64
+        cli.wallet_cmd(&[
+            "--wallet",
+            WALLET_NAME,
+            "create_tx",
+            "--to",
+            RECIPIENT,
+            "--add_data",
+            "!!!not-base64!!!",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("Base64 decoding error"));
+    }
+
+    /// An invalid `--fee_rate` is rejected up front instead of
+    /// silently becoming a zero fee or the builder default.
+    #[test]
+    fn test_create_tx_rejects_unusable_fee_rates() {
+        let (cli, mut cmd_init) = setup_wallet_config();
+        cmd_init.assert().success();
+
+        for (fee_rate, expected) in [
+            ("0", "below the smallest usable rate"),
+            ("NaN", "must be a finite number"),
+            ("1e30", "too large to represent"),
+            ("abc", "expected a number in sat/vB"),
+        ] {
+            cli.wallet_cmd(&[
+                "--wallet",
+                WALLET_NAME,
+                "create_tx",
+                "--to",
+                RECIPIENT,
+                "--fee_rate",
+                fee_rate,
+            ])
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains(expected));
+        }
     }
 
     #[cfg(feature = "message_signer")]

@@ -7,6 +7,9 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 - Added support for Multipath (two-paths) descriptors.
 - Fixed the data directory and config.toml permission being world-readable (0755/0644) to 0700/0600 on Unix.
+- Fixed `create_tx` and `bump_fee` panicking on malformed `--utxos` and `--add_data` values instead of returning an error
+- Fixed `--fee_rate` silently truncating to a whole sat/vB, falling back to a default, or producing a zero-fee transaction, unusable values are now rejected
+
 
 ## [4.0.0]
 

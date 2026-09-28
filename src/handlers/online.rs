@@ -1,9 +1,10 @@
-use clap::Parser;
-
 #[cfg(feature = "electrum")]
 use crate::client::BlockchainClient::Electrum;
 #[cfg(feature = "cbf")]
 use crate::client::{BlockchainClient::KyotoClient, sync_kyoto_client};
+use crate::utils::parse_fee_rate;
+use bdk_wallet::bitcoin::FeeRate;
+use clap::Parser;
 #[cfg(feature = "esplora")]
 use {crate::client::BlockchainClient::Esplora, bdk_esplora::EsploraAsyncExt};
 #[cfg(feature = "rpc")]
@@ -438,9 +439,10 @@ pub struct SendPayjoinCommand {
         env = "PAYJOIN_SENDER_FEE_RATE",
         short = 'f',
         long = "fee_rate",
-        required = true
+        required = true,
+        value_parser = parse_fee_rate
     )]
-    fee_rate: u64,
+    fee_rate: FeeRate,
 }
 #[cfg(any(
     feature = "electrum",

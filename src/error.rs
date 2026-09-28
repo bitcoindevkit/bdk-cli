@@ -5,6 +5,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum BDKCliError {
+    #[error("Add UTXO error: {0}")]
+    AddUtxoError(#[from] bdk_wallet::tx_builder::AddUtxoError),
+
     #[error("Cannot provide both a multipath descriptor and a separate internal descriptor.")]
     AmbiguousDescriptors,
 
@@ -71,6 +74,9 @@ pub enum BDKCliError {
 
     #[error("PsbtError: {0}")]
     PsbtError(#[from] bdk_wallet::bitcoin::psbt::Error),
+
+    #[error("PushBytes error: {0}")]
+    PushBytesError(#[from] bdk_wallet::bitcoin::script::PushBytesError),
 
     #[cfg(feature = "sqlite")]
     #[error("Rusqlite error: {0}")]
