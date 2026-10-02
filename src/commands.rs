@@ -271,7 +271,7 @@ pub struct WalletOpts {
     #[cfg(feature = "rpc")]
     /// Sets the rpc basic authentication.
     #[arg(
-        env = "USER:PASSWD",
+        env = "RPC_BASIC_AUTH",
         short = 'a',
         long,
         value_parser = parse_proxy_auth,
@@ -307,16 +307,17 @@ impl WalletOpts {
             )));
         }
         #[cfg(any(feature = "electrum", feature = "esplora"))]
-        if self.proxy_opts.proxy_auth.is_some() {
-            return Err(Error::Generic(format!(
-                "The {_backend} backend does not support --proxy_auth."
-            )));
-        }
-        #[cfg(any(feature = "electrum", feature = "esplora"))]
-        if self.proxy_opts.timeout.is_some() {
-            return Err(Error::Generic(format!(
-                "The {_backend} backend does not support --timeout."
-            )));
+        {
+            if self.proxy_opts.proxy_auth.is_some() {
+                return Err(Error::Generic(format!(
+                    "The {_backend} backend does not support --proxy_auth."
+                )));
+            }
+            if self.proxy_opts.timeout.is_some() {
+                return Err(Error::Generic(format!(
+                    "The {_backend} backend does not support --timeout."
+                )));
+            }
         }
         Ok(())
     }
@@ -330,16 +331,17 @@ impl WalletOpts {
     #[cfg(feature = "cbf")]
     pub(crate) fn reject_proxy_auth(&self, _backend: &str) -> Result<(), Error> {
         #[cfg(any(feature = "electrum", feature = "esplora"))]
-        if self.proxy_opts.proxy_auth.is_some() {
-            return Err(Error::Generic(format!(
-                "The {_backend} backend does not support --proxy_auth."
-            )));
-        }
-        #[cfg(any(feature = "electrum", feature = "esplora"))]
-        if self.proxy_opts.timeout.is_some() {
-            return Err(Error::Generic(format!(
-                "The {_backend} backend does not support --timeout."
-            )));
+        {
+            if self.proxy_opts.proxy_auth.is_some() {
+                return Err(Error::Generic(format!(
+                    "The {_backend} backend does not support --proxy_auth."
+                )));
+            }
+            if self.proxy_opts.timeout.is_some() {
+                return Err(Error::Generic(format!(
+                    "The {_backend} backend does not support --timeout."
+                )));
+            }
         }
         Ok(())
     }
@@ -350,12 +352,12 @@ impl WalletOpts {
 #[derive(Debug, Args, Clone, PartialEq, Eq)]
 pub struct ProxyOpts {
     /// Sets the SOCKS5 proxy for a blockchain client.
-    #[arg(env = "PROXY_ADDRS:PORT", long = "proxy")]
+    #[arg(env = "PROXY_ADDRS_PORT", long = "proxy")]
     pub proxy: Option<String>,
 
     /// Sets the SOCKS5 proxy credential.
     #[cfg(any(feature = "electrum", feature = "esplora"))]
-    #[arg(env = "PROXY_USER:PASSWD", long="proxy_auth", value_parser = parse_proxy_auth)]
+    #[arg(env = "PROXY_USER_PASSWD", long="proxy_auth", value_parser = parse_proxy_auth)]
     pub proxy_auth: Option<(String, String)>,
 
     /// Sets the SOCKS5 proxy retries for the blockchain client.

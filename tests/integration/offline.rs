@@ -35,19 +35,13 @@ mod test_offline {
         let mut cmd_init = cli.build_base_cmd();
         cmd_init
             .arg("wallet")
-            .arg("--wallet")
-            .arg(WALLET_NAME)
+            .args(["--wallet", WALLET_NAME])
             .arg("config")
-            .arg("--ext-descriptor")
-            .arg(ext_desc)
-            .arg("--int-descriptor")
-            .arg(int_desc)
-            .arg("--client-type")
-            .arg(client_type)
-            .arg("--database-type")
-            .arg(db)
-            .arg("--url")
-            .arg(url);
+            .args(["--ext-descriptor", ext_desc])
+            .args(["--int-descriptor", int_desc])
+            .args(["--client-type", client_type])
+            .args(["--database-type", db])
+            .args(["--url", url]);
         (cli, cmd_init)
     }
 
@@ -438,13 +432,10 @@ mod multipath_tests {
     fn save_config(cli: &BdkCli, wallet: &str, ext: &str, int: Option<&str>) -> Command {
         let mut cmd = cli.build_base_cmd();
         cmd.arg("wallet")
-            .arg("--wallet")
-            .arg(wallet)
+            .args(["--wallet", wallet])
             .arg("config")
-            .arg("--ext-descriptor")
-            .arg(ext)
-            .arg("--database-type")
-            .arg("sqlite");
+            .args(["--ext-descriptor", ext])
+            .args(["--database-type", "sqlite"]);
         if let Some(int) = int {
             cmd.arg("--int-descriptor").arg(int);
         }

@@ -10,14 +10,14 @@ mod test_proxy {
     #[cfg(any(feature = "rpc", feature = "cbf"))]
     use predicates::prelude::*;
     use serde_json::Value;
-    #[cfg(any(feature = "electrum", feature = "esplora"))]
-    use std::net::{TcpListener, TcpStream};
-    #[cfg(any(feature = "electrum", feature = "esplora"))]
-    use std::sync::mpsc::{Receiver, channel};
-    #[cfg(any(feature = "electrum", feature = "esplora"))]
-    use std::thread;
     use std::time::Duration;
     use tempfile::TempDir;
+    #[cfg(any(feature = "electrum", feature = "esplora"))]
+    use {
+        std::net::{TcpListener, TcpStream},
+        std::sync::mpsc::{Receiver, channel},
+        std::thread,
+    };
 
     static WALLET_NAME: &str = "proxy_test_wallet";
 
@@ -75,19 +75,13 @@ mod test_proxy {
 
         let mut cmd = cli.build_base_cmd();
         cmd.arg("wallet")
-            .arg("--wallet")
-            .arg(WALLET_NAME)
+            .args(["--wallet", WALLET_NAME])
             .arg("config")
-            .arg("--ext-descriptor")
-            .arg(ext_desc)
-            .arg("--int-descriptor")
-            .arg(int_desc)
-            .arg("--client-type")
-            .arg(client_type)
-            .arg("--database-type")
-            .arg("sqlite")
-            .arg("--url")
-            .arg(url);
+            .args(["--ext-descriptor", ext_desc])
+            .args(["--int-descriptor", int_desc])
+            .args(["--client-type", client_type])
+            .args(["--database-type", "sqlite"])
+            .args(["--url", url]);
         if let Some(proxy) = proxy_addr {
             cmd.arg("--proxy").arg(proxy);
         }
@@ -122,17 +116,14 @@ mod test_proxy {
 
         let mut cmd = cli.build_base_cmd();
         cmd.arg("wallet")
-            .arg("--wallet")
-            .arg(WALLET_NAME)
+            .args(["--wallet", WALLET_NAME])
             .arg("config")
             .arg("--ext-descriptor")
             .arg(public["external"].as_str().unwrap())
             .arg("--int-descriptor")
             .arg(public["internal"].as_str().unwrap())
-            .arg("--client-type")
-            .arg(client_type)
-            .arg("--database-type")
-            .arg("sqlite");
+            .args(["--client-type", client_type])
+            .args(["--database-type", "sqlite"]);
         // `--url` is required whenever electrum, esplora or rpc is built, no matter
         // which `--client-type` is chosen; it does not exist at all otherwise.
         #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
