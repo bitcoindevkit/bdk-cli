@@ -22,6 +22,10 @@ use {
     bdk_wallet::chain::CanonicalizationParams,
 };
 
+#[cfg(any(feature = "electrum", feature = "esplora"))]
+use crate::commands::ProxyOpts;
+#[cfg(feature = "electrum")]
+use std::time::Duration;
 #[cfg(feature = "cbf")]
 use {crate::utils::trace_logger, bdk_kyoto::BuilderExt};
 
@@ -202,6 +206,54 @@ pub struct KyotoClientHandle {
         tokio::sync::Mutex<bdk_kyoto::UpdateSubscriber<bdk_kyoto::wallets::Single>>,
 }
 
+/// Build the electrum [`Config`] from the wallet's SOCKS5 proxy options.
+///
+/// The hostname is handed to the proxy as a `TargetAddr::Domain`, so the target is
+/// resolved by the proxy rather than locally, and no DNS query leaks.
+#[cfg(feature = "electrum")]
+fn electrum_config(proxy_opts: &ProxyOpts) -> bdk_electrum::electrum_client::Config {
+    use bdk_electrum::electrum_client::{ConfigBuilder, Socks5Config};
+
+    let socks5 = proxy_opts
+        .proxy
+        .as_ref()
+        .map(|addr| match &proxy_opts.proxy_auth {
+            Some((user, password)) => {
+                Socks5Config::with_credentials(addr, user.clone(), password.clone())
+            }
+            None => Socks5Config::new(addr),
+        });
+
+    ConfigBuilder::new()
+        .socks5(socks5)
+        .retry(proxy_opts.retries)
+        .timeout(
+            proxy_opts
+                .timeout
+                .map(|secs| Duration::from_secs(secs as u64)),
+        )
+        .build()
+}
+
+/// Render the SOCKS5 proxy options as a URL for esplora's HTTP client.
+///
+/// `socks5h` rather than `socks5` so the proxy resolves the esplora hostname; with
+/// plain `socks5` the client resolves it locally first, leaking a DNS query that
+/// identifies the server being synced against.
+#[cfg(feature = "esplora")]
+fn esplora_proxy_url(proxy_opts: &ProxyOpts) -> Option<String> {
+    let addr = proxy_opts.proxy.as_ref()?;
+    let addr = addr
+        .strip_prefix("socks5h://")
+        .or_else(|| addr.strip_prefix("socks5://"))
+        .unwrap_or(addr);
+
+    Some(match &proxy_opts.proxy_auth {
+        Some((user, password)) => format!("socks5h://{user}:{password}@{addr}"),
+        None => format!("socks5h://{addr}"),
+    })
+}
+
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -219,7 +271,8 @@ pub(crate) fn new_blockchain_client(
     let client = match wallet_opts.client_type {
         #[cfg(feature = "electrum")]
         ClientType::Electrum => {
-            let client = bdk_electrum::electrum_client::Client::new(url)
+            let config = electrum_config(&wallet_opts.proxy_opts);
+            let client = bdk_electrum::electrum_client::Client::from_config(url, config)
                 .map(bdk_electrum::BdkElectrumClient::new)?;
             BlockchainClient::Electrum {
                 client: Box::new(client),
@@ -228,7 +281,15 @@ pub(crate) fn new_blockchain_client(
         }
         #[cfg(feature = "esplora")]
         ClientType::Esplora => {
-            let client = bdk_esplora::esplora_client::Builder::new(url).build_async()?;
+            let mut builder = bdk_esplora::esplora_client::Builder::new(url)
+                .max_retries(wallet_opts.proxy_opts.retries as usize);
+            if let Some(proxy) = esplora_proxy_url(&wallet_opts.proxy_opts) {
+                builder = builder.proxy(&proxy);
+            }
+            if let Some(timeout) = wallet_opts.proxy_opts.timeout {
+                builder = builder.timeout(timeout as u64);
+            }
+            let client = builder.build_async()?;
             BlockchainClient::Esplora {
                 client: Box::new(client),
                 parallel_requests: wallet_opts.parallel_requests,
@@ -237,6 +298,7 @@ pub(crate) fn new_blockchain_client(
 
         #[cfg(feature = "rpc")]
         ClientType::Rpc => {
+            wallet_opts.reject_proxy("rpc")?;
             let auth = match &wallet_opts.cookie {
                 Some(cookie) => bdk_bitcoind_rpc::bitcoincore_rpc::Auth::CookieFile(cookie.into()),
                 None => bdk_bitcoind_rpc::bitcoincore_rpc::Auth::UserPass(
@@ -253,8 +315,13 @@ pub(crate) fn new_blockchain_client(
 
         #[cfg(feature = "cbf")]
         ClientType::Cbf => {
+            wallet_opts.reject_proxy_auth("cbf")?;
+
             let scan_type = bdk_kyoto::ScanType::Sync;
-            let builder = bdk_kyoto::builder::Builder::new(_wallet.network());
+            let mut builder = bdk_kyoto::builder::Builder::new(_wallet.network());
+            if let Some(proxy) = wallet_opts.proxy_opts.socket_addr()? {
+                builder = builder.socks5_proxy(proxy);
+            }
 
             let light_client = builder
                 .required_peers(wallet_opts.compactfilter_opts.conn_count)

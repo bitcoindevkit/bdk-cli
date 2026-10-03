@@ -41,7 +41,7 @@ impl AsyncAppCommand<AppContext<Init>> for ResolveDnsRecipientCommand {
 /// Creates a new unsigned transaction from DNS payment instructions.
 #[derive(Parser, Debug, Clone, PartialEq)]
 pub struct CreateDnsTxCommand {
-    #[arg(env = "ADDRESS:SAT", long = "to", value_parser = parse_recipient)]
+    #[arg(env = "ADDRESS_SAT", long = "to", value_parser = parse_recipient)]
     pub recipients: Vec<(ScriptBuf, u64)>,
     #[arg(long = "to_dns", value_parser = parse_dns_recipient)]
     pub dns_recipients: Vec<(String, u64)>,
@@ -53,9 +53,9 @@ pub struct CreateDnsTxCommand {
     pub enable_rbf: bool,
     #[arg(long = "offline_signer")]
     pub offline_signer: bool,
-    #[arg(env = "MUST_SPEND_TXID:VOUT", long = "utxos", value_parser = parse_outpoint)]
+    #[arg(env = "MUST_SPEND_TXID_VOUT", long = "utxos", value_parser = parse_outpoint)]
     pub utxos: Option<Vec<OutPoint>>,
-    #[arg(env = "CANT_SPEND_TXID:VOUT", long = "unspendable", value_parser = parse_outpoint)]
+    #[arg(env = "CANT_SPEND_TXID_VOUT", long = "unspendable", value_parser = parse_outpoint)]
     pub unspendable: Option<Vec<OutPoint>>,
     #[arg(env = "SATS_VBYTE", short = 'f', long = "fee_rate", value_parser = parse_fee_rate)]
     pub fee_rate: Option<FeeRate>,

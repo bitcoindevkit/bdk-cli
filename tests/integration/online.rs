@@ -33,19 +33,13 @@ mod test_online {
         let mut cmd_init = cli.build_base_cmd();
         cmd_init
             .arg("wallet")
-            .arg("--wallet")
-            .arg(WALLET_NAME)
+            .args(["--wallet", WALLET_NAME])
             .arg("config")
-            .arg("--ext-descriptor")
-            .arg(ext_desc)
-            .arg("--int-descriptor")
-            .arg(int_desc)
-            .arg("--client-type")
-            .arg("electrum")
-            .arg("--database-type")
-            .arg("sqlite")
-            .arg("--url")
-            .arg(server_url);
+            .args(["--ext-descriptor", ext_desc])
+            .args(["--int-descriptor", int_desc])
+            .args(["--client-type", "electrum"])
+            .args(["--database-type", "sqlite"])
+            .args(["--url", server_url]);
 
         (cli, cmd_init, env)
     }
@@ -862,19 +856,13 @@ mod test_online {
             .unwrap();
         cli.build_base_cmd()
             .arg("wallet")
-            .arg("--wallet")
-            .arg(WALLET_NAME)
+            .args(["--wallet", WALLET_NAME])
             .arg("config")
-            .arg("--ext-descriptor")
-            .arg(ext_desc)
-            .arg("--int-descriptor")
-            .arg(int_desc)
-            .arg("--client-type")
-            .arg("electrum")
-            .arg("--database-type")
-            .arg("sqlite")
-            .arg("--url")
-            .arg(server_url)
+            .args(["--ext-descriptor", ext_desc])
+            .args(["--int-descriptor", int_desc])
+            .args(["--client-type", "electrum"])
+            .args(["--database-type", "sqlite"])
+            .args(["--url", server_url])
             .assert()
             .success();
 

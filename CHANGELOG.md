@@ -9,7 +9,9 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Fixed the data directory and config.toml permission being world-readable (0755/0644) to 0700/0600 on Unix.
 - Fixed `create_tx` and `bump_fee` panicking on malformed `--utxos` and `--add_data` values instead of returning an error
 - Fixed `--fee_rate` silently truncating to a whole sat/vB, falling back to a default, or producing a zero-fee transaction, unusable values are now rejected
-
+- Fixed routing electrum and esplora traffic through configured socks5 proxy
+- Routed compact filter (cbf) traffic through the configured SOCKS5 proxy
+- Rejected `--proxy` on the `rpc` backend, and unsupported proxy options (`--proxy_auth`, `--timeout`) on the `rpc` and `cbf` backends, instead of silently ignoring them
 
 ## [4.0.0]
 

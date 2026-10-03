@@ -138,19 +138,13 @@ mod test_wallets {
 
             cli.build_base_cmd()
                 .arg("wallet")
-                .arg("--wallet")
-                .arg(wallet_name)
+                .args(["--wallet", wallet_name])
                 .arg("config")
-                .arg("--ext-descriptor")
-                .arg(ext_desc)
-                .arg("--int-descriptor")
-                .arg(int_desc)
-                .arg("--client-type")
-                .arg("rpc")
-                .arg("--database-type")
-                .arg("sqlite")
-                .arg("--url")
-                .arg("http://localhost:18443")
+                .args(["--ext-descriptor", ext_desc])
+                .args(["--int-descriptor", int_desc])
+                .args(["--client-type", "rpc"])
+                .args(["--database-type", "sqlite"])
+                .args(["--url", "http://localhost:18443"])
                 .assert()
                 .success();
         }
@@ -246,19 +240,13 @@ mod test_config {
         let mut cmd_init = cli.build_base_cmd();
         cmd_init
             .arg("wallet")
-            .arg("--wallet")
-            .arg(wallet_name)
+            .args(["--wallet", wallet_name])
             .arg("config")
-            .arg("--ext-descriptor")
-            .arg(ext_desc)
-            .arg("--int-descriptor")
-            .arg(int_desc)
-            .arg("--client-type")
-            .arg(client_type)
-            .arg("--database-type")
-            .arg(db)
-            .arg("--url")
-            .arg(url);
+            .args(["--ext-descriptor", ext_desc])
+            .args(["--int-descriptor", int_desc])
+            .args(["--client-type", client_type])
+            .args(["--database-type", db])
+            .args(["--url", url]);
 
         cmd_init.assert().success();
 
@@ -310,19 +298,15 @@ mod test_config {
 
         cli.build_base_cmd()
             .arg("wallet")
-            .arg("--wallet")
-            .arg("secret_wallet")
+            .args(["--wallet", "secret_wallet"])
             .arg("config")
             .arg("--ext-descriptor")
             .arg(priv_desc["external"].as_str().unwrap())
             .arg("--int-descriptor")
             .arg(priv_desc["internal"].as_str().unwrap())
-            .arg("--client-type")
-            .arg("rpc")
-            .arg("--database-type")
-            .arg("sqlite")
-            .arg("--url")
-            .arg("http://localhost:18443")
+            .args(["--client-type", "rpc"])
+            .args(["--database-type", "sqlite"])
+            .args(["--url", "http://localhost:18443"])
             .assert()
             .success()
             .stderr(predicate::str::contains("PRIVATE KEYS"));

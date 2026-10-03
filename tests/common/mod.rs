@@ -40,14 +40,14 @@ impl BdkCli {
     pub fn build_base_cmd(&self) -> Command {
         let mut cmd = Command::cargo_bin("bdk-cli").expect("bdk-cli binary must compile");
 
-        cmd.arg("--network").arg(&self.network);
+        cmd.args(["--network", &self.network]);
 
         if let Some(dir) = &self.datadir {
             cmd.arg("--datadir").arg(dir);
         }
 
         if let Some(url) = &self.server_url {
-            cmd.arg("--server").arg(url);
+            cmd.args(["--server", url]);
         }
 
         cmd

@@ -193,7 +193,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for BalanceCommand {
 #[derive(Debug, Parser, Clone, PartialEq)]
 pub struct CreateTxCommand {
     /// Adds a recipient to the transaction.
-    #[arg(env = "ADDRESS:SAT", long = "to", required = true, value_parser = parse_recipient)]
+    #[arg(env = "ADDRESS_SAT", long = "to", required = true, value_parser = parse_recipient)]
     pub recipients: Vec<(ScriptBuf, u64)>,
 
     /// Sends all the funds (or all the selected utxos). Requires only one recipient with value 0.
@@ -209,11 +209,11 @@ pub struct CreateTxCommand {
     pub offline_signer: bool,
 
     /// Selects which utxos *must* be spent.
-    #[arg(env = "MUST_SPEND_TXID:VOUT", long = "utxos", value_parser = parse_outpoint)]
+    #[arg(env = "MUST_SPEND_TXID_VOUT", long = "utxos", value_parser = parse_outpoint)]
     pub utxos: Option<Vec<OutPoint>>,
 
     /// Marks a utxo as unspendable.
-    #[arg(env = "CANT_SPEND_TXID:VOUT", long = "unspendable", value_parser = parse_outpoint)]
+    #[arg(env = "CANT_SPEND_TXID_VOUT", long = "unspendable", value_parser = parse_outpoint)]
     pub unspendable: Option<Vec<OutPoint>>,
 
     /// Fee rate to use in sat/vbyte.
@@ -327,7 +327,7 @@ pub struct CreateSpTxCommand {
     /// Adds a recipient to the transaction.
     // Clap Doesn't support complex vector parsing https://github.com/clap-rs/clap/issues/1704.
     // Address and amount parsing is done at run time in handler function.
-    #[arg(env = "ADDRESS:SAT", long = "to", required = false, value_parser = parse_recipient)]
+    #[arg(env = "ADDRESS_SAT", long = "to", required = false, value_parser = parse_recipient)]
     pub recipients: Option<Vec<(ScriptBuf, u64)>>,
     /// Parse silent payment recipients
     #[arg(long = "to-sp", required = true, value_parser = parse_sp_code_value_pairs)]
@@ -339,10 +339,10 @@ pub struct CreateSpTxCommand {
     #[arg(long = "offline_signer")]
     pub offline_signer: bool,
     /// Selects which utxos *must* be spent.
-    #[arg(env = "MUST_SPEND_TXID:VOUT", long = "utxos", value_parser = parse_outpoint)]
+    #[arg(env = "MUST_SPEND_TXID_VOUT", long = "utxos", value_parser = parse_outpoint)]
     pub utxos: Option<Vec<OutPoint>>,
     /// Marks a utxo as unspendable.
-    #[arg(env = "CANT_SPEND_TXID:VOUT", long = "unspendable", value_parser = parse_outpoint)]
+    #[arg(env = "CANT_SPEND_TXID_VOUT", long = "unspendable", value_parser = parse_outpoint)]
     pub unspendable: Option<Vec<OutPoint>>,
     /// Fee rate to use in sat/vbyte.
     #[arg(env = "SATS_VBYTE", short = 'f', long = "fee_rate", value_parser = parse_fee_rate)]
@@ -547,11 +547,11 @@ pub struct BumpFeeCommand {
     pub offline_signer: bool,
 
     /// Selects which utxos *must* be added to the tx. Unconfirmed utxos cannot be used.
-    #[arg(env = "MUST_SPEND_TXID:VOUT", long = "utxos", value_parser = parse_outpoint)]
+    #[arg(env = "MUST_SPEND_TXID_VOUT", long = "utxos", value_parser = parse_outpoint)]
     pub utxos: Option<Vec<OutPoint>>,
 
     /// Marks an utxo as unspendable, in case more inputs are needed to cover the extra fees.
-    #[arg(env = "CANT_SPEND_TXID:VOUT", long = "unspendable", value_parser = parse_outpoint)]
+    #[arg(env = "CANT_SPEND_TXID_VOUT", long = "unspendable", value_parser = parse_outpoint)]
     pub unspendable: Option<Vec<OutPoint>>,
 
     /// The new targeted fee rate in sat/vbyte.
