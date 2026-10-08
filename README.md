@@ -70,15 +70,54 @@ Building BDK requires `gcc`. If you do not have this installed run:
 sudo apt-get install build-essential
 ```
 
+#### Bitcoin Core (required for the `rpc` backend and the Justfile workflow)
+
+The `rpc` feature and all `just` recipes (`just start`, `just create`, `just generate`, etc.) require
+`bitcoind` and `bitcoin-cli` to be on your `PATH`. They are **not** installed automatically.
+
+If you do not have Bitcoin Core installed, download the official binaries for your platform from
+[bitcoincore.org](https://bitcoincore.org/en/download/) and add the `bin/` directory to your `PATH`.
+
+On Linux (x86_64), a quick install looks like:
+
+```shell
+# Download and extract Bitcoin Core 29.0
+cd /tmp
+wget https://bitcoincore.org/bin/bitcoin-core-29.0/bitcoin-29.0-x86_64-linux-gnu.tar.gz
+tar xzf bitcoin-29.0-x86_64-linux-gnu.tar.gz -C ~/.local/
+
+# Add to PATH (add this line to your ~/.bashrc or ~/.zshrc to make it permanent)
+export PATH="$HOME/.local/bitcoin-29.0/bin:$PATH"
+
+# Verify
+bitcoind --version
+bitcoin-cli --version
+```
+
+> **Security note:** the snippet above skips checksum verification for brevity. Before running
+> these binaries, verify them against the signed `SHA256SUMS` from the
+> [download page](https://bitcoincore.org/en/download/) - see the
+> [verification guide](https://bitcoincore.org/en/download/#verify-your-download) for the full steps.
+
+If you only want to test with a public server (no local node), use the `electrum` or `esplora`
+feature instead — those do not require a local `bitcoind`:
+
+```shell
+cargo install --path . --features electrum
+```
+
 ### From source
 
 To install a dev version of `bdk-cli` from a local git repo with the `electrum` blockchain client enabled:
 
 ```shell
 cd <bdk-cli git repo directory>
+cp .env.example .env   # set your network, wallet name, and backend defaults
 cargo install --path . --features electrum
 bdk-cli help # to verify it worked
 ```
+
+`.env.example` documents every supported environment variable. Copy it to `.env` at the repo root and uncomment the values you want. The file is loaded automatically on startup; command-line flags always take precedence.
 
 If no blockchain client feature is enabled online wallet commands `sync` and `broadcast` will be 
 disabled. To enable these commands a blockchain client feature such as `electrum` or another 
@@ -232,12 +271,20 @@ Note: You can modify the `Justfile` to reflect your nodes' configuration values.
 
 #### Steps
 
-1. Start bitcoind
+1. Copy the environment template at the repo root
+
+   ```shell
+   cp .env.example .env
+   ```
+
+   Edit `.env` to set `NETWORK`, `RPC_BASIC_AUTH`, and any other values you want as defaults. The Justfile uses its own hardcoded defaults (`user`/`password`, `~/.bdk-bitcoin`), but bdk-cli commands in later steps will pick up whatever you set in `.env`.
+
+2. Start bitcoind
    ```shell
    just start
    ```
 
-2. Create or load a bitcoind wallet with default wallet name
+3. Create or load a bitcoind wallet with default wallet name
 
    ```shell
    just create
@@ -247,44 +294,47 @@ Note: You can modify the `Justfile` to reflect your nodes' configuration values.
    just load
    ```
 
-3. Generate a bitcoind wallet address to send regtest bitcoins to.
+4. Generate a bitcoind wallet address to send regtest bitcoins to.
 
    ```shell
    just address
    ```
    
-4. Mine 101 blocks on regtest to bitcoind wallet address
+5. Mine 101 blocks on regtest to bitcoind wallet address
+
+   > **Note:** use `$(just address)` (command substitution with `$(...)`), not `${just address}`.
+
    ```shell
    just generate 101 $(just address)
    ```
 
-5. Check the bitcoind wallet balance
+6. Check the bitcoind wallet balance
    ```shell
    just balance
    ```
 
-6. Setup your `bdk-cli` wallet config and connect it to your regtest node to perform a `sync`
+7. Setup your `bdk-cli` wallet config and connect it to your regtest node to perform a `sync`
    ```shell
    cargo run --features rpc -- -n regtest wallet -w regtest1 config -e "wpkh(tprv8ZgxMBicQKsPdMzWj9KHvoExKJDqfZFuT5D8o9XVZ3wfyUcnPNPJKncq5df8kpDWnMxoKbGrpS44VawHG17ZSwTkdhEtVRzSYXd14vDYXKw/0/*)" -i "wpkh(tprv8ZgxMBicQKsPdMzWj9KHvoExKJDqfZFuT5D8o9XVZ3wfyUcnPNPJKncq5df8kpDWnMxoKbGrpS44VawHG17ZSwTkdhEtVRzSYXd14vDYXKw/1/*)" -u "127.0.0.1:18443" -c rpc -d sqlite -a user:password 
    cargo run --features rpc -- wallet -w regtest1 sync
    ```
 
-7. Generate an address from your `bdk-cli` wallet and fund it with 10 bitcoins from your bitcoind node's wallet
+8. Generate an address from your `bdk-cli` wallet and fund it with 10 bitcoins from your bitcoind node's wallet
    ```shell
    export address=$(cargo run --features rpc -- wallet -w regtest1 new_address | jq '.address')
    just send 10 $address
    ```
 
-8. Mine 6 more blocks to the bitcoind wallet
+9. Mine 6 more blocks to the bitcoind wallet
    ```shell
    just generate 6 $(just address)
    ```
 
-9. You can `sync` your `bdk-cli` wallet now and the balance should reflect the regtest bitcoin you received
-   ```shell
-   cargo run --features rpc -- wallet -w regtest1 sync
-   cargo run --features rpc -- wallet -w regtest1 balance
-   ```
+10. You can `sync` your `bdk-cli` wallet now and the balance should reflect the regtest bitcoin you received
+    ```shell
+    cargo run --features rpc -- wallet -w regtest1 sync
+    cargo run --features rpc -- wallet -w regtest1 balance
+    ```
 
 ## Shell Completions
 

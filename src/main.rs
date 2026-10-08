@@ -33,7 +33,13 @@ use clap::{CommandFactory, Parser};
 
 #[tokio::main]
 async fn main() {
+    let dotenv_result = dotenvy::dotenv();
     env_logger::init();
+    if let Err(e) = dotenv_result {
+        if !e.not_found() {
+            warn!(".env file found but failed to load: {e}");
+        }
+    }
     let cli_opts: CliOpts = CliOpts::parse();
 
     let network = &cli_opts.network;
