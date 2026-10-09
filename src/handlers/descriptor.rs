@@ -13,6 +13,8 @@ use crate::{
 };
 use clap::Parser;
 #[cfg(feature = "compiler")]
+use clap::ValueEnum;
+#[cfg(feature = "compiler")]
 use {
     bdk_wallet::{
         bitcoin::{
@@ -70,9 +72,24 @@ pub struct CompileCommand {
     #[arg(env = "POLICY", required = true, index = 1)]
     policy: String,
     /// Sets the script type used to embed the compiled policy.
-    #[arg(env = "TYPE", short = 't', long = "type", default_value = "wsh", value_parser = ["sh","wsh", "sh-wsh", "tr"]
-        )]
-    script_type: String,
+    #[arg(
+        env = "TYPE",
+        short = 't',
+        long = "type",
+        value_enum,
+        default_value_t = ScriptType::Wsh
+    )]
+    script_type: ScriptType,
+}
+
+/// Script types the compiled policy can be embedded in.
+#[cfg(feature = "compiler")]
+#[derive(Clone, Copy, ValueEnum, Debug, Eq, PartialEq)]
+pub enum ScriptType {
+    Sh,
+    Wsh,
+    ShWsh,
+    Tr,
 }
 
 #[cfg(feature = "compiler")]
@@ -87,11 +104,11 @@ impl AppCommand<AppContext<Init>> for CompileCommand {
 
         // Compile per branch, not once up front: the contexts have different script
         // limits, and the narrowest one would reject policies valid for the requested type.
-        let descriptor = match self.script_type.as_str() {
-            "sh" => Descriptor::new_sh(policy.compile()?),
-            "wsh" => Descriptor::new_wsh(policy.compile()?),
-            "sh-wsh" => Descriptor::new_sh_wsh(policy.compile()?),
-            "tr" => {
+        let descriptor = match self.script_type {
+            ScriptType::Sh => Descriptor::new_sh(policy.compile()?),
+            ScriptType::Wsh => Descriptor::new_wsh(policy.compile()?),
+            ScriptType::ShWsh => Descriptor::new_sh_wsh(policy.compile()?),
+            ScriptType::Tr => {
                 // Use a randomized unspendable internal key (H + rG) instead of a fixed NUMS
                 // point. This improves privacy by preventing observers from determining whether
                 // key-path spending is disabled. `r` is returned so the user can verify the key
@@ -112,11 +129,6 @@ impl AppCommand<AppContext<Init>> for CompileCommand {
 
                 let tree = TapTree::Leaf(Arc::new(policy.compile()?));
                 Descriptor::new_tr(xonly_internal_key.to_string(), Some(tree))
-            }
-            _ => {
-                return Err(Error::Generic(
-                    "Invalid script type. Supported: sh, wsh, sh-wsh, tr".into(),
-                ));
             }
         }?;
 
