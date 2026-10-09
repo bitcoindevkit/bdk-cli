@@ -224,6 +224,26 @@ mod test_compile {
     }
 
     #[test]
+    fn test_compile_sh_and_sh_wsh() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy = "pk(02e5b88fdb71c696e1a473f309a47535b7190e21a22bd25e7fc8bd055db3bba12f)";
+
+        // compile sh
+        cli.cmd("compile", &[policy, "--type", "sh"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("\"descriptor\": \"sh(pk("));
+
+        // compile sh-wsh
+        cli.cmd("compile", &[policy, "--type", "sh-wsh"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("\"descriptor\": \"sh(wsh(pk("));
+    }
+
+    #[test]
     fn test_compile_invalid_policy() {
         let temp_dir = TempDir::new().unwrap();
         let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
