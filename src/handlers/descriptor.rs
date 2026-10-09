@@ -20,7 +20,11 @@ use {
             key::{Parity, rand},
             secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey},
         },
-        miniscript::{Descriptor, descriptor::TapTree, policy::Concrete},
+        miniscript::{
+            Descriptor, FromStrKey, MiniscriptKey,
+            descriptor::{DescriptorPublicKey, TapTree},
+            policy::Concrete,
+        },
     },
     std::{str::FromStr, sync::Arc},
 };
@@ -73,6 +77,83 @@ pub struct CompileCommand {
     #[arg(env = "TYPE", short = 't', long = "type", default_value = "wsh", value_parser = ["sh","wsh", "sh-wsh", "tr"]
         )]
     script_type: String,
+    /// Skip key and hash validation, accepting placeholders (e.g. pk(A)). Useful for
+    /// inspecting a policy's shape without real keys. Descriptors compiled with this
+    /// flag are not usable for spending.
+    #[arg(long = "allow-placeholders")]
+    allow_placeholders: bool,
+}
+
+#[cfg(feature = "compiler")]
+/// Converts an x-only key into `Self`, so the `tr` branch can build its internal key
+/// generically over the policy's key type. `String` can't get a `From<XOnlyPublicKey>`
+/// impl here (orphan rules), hence this local trait instead.
+trait TrInternalKey: MiniscriptKey {
+    fn from_xonly(key: XOnlyPublicKey) -> Self;
+}
+
+#[cfg(feature = "compiler")]
+impl TrInternalKey for String {
+    fn from_xonly(key: XOnlyPublicKey) -> Self {
+        key.to_string()
+    }
+}
+
+#[cfg(feature = "compiler")]
+impl TrInternalKey for DescriptorPublicKey {
+    fn from_xonly(key: XOnlyPublicKey) -> Self {
+        DescriptorPublicKey::from(key)
+    }
+}
+
+#[cfg(feature = "compiler")]
+/// Parses `policy_str` as `Pk` and compiles it for `script_type`. Returns the
+/// descriptor string and, for `tr`, the random tweak `r` used to derive the
+/// unspendable internal key so the caller can verify it.
+fn compile_policy<Pk: FromStrKey + TrInternalKey>(
+    policy_str: &str,
+    script_type: &str,
+) -> Result<(String, Option<String>), Error> {
+    let policy: Concrete<Pk> = Concrete::from_str(policy_str)
+        .map_err(|e| Error::Generic(format!("Invalid policy: {e}")))?;
+
+    let mut r = None;
+
+    // Compile per branch, not once up front: the contexts have different script
+    // limits, and the narrowest one would reject policies valid for the requested type.
+    let descriptor = match script_type {
+        "sh" => Descriptor::new_sh(policy.compile()?),
+        "wsh" => Descriptor::new_wsh(policy.compile()?),
+        "sh-wsh" => Descriptor::new_sh_wsh(policy.compile()?),
+        "tr" => {
+            // Use a randomized unspendable internal key (H + rG) instead of a fixed NUMS
+            // point. This improves privacy by preventing observers from determining whether
+            // key-path spending is disabled. `r` is returned so the user can verify the key
+            // is derived from the NUMS point. See BIP-341.
+            let secp = Secp256k1::new();
+            let r_secret = SecretKey::new(&mut rand::thread_rng());
+            r = Some(r_secret.display_secret().to_string());
+
+            let nums_key = XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)
+                .map_err(|e| Error::Generic(format!("Invalid NUMS key: {e}")))?;
+            let nums_point = PublicKey::from_x_only_public_key(nums_key, Parity::Even);
+
+            let internal_key_point = nums_point
+                .add_exp_tweak(&secp, &Scalar::from(r_secret))
+                .map_err(|e| Error::Generic(format!("Failed to tweak NUMS key: {e}")))?;
+            let (xonly_internal_key, _) = internal_key_point.x_only_public_key();
+
+            let tree = TapTree::Leaf(Arc::new(policy.compile()?));
+            Descriptor::new_tr(Pk::from_xonly(xonly_internal_key), Some(tree))
+        }
+        _ => {
+            return Err(Error::Generic(
+                "Invalid script type. Supported: sh, wsh, sh-wsh, tr".into(),
+            ));
+        }
+    }?;
+
+    Ok((descriptor.to_string(), r))
 }
 
 #[cfg(feature = "compiler")]
@@ -80,48 +161,14 @@ impl AppCommand<AppContext<Init>> for CompileCommand {
     type Output = DescriptorResult;
 
     fn execute(&self, _ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
-        let policy: Concrete<String> = Concrete::from_str(&self.policy)
-            .map_err(|e| Error::Generic(format!("Invalid policy: {e}")))?;
-
-        let mut r = None;
-
-        // Compile per branch, not once up front: the contexts have different script
-        // limits, and the narrowest one would reject policies valid for the requested type.
-        let descriptor = match self.script_type.as_str() {
-            "sh" => Descriptor::new_sh(policy.compile()?),
-            "wsh" => Descriptor::new_wsh(policy.compile()?),
-            "sh-wsh" => Descriptor::new_sh_wsh(policy.compile()?),
-            "tr" => {
-                // Use a randomized unspendable internal key (H + rG) instead of a fixed NUMS
-                // point. This improves privacy by preventing observers from determining whether
-                // key-path spending is disabled. `r` is returned so the user can verify the key
-                // is derived from the NUMS point. See BIP-341.
-                let secp = Secp256k1::new();
-                let r_secret = SecretKey::new(&mut rand::thread_rng());
-                r = Some(r_secret.display_secret().to_string());
-
-                let nums_key = XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)
-                    .map_err(|e| Error::Generic(format!("Invalid NUMS key: {e}")))?;
-                let nums_point = PublicKey::from_x_only_public_key(nums_key, Parity::Even);
-
-                let internal_key_point =
-                    nums_point
-                        .add_exp_tweak(&secp, &Scalar::from(r_secret))
-                        .map_err(|e| Error::Generic(format!("Failed to tweak NUMS key: {e}")))?;
-                let (xonly_internal_key, _) = internal_key_point.x_only_public_key();
-
-                let tree = TapTree::Leaf(Arc::new(policy.compile()?));
-                Descriptor::new_tr(xonly_internal_key.to_string(), Some(tree))
-            }
-            _ => {
-                return Err(Error::Generic(
-                    "Invalid script type. Supported: sh, wsh, sh-wsh, tr".into(),
-                ));
-            }
-        }?;
+        let (descriptor, r) = if self.allow_placeholders {
+            compile_policy::<String>(&self.policy, &self.script_type)?
+        } else {
+            compile_policy::<DescriptorPublicKey>(&self.policy, &self.script_type)?
+        };
 
         Ok(DescriptorResult {
-            descriptor: Some(descriptor.to_string()),
+            descriptor: Some(descriptor),
             mnemonic: None,
             multipath_descriptor: None,
             public_descriptors: None,
