@@ -22,6 +22,7 @@ use {
         },
         miniscript::{Descriptor, descriptor::TapTree, policy::Concrete},
     },
+    clap::ValueEnum,
     std::{str::FromStr, sync::Arc},
 };
 
@@ -70,9 +71,18 @@ pub struct CompileCommand {
     #[arg(env = "POLICY", required = true, index = 1)]
     policy: String,
     /// Sets the script type used to embed the compiled policy.
-    #[arg(env = "TYPE", short = 't', long = "type", default_value = "wsh", value_parser = ["sh","wsh", "sh-wsh", "tr"]
-        )]
-    script_type: String,
+    #[arg(env = "TYPE", short = 't', long = "type", value_enum, default_value_t = ScriptType::Wsh)]
+    script_type: ScriptType,
+}
+
+/// Script types a compiled policy can be embedded in.
+#[cfg(feature = "compiler")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum ScriptType {
+    Sh,
+    Wsh,
+    ShWsh,
+    Tr,
 }
 
 #[cfg(feature = "compiler")]
@@ -87,11 +97,11 @@ impl AppCommand<AppContext<Init>> for CompileCommand {
 
         // Compile per branch, not once up front: the contexts have different script
         // limits, and the narrowest one would reject policies valid for the requested type.
-        let descriptor = match self.script_type.as_str() {
-            "sh" => Descriptor::new_sh(policy.compile()?),
-            "wsh" => Descriptor::new_wsh(policy.compile()?),
-            "sh-wsh" => Descriptor::new_sh_wsh(policy.compile()?),
-            "tr" => {
+        let descriptor = match self.script_type {
+            ScriptType::Sh => Descriptor::new_sh(policy.compile()?),
+            ScriptType::Wsh => Descriptor::new_wsh(policy.compile()?),
+            ScriptType::ShWsh => Descriptor::new_sh_wsh(policy.compile()?),
+            ScriptType::Tr => {
                 // Use a randomized unspendable internal key (H + rG) instead of a fixed NUMS
                 // point. This improves privacy by preventing observers from determining whether
                 // key-path spending is disabled. `r` is returned so the user can verify the key
@@ -112,11 +122,6 @@ impl AppCommand<AppContext<Init>> for CompileCommand {
 
                 let tree = TapTree::Leaf(Arc::new(policy.compile()?));
                 Descriptor::new_tr(xonly_internal_key.to_string(), Some(tree))
-            }
-            _ => {
-                return Err(Error::Generic(
-                    "Invalid script type. Supported: sh, wsh, sh-wsh, tr".into(),
-                ));
             }
         }?;
 
@@ -154,5 +159,32 @@ impl AppCommand<AppContext<Init>> for SilentPaymentCodeCommand {
         Ok(StatusResult {
             message: sp_code.to_string(),
         })
+    }
+}
+
+#[cfg(all(test, feature = "compiler"))]
+mod tests {
+    use super::{CompileCommand, ScriptType};
+    use clap::Parser;
+
+    #[test]
+    fn compile_type_accepts_the_documented_values() {
+        for (arg, expected) in [
+            ("sh", ScriptType::Sh),
+            ("wsh", ScriptType::Wsh),
+            ("sh-wsh", ScriptType::ShWsh),
+            ("tr", ScriptType::Tr),
+        ] {
+            let cmd = CompileCommand::try_parse_from(["compile", "pk(A)", "--type", arg]).unwrap();
+            assert_eq!(cmd.script_type, expected);
+        }
+    }
+
+    #[test]
+    fn compile_type_defaults_to_wsh_and_rejects_unknown_values() {
+        let cmd = CompileCommand::try_parse_from(["compile", "pk(A)"]).unwrap();
+        assert_eq!(cmd.script_type, ScriptType::Wsh);
+
+        assert!(CompileCommand::try_parse_from(["compile", "pk(A)", "--type", "pkh"]).is_err());
     }
 }
