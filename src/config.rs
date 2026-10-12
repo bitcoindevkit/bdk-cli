@@ -26,7 +26,6 @@ pub struct WalletConfig {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WalletConfigInner {
-    pub wallet: String,
     pub network: String,
     pub ext_descriptor: String,
     pub int_descriptor: Option<String>,
@@ -105,14 +104,13 @@ impl WalletConfig {
         self.wallets
             .get(wallet_name)
             .ok_or_else(|| Error::Generic(format!("Wallet {wallet_name} not found in config")))?
-            .try_into()
+            .try_to_wallet_opts(wallet_name)
     }
 }
 
-impl TryFrom<&WalletConfigInner> for WalletOpts {
-    type Error = Error;
-
-    fn try_from(config: &WalletConfigInner) -> Result<Self, Self::Error> {
+impl WalletConfigInner {
+    fn try_to_wallet_opts(&self, wallet_name: &str) -> Result<WalletOpts, Error> {
+        let config = self;
         Network::from_str(&config.network)
             .map_err(|_| Error::Generic("Invalid network".to_string()))?;
 
@@ -136,7 +134,7 @@ impl TryFrom<&WalletConfigInner> for WalletOpts {
             })?;
 
         Ok(WalletOpts {
-            wallet: Some(config.wallet.clone()),
+            wallet: Some(wallet_name.to_string()),
             ext_descriptor: config.ext_descriptor.clone(),
             int_descriptor: config.int_descriptor.clone(),
 
@@ -200,7 +198,6 @@ impl TryFrom<&WalletConfigInner> for WalletOpts {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::convert::TryInto;
     const EXT_DESCRIPTOR: &str = "wpkh([07234a14/84'/1'/0']tpubDCSgT6PaVLQH9h2TAxKryhvkEurUBcYRJc9dhTcMDyahhWiMWfEWvQQX89yaw7w7XU8bcVujoALfxq59VkFATri3Cxm5mkp9kfHfRFDckEh/0/*)#429nsxmg";
     const INT_DESCRIPTOR: &str = "wpkh([07234a14/84'/1'/0']tpubDCSgT6PaVLQH9h2TAxKryhvkEurUBcYRJc9dhTcMDyahhWiMWfEWvQQX89yaw7w7XU8bcVujoALfxq59VkFATri3Cxm5mkp9kfHfRFDckEh/1/*)#y7qjdnts";
 
@@ -227,7 +224,6 @@ mod tests {
         };
 
         let wallet_config = WalletConfigInner {
-            wallet: "test_wallet".to_string(),
             network: "testnet4".to_string(),
             ext_descriptor: EXT_DESCRIPTOR.to_string(),
             int_descriptor: Some(INT_DESCRIPTOR.to_string()),
@@ -266,8 +262,8 @@ mod tests {
             conn_count: None,
         };
 
-        let opts: WalletOpts = (&wallet_config)
-            .try_into()
+        let opts: WalletOpts = wallet_config
+            .try_to_wallet_opts("test_wallet")
             .expect("Conversion should succeed");
 
         assert_eq!(opts.wallet, Some("test_wallet".to_string()));
@@ -314,7 +310,6 @@ mod tests {
     #[test]
     fn test_invalid_client_type_fails() {
         let inner = WalletConfigInner {
-            wallet: "test".to_string(),
             network: "regtest".to_string(),
             ext_descriptor: "desc".to_string(),
             int_descriptor: None,
@@ -351,7 +346,7 @@ mod tests {
             conn_count: None,
         };
 
-        let result: Result<WalletOpts, Error> = (&inner).try_into();
+        let result: Result<WalletOpts, Error> = inner.try_to_wallet_opts("test");
         assert!(result.is_err());
     }
 
