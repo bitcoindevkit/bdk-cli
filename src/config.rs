@@ -350,6 +350,36 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // Older bdk-cli versions wrote a redundant `wallet = "<name>"` line inside each
+    // entry (see #332). `WalletConfigInner` no longer has that field, but config
+    // files saved by those older versions must still load without error.
+    #[test]
+    fn test_load_tolerates_legacy_wallet_field() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let toml_content = format!(
+            r#"[wallets.legacy_wallet]
+            wallet = "legacy_wallet"
+            network = "testnet4"
+            ext_descriptor = "{EXT_DESCRIPTOR}"
+            database_type = "sqlite"
+            "#
+        );
+        fs::write(temp_dir.path().join("config.toml"), toml_content).unwrap();
+
+        let config = WalletConfig::load(temp_dir.path())
+            .expect("load should not error on a legacy `wallet` field")
+            .expect("config file should be present");
+
+        let inner = config
+            .wallets
+            .get("legacy_wallet")
+            .expect("wallet entry missing");
+        assert_eq!(inner.network, "testnet4");
+        assert_eq!(inner.ext_descriptor, EXT_DESCRIPTOR);
+    }
+
     #[cfg(unix)]
     #[test]
     fn test_config_is_unreadable_by_other_users() {

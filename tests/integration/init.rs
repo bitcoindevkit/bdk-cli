@@ -156,6 +156,60 @@ mod test_wallets {
             .stdout(predicate::str::contains("wallet_one"))
             .stdout(predicate::str::contains("wallet_two"));
     }
+
+    // The wallet name must appear only as the `wallets` map key, not duplicated
+    // as a `"wallet"` field inside each entry.
+    #[cfg(feature = "rpc")]
+    #[test]
+    fn test_list_wallets_entry_has_no_redundant_wallet_field() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+        let wallet_name = "no_redundant_field_wallet";
+
+        let desc = cli
+            .cmd("descriptor", &["--type", "tr"])
+            .output()
+            .expect("Command to generate descriptors failed");
+        let desc_values: serde_json::Value = serde_json::from_slice(&desc.stdout).unwrap();
+        let pub_desc = &desc_values["public_descriptors"];
+        let ext_desc = pub_desc["external"].as_str().unwrap();
+        let int_desc = pub_desc["internal"].as_str().unwrap();
+
+        cli.build_base_cmd()
+            .arg("wallet")
+            .args(["--wallet", wallet_name])
+            .arg("config")
+            .args(["--ext-descriptor", ext_desc])
+            .args(["--int-descriptor", int_desc])
+            .args(["--client-type", "rpc"])
+            .args(["--database-type", "sqlite"])
+            .args(["--url", "http://localhost:18443"])
+            .assert()
+            .success();
+
+        let output = cli
+            .build_base_cmd()
+            .arg("wallets")
+            .output()
+            .expect("Failed to execute wallets command");
+        assert!(output.status.success());
+
+        let json_output: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("CLI did not output valid JSON");
+
+        let entry = &json_output[wallet_name];
+        assert!(
+            !entry.is_null(),
+            "wallet '{wallet_name}' missing from `wallets` output: {json_output}"
+        );
+        assert!(
+            entry.get("wallet").is_none(),
+            "`wallets` entry for '{wallet_name}' still has a redundant \"wallet\" field: {entry}"
+        );
+        // sanity check: the entry is still populated, just without the duplicate key
+        assert_eq!(entry["network"].as_str().unwrap(), "testnet");
+        assert_eq!(entry["ext_descriptor"].as_str().unwrap(), ext_desc);
+    }
 }
 
 // --- DESCRIPTOR COMMAND TESTS ---
