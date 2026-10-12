@@ -13,6 +13,8 @@ use crate::{
 };
 use clap::Parser;
 #[cfg(feature = "compiler")]
+use clap::ValueEnum;
+#[cfg(feature = "compiler")]
 use {
     bdk_wallet::{
         bitcoin::{
@@ -74,14 +76,29 @@ pub struct CompileCommand {
     #[arg(env = "POLICY", required = true, index = 1)]
     policy: String,
     /// Sets the script type used to embed the compiled policy.
-    #[arg(env = "TYPE", short = 't', long = "type", default_value = "wsh", value_parser = ["sh","wsh", "sh-wsh", "tr"]
-        )]
-    script_type: String,
+    #[arg(
+        env = "TYPE",
+        short = 't',
+        long = "type",
+        value_enum,
+        default_value_t = ScriptType::Wsh
+    )]
+    script_type: ScriptType,
     /// Skip key and hash validation, accepting placeholders (e.g. pk(A)). Useful for
     /// inspecting a policy's shape without real keys. Descriptors compiled with this
     /// flag are not usable for spending.
     #[arg(long = "allow-placeholders")]
     allow_placeholders: bool,
+}
+
+/// Script types the compiled policy can be embedded in.
+#[cfg(feature = "compiler")]
+#[derive(Clone, Copy, ValueEnum, Debug, Eq, PartialEq)]
+pub enum ScriptType {
+    Sh,
+    Wsh,
+    ShWsh,
+    Tr,
 }
 
 #[cfg(feature = "compiler")]
@@ -112,7 +129,7 @@ impl TrInternalKey for DescriptorPublicKey {
 /// unspendable internal key so the caller can verify it.
 fn compile_policy<Pk: FromStrKey + TrInternalKey>(
     policy_str: &str,
-    script_type: &str,
+    script_type: ScriptType,
 ) -> Result<(String, Option<String>), Error> {
     let policy: Concrete<Pk> = Concrete::from_str(policy_str)
         .map_err(|e| Error::Generic(format!("Invalid policy: {e}")))?;
@@ -122,10 +139,10 @@ fn compile_policy<Pk: FromStrKey + TrInternalKey>(
     // Compile per branch, not once up front: the contexts have different script
     // limits, and the narrowest one would reject policies valid for the requested type.
     let descriptor = match script_type {
-        "sh" => Descriptor::new_sh(policy.compile()?),
-        "wsh" => Descriptor::new_wsh(policy.compile()?),
-        "sh-wsh" => Descriptor::new_sh_wsh(policy.compile()?),
-        "tr" => {
+        ScriptType::Sh => Descriptor::new_sh(policy.compile()?),
+        ScriptType::Wsh => Descriptor::new_wsh(policy.compile()?),
+        ScriptType::ShWsh => Descriptor::new_sh_wsh(policy.compile()?),
+        ScriptType::Tr => {
             // Use a randomized unspendable internal key (H + rG) instead of a fixed NUMS
             // point. This improves privacy by preventing observers from determining whether
             // key-path spending is disabled. `r` is returned so the user can verify the key
@@ -146,11 +163,6 @@ fn compile_policy<Pk: FromStrKey + TrInternalKey>(
             let tree = TapTree::Leaf(Arc::new(policy.compile()?));
             Descriptor::new_tr(Pk::from_xonly(xonly_internal_key), Some(tree))
         }
-        _ => {
-            return Err(Error::Generic(
-                "Invalid script type. Supported: sh, wsh, sh-wsh, tr".into(),
-            ));
-        }
     }?;
 
     Ok((descriptor.to_string(), r))
@@ -162,9 +174,9 @@ impl AppCommand<AppContext<Init>> for CompileCommand {
 
     fn execute(&self, _ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
         let (descriptor, r) = if self.allow_placeholders {
-            compile_policy::<String>(&self.policy, &self.script_type)?
+            compile_policy::<String>(&self.policy, self.script_type)?
         } else {
-            compile_policy::<DescriptorPublicKey>(&self.policy, &self.script_type)?
+            compile_policy::<DescriptorPublicKey>(&self.policy, self.script_type)?
         };
 
         Ok(DescriptorResult {
