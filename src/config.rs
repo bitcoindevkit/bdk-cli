@@ -26,7 +26,6 @@ pub struct WalletConfig {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WalletConfigInner {
-    pub wallet: String,
     pub network: String,
     pub ext_descriptor: String,
     pub int_descriptor: Option<String>,
@@ -105,19 +104,17 @@ impl WalletConfig {
         self.wallets
             .get(wallet_name)
             .ok_or_else(|| Error::Generic(format!("Wallet {wallet_name} not found in config")))?
-            .try_into()
+            .to_wallet_opts(wallet_name)
     }
 }
 
-impl TryFrom<&WalletConfigInner> for WalletOpts {
-    type Error = Error;
-
-    fn try_from(config: &WalletConfigInner) -> Result<Self, Self::Error> {
-        Network::from_str(&config.network)
+impl WalletConfigInner {
+    fn to_wallet_opts(&self, wallet_name: &str) -> Result<WalletOpts, Error> {
+        Network::from_str(&self.network)
             .map_err(|_| Error::Generic("Invalid network".to_string()))?;
 
         #[cfg(any(feature = "sqlite", feature = "redb"))]
-        let database_type = DatabaseType::from_str(&config.database_type, true)
+        let database_type = DatabaseType::from_str(&self.database_type, true)
             .map_err(|_| Error::Generic("Invalid database type".to_string()))?;
 
         #[cfg(any(
@@ -126,7 +123,7 @@ impl TryFrom<&WalletConfigInner> for WalletOpts {
             feature = "rpc",
             feature = "cbf"
         ))]
-        let client_type = config
+        let client_type = self
             .client_type
             .as_deref()
             .ok_or_else(|| Error::Generic("Client type missing".into()))
@@ -136,9 +133,9 @@ impl TryFrom<&WalletConfigInner> for WalletOpts {
             })?;
 
         Ok(WalletOpts {
-            wallet: Some(config.wallet.clone()),
-            ext_descriptor: config.ext_descriptor.clone(),
-            int_descriptor: config.int_descriptor.clone(),
+            wallet: Some(wallet_name.to_string()),
+            ext_descriptor: self.ext_descriptor.clone(),
+            int_descriptor: self.int_descriptor.clone(),
 
             #[cfg(any(
                 feature = "electrum",
@@ -152,46 +149,45 @@ impl TryFrom<&WalletConfigInner> for WalletOpts {
             database_type,
 
             #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
-            url: config
+            url: self
                 .server_url
                 .clone()
                 .ok_or_else(|| Error::Generic("Server url not found".into()))?,
 
             #[cfg(feature = "electrum")]
-            batch_size: config.batch_size.unwrap_or(10),
+            batch_size: self.batch_size.unwrap_or(10),
 
             #[cfg(feature = "esplora")]
-            parallel_requests: config.parallel_requests.unwrap_or(5),
+            parallel_requests: self.parallel_requests.unwrap_or(5),
 
             #[cfg(feature = "rpc")]
             basic_auth: (
-                config.rpc_user.clone().unwrap_or_else(|| "user".into()),
-                config
-                    .rpc_password
+                self.rpc_user.clone().unwrap_or_else(|| "user".into()),
+                self.rpc_password
                     .clone()
                     .unwrap_or_else(|| "password".into()),
             ),
 
             #[cfg(feature = "rpc")]
-            cookie: config.cookie.clone(),
+            cookie: self.cookie.clone(),
 
             #[cfg(any(feature = "electrum", feature = "esplora", feature = "cbf"))]
             proxy_opts: crate::commands::ProxyOpts {
-                proxy: config.proxy.clone(),
+                proxy: self.proxy.clone(),
                 #[cfg(any(feature = "electrum", feature = "esplora"))]
-                proxy_auth: match &config.proxy_auth {
+                proxy_auth: match &self.proxy_auth {
                     Some(s) => Some(crate::utils::parse_proxy_auth(s)?),
                     None => None,
                 },
                 #[cfg(any(feature = "electrum", feature = "esplora"))]
-                retries: config.proxy_retries.unwrap_or(5),
+                retries: self.proxy_retries.unwrap_or(5),
                 #[cfg(any(feature = "electrum", feature = "esplora"))]
-                timeout: config.proxy_timeout,
+                timeout: self.proxy_timeout,
             },
 
             #[cfg(feature = "cbf")]
             compactfilter_opts: crate::commands::CompactFilterOpts {
-                conn_count: config.conn_count.unwrap_or(2),
+                conn_count: self.conn_count.unwrap_or(2),
             },
         })
     }
@@ -234,7 +230,6 @@ pub(crate) fn remove_wallet_from_config_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::convert::TryInto;
     const EXT_DESCRIPTOR: &str = "wpkh([07234a14/84'/1'/0']tpubDCSgT6PaVLQH9h2TAxKryhvkEurUBcYRJc9dhTcMDyahhWiMWfEWvQQX89yaw7w7XU8bcVujoALfxq59VkFATri3Cxm5mkp9kfHfRFDckEh/0/*)#429nsxmg";
     const INT_DESCRIPTOR: &str = "wpkh([07234a14/84'/1'/0']tpubDCSgT6PaVLQH9h2TAxKryhvkEurUBcYRJc9dhTcMDyahhWiMWfEWvQQX89yaw7w7XU8bcVujoALfxq59VkFATri3Cxm5mkp9kfHfRFDckEh/1/*)#y7qjdnts";
 
@@ -261,7 +256,6 @@ mod tests {
         };
 
         let wallet_config = WalletConfigInner {
-            wallet: "test_wallet".to_string(),
             network: "testnet4".to_string(),
             ext_descriptor: EXT_DESCRIPTOR.to_string(),
             int_descriptor: Some(INT_DESCRIPTOR.to_string()),
@@ -302,8 +296,8 @@ mod tests {
             conn_count: None,
         };
 
-        let opts: WalletOpts = (&wallet_config)
-            .try_into()
+        let opts: WalletOpts = wallet_config
+            .to_wallet_opts("test_wallet")
             .expect("Conversion should succeed");
 
         assert_eq!(opts.wallet, Some("test_wallet".to_string()));
@@ -350,7 +344,6 @@ mod tests {
     #[test]
     fn test_invalid_client_type_fails() {
         let inner = WalletConfigInner {
-            wallet: "test".to_string(),
             network: "regtest".to_string(),
             ext_descriptor: "desc".to_string(),
             int_descriptor: None,
@@ -389,8 +382,38 @@ mod tests {
             conn_count: None,
         };
 
-        let result: Result<WalletOpts, Error> = (&inner).try_into();
+        let result: Result<WalletOpts, Error> = inner.to_wallet_opts("test");
         assert!(result.is_err());
+    }
+
+    // Older bdk-cli versions wrote a redundant `wallet = "<name>"` line inside each
+    // entry (see #332). `WalletConfigInner` no longer has that field, but config
+    // files saved by those older versions must still load without error.
+    #[test]
+    fn test_load_tolerates_legacy_wallet_field() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let toml_content = format!(
+            r#"[wallets.legacy_wallet]
+            wallet = "legacy_wallet"
+            network = "testnet4"
+            ext_descriptor = "{EXT_DESCRIPTOR}"
+            database_type = "sqlite"
+            "#
+        );
+        fs::write(temp_dir.path().join("config.toml"), toml_content).unwrap();
+
+        let config = WalletConfig::load(temp_dir.path())
+            .expect("load should not error on a legacy `wallet` field")
+            .expect("config file should be present");
+
+        let inner = config
+            .wallets
+            .get("legacy_wallet")
+            .expect("wallet entry missing");
+        assert_eq!(inner.network, "testnet4");
+        assert_eq!(inner.ext_descriptor, EXT_DESCRIPTOR);
     }
 
     #[cfg(unix)]
