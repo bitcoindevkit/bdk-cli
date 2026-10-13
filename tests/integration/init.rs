@@ -199,6 +199,10 @@ mod test_compile {
 
     /// A policy can be valid for tr or wsh type and still exceed the limits of the
     /// legacy context, whose 520-byte redeemScript cap does not apply to it.
+    ///
+    /// Uses placeholder keys (K01, K02, ...) since only the policy's shape, not its
+    /// keys, matters for this test - `--allow-placeholders` keeps that shape-only
+    /// intent even though real key validation is on by default.
     #[test]
     fn test_compile_policy_beyond_legacy_limits() {
         let temp_dir = TempDir::new().unwrap();
@@ -211,16 +215,22 @@ mod test_compile {
         let policy = format!("thresh(2,{keys})");
 
         // compile tr
-        cli.cmd("compile", &[&policy, "--type", "tr"])
-            .assert()
-            .success()
-            .stdout(predicate::str::contains("tr("));
+        cli.cmd(
+            "compile",
+            &[&policy, "--type", "tr", "--allow-placeholders"],
+        )
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tr("));
 
         // compile wsh
-        cli.cmd("compile", &[&policy, "--type", "wsh"])
-            .assert()
-            .success()
-            .stdout(predicate::str::contains("wsh("));
+        cli.cmd(
+            "compile",
+            &[&policy, "--type", "wsh", "--allow-placeholders"],
+        )
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("wsh("));
     }
 
     #[test]
@@ -252,6 +262,90 @@ mod test_compile {
             .assert()
             .failure()
             .stderr(predicate::str::contains("Invalid policy"));
+    }
+
+    #[test]
+    fn test_compile_rejects_placeholder_key_by_default() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        cli.cmd("compile", &["pk(ABC)", "--type", "wsh"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Invalid policy"));
+    }
+
+    #[test]
+    fn test_compile_rejects_placeholder_hash_by_default() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy =
+            "and(pk(02e5b88fdb71c696e1a473f309a47535b7190e21a22bd25e7fc8bd055db3bba12f),sha256(H))";
+
+        cli.cmd("compile", &[policy, "--type", "wsh"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Invalid policy"));
+    }
+
+    #[test]
+    fn test_compile_allows_placeholder_key_with_flag() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        cli.cmd(
+            "compile",
+            &["pk(ABC)", "--type", "wsh", "--allow-placeholders"],
+        )
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("wsh(pk(ABC))"));
+    }
+
+    #[test]
+    fn test_compile_accepts_xpub_key() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy = "pk(xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8/0/*)";
+
+        cli.cmd("compile", &[policy, "--type", "wsh"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("wsh("));
+    }
+
+    /// An x-only key is only valid under `tr`. Compiling it for `sh`/`wsh`/`sh-wsh`
+    /// must return a clean error, not panic (miniscript's compiler otherwise hits an
+    /// internal `expect` when a key passes validation but is the wrong shape for the
+    /// requested script context).
+    #[test]
+    fn test_compile_rejects_x_only_key_for_non_tr_types() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy = "pk(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0)";
+
+        for script_type in ["sh", "wsh", "sh-wsh"] {
+            cli.cmd("compile", &[policy, "--type", script_type])
+                .assert()
+                .failure()
+                .stderr(predicate::str::contains("Invalid policy"));
+        }
+    }
+
+    #[test]
+    fn test_compile_accepts_x_only_key_for_tr() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy = "pk(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0)";
+
+        cli.cmd("compile", &[policy, "--type", "tr"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("tr("));
     }
 }
 
