@@ -13,6 +13,8 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Routed compact filter (cbf) traffic through the configured SOCKS5 proxy
 - Rejected `--proxy` on the `rpc` backend, and unsupported proxy options (`--proxy_auth`, `--timeout`) on the `rpc` and `cbf` backends, instead of silently ignoring them
 - Fixed `compile` rejecting policies that are valid for the requested script type
+- Fixed `compile` silently accepting placeholder keys/hashes instead of validating them; added `--allow-placeholders` to opt back into the old permissive behavior
+- Fixed `compile` panicking instead of returning an error when a key is valid on its own but the wrong shape for the requested script type (e.g. an x-only key under `sh`/`wsh`/`sh-wsh`)
 
 ## [4.0.0]
 

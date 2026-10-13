@@ -23,7 +23,8 @@ use {
             secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey},
         },
         miniscript::{
-            Descriptor, FromStrKey, MiniscriptKey,
+            Descriptor, ForEachKey, FromStrKey, Legacy, MiniscriptKey, ScriptContext, Segwitv0,
+            Tap,
             descriptor::{DescriptorPublicKey, TapTree},
             policy::Concrete,
         },
@@ -124,6 +125,29 @@ impl TrInternalKey for DescriptorPublicKey {
 }
 
 #[cfg(feature = "compiler")]
+/// Rejects keys that parse fine on their own but aren't valid for `Ctx` (e.g. an
+/// x-only key under `Segwitv0`), which miniscript's compiler otherwise turns into
+/// a panic instead of an error. A no-op for `Pk = String`, since `String` never
+/// reports itself as uncompressed or x-only.
+fn check_policy_keys<Pk: MiniscriptKey, Ctx: ScriptContext>(
+    policy: &Concrete<Pk>,
+) -> Result<(), Error> {
+    let mut key_error = None;
+    policy.for_each_key(|pk| match Ctx::check_pk(pk) {
+        Ok(()) => true,
+        Err(e) => {
+            key_error = Some(e);
+            false
+        }
+    });
+
+    match key_error {
+        Some(e) => Err(Error::Generic(format!("Invalid policy: {e}"))),
+        None => Ok(()),
+    }
+}
+
+#[cfg(feature = "compiler")]
 /// Parses `policy_str` as `Pk` and compiles it for `script_type`. Returns the
 /// descriptor string and, for `tr`, the random tweak `r` used to derive the
 /// unspendable internal key so the caller can verify it.
@@ -139,10 +163,20 @@ fn compile_policy<Pk: FromStrKey + TrInternalKey>(
     // Compile per branch, not once up front: the contexts have different script
     // limits, and the narrowest one would reject policies valid for the requested type.
     let descriptor = match script_type {
-        ScriptType::Sh => Descriptor::new_sh(policy.compile()?),
-        ScriptType::Wsh => Descriptor::new_wsh(policy.compile()?),
-        ScriptType::ShWsh => Descriptor::new_sh_wsh(policy.compile()?),
+        ScriptType::Sh => {
+            check_policy_keys::<Pk, Legacy>(&policy)?;
+            Descriptor::new_sh(policy.compile()?)
+        }
+        ScriptType::Wsh => {
+            check_policy_keys::<Pk, Segwitv0>(&policy)?;
+            Descriptor::new_wsh(policy.compile()?)
+        }
+        ScriptType::ShWsh => {
+            check_policy_keys::<Pk, Segwitv0>(&policy)?;
+            Descriptor::new_sh_wsh(policy.compile()?)
+        }
         ScriptType::Tr => {
+            check_policy_keys::<Pk, Tap>(&policy)?;
             // Use a randomized unspendable internal key (H + rG) instead of a fixed NUMS
             // point. This improves privacy by preventing observers from determining whether
             // key-path spending is disabled. `r` is returned so the user can verify the key
