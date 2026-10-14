@@ -19,6 +19,7 @@ use std::str::FromStr;
 
 use crate::error::BDKCliError as Error;
 use crate::handlers::{AppContext, AsyncAppCommand, Init, OfflineOperations};
+use crate::utils::descriptors::{SingleSigScriptType, is_multipath_descriptor, strip_checksum};
 use crate::utils::hwi::{HwiWallet, enumerate_hwi_devices, first_hwi_device};
 
 use bdk_wallet::bitcoin::{
@@ -31,6 +32,10 @@ use bdk_wallet::miniscript::{Descriptor, DescriptorPublicKey, descriptor::ShInne
 /// Device-only HWI utilities that do not require a wallet.
 #[derive(Debug, Parser, Clone, PartialEq, Eq)]
 pub struct HwiCommand {
+    /// Target a specific connected by master fingerprint.
+    #[arg(long, global = true)]
+    pub fingerprint: Option<String>,
+
     #[command(subcommand)]
     pub subcommand: HwiSubCommand,
 }
@@ -43,17 +48,13 @@ pub enum HwiSubCommand {
     ///
     /// Needed to build a wallet descriptor for the device.
     Xpub {
-        /// Derivation path, e.g. `m/84'/1'/0'`.
-        // #[arg(default_value = "m/84'/1'/0'")]
+        /// Derivation path. Defaults to the standard path for `--type` and the
+        /// current network, e.g. `m/84'/1'/0'`.
         path: Option<String>,
 
-        /// Output descriptor script type.
-        #[arg(long = "type", value_parser = ["wpkh", "tr", "sh-wpkh", "pkh"])]
-        script_type: Option<String>,
-
-        /// Target a specific connected device by master fingerprint (hex).
-        #[arg(long)]
-        fingerprint: Option<String>,
+        /// Output descriptor script type. Inferred from the path when omitted.
+        #[arg(long = "type", value_enum)]
+        script_type: Option<SingleSigScriptType>,
     },
     /// List all connected hardware wallet devices.
     Devices,
@@ -66,24 +67,24 @@ impl AsyncAppCommand<AppContext<Init>> for HwiCommand {
         let network = ctx.network;
         // Device-only commands operate without a wallet policy.
         let hwi_wallet = HwiWallet::default();
+        let target_fp = self.fingerprint.as_deref();
 
         match &self.subcommand {
-            HwiSubCommand::Xpub {
-                path,
-                script_type,
-                fingerprint,
-            } => {
+            HwiSubCommand::Xpub { path, script_type } => {
+                let script_type = *script_type;
+                // Default to the standard path for the requested (or wpkh) type.
                 let path = match path {
                     Some(path) => path.clone(),
                     None => {
                         let coin = if network == Network::Bitcoin { 0 } else { 1 };
-                        format!("m/84'/{coin}'/0'")
+                        let purpose = script_type.map_or(84, SingleSigScriptType::purpose);
+                        format!("m/{purpose}'/{coin}'/0'")
                     }
                 };
 
                 let derivation = DerivationPath::from_str(&path)
                     .map_err(|e| Error::Generic(format!("Invalid derivation path: {e}")))?;
-                let device = first_hwi_device(network, &hwi_wallet, fingerprint.as_deref()).await?;
+                let device = first_hwi_device(network, &hwi_wallet, target_fp).await?;
                 let xpub = device.get_extended_pubkey(&derivation).await?;
                 let master_fingerprint = device.get_master_fingerprint().await?.to_string();
                 let origin = path.trim_start_matches('m').trim_start_matches('/');
@@ -96,16 +97,12 @@ impl AsyncAppCommand<AppContext<Init>> for HwiCommand {
                     "key_expression": key_expression,
                 });
 
-                match script_type
-                    .clone()
-                    .or_else(|| infer_script_type(&path).map(str::to_string))
+                match script_type.or_else(|| SingleSigScriptType::from_derivation_path(&derivation))
                 {
                     Some(stype) => {
-                        out["script_type"] = json!(stype);
-                        out["external_descriptor"] =
-                            json!(build_descriptor(&stype, &key_expression, 0)?);
-                        out["internal_descriptor"] =
-                            json!(build_descriptor(&stype, &key_expression, 1)?);
+                        out["script_type"] = json!(stype.as_str());
+                        out["external_descriptor"] = json!(stype.descriptor(&key_expression, 0)?);
+                        out["internal_descriptor"] = json!(stype.descriptor(&key_expression, 1)?);
                     }
                     None => {
                         out["note"] = json!(
@@ -120,10 +117,15 @@ impl AsyncAppCommand<AppContext<Init>> for HwiCommand {
                 let devices = enumerate_hwi_devices(network, &hwi_wallet).await?;
                 let mut listed = Vec::with_capacity(devices.len());
                 for device in &devices {
-                    let fingerprint = device.get_master_fingerprint().await?.to_string();
+                    let (fingerprint, error) = match device.get_master_fingerprint().await {
+                        Ok(fp) => (Some(fp.to_string()), None),
+                        Err(e) => (None, Some(e.to_string())),
+                    };
+
                     listed.push(json!({
                         "fingerprint": fingerprint,
                         "model": device.device_kind().to_string(),
+                        "error": error,
                     }));
                 }
                 Ok(json!({ "count": listed.len(), "devices": listed }))
@@ -137,10 +139,10 @@ impl AsyncAppCommand<AppContext<Init>> for HwiCommand {
 pub struct WalletHwiCommand {
     /// Registration HMAC returned by `register`, required to reuse a registered
     /// policy on a Ledger for `address`/`sign`.
-    #[arg(env = "HWI_HMAC", long)]
+    #[arg(env = "HWI_HMAC", long, global = true)]
     pub hmac: Option<String>,
     /// Target a specific connected device by master fingerprint (hex).
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub fingerprint: Option<String>,
     #[command(subcommand)]
     pub subcommand: WalletHwiSubCommand,
@@ -208,7 +210,7 @@ impl WalletHwiCommand {
         let ext = ext_desc.to_string();
         let int = int_desc.to_string();
         let int = if int == ext { None } else { Some(int) };
-        let policy = build_device_policy(&ext, int.as_deref())?;
+        let policy = build_device_policy(&ext, int.as_deref(), network)?;
 
         let hwi_wallet = HwiWallet {
             name: Some(wallet_name),
@@ -218,7 +220,7 @@ impl WalletHwiCommand {
 
         match &self.subcommand {
             WalletHwiSubCommand::Register => {
-                tracing::debug!("Registering wallet '{wallet_name}' with policy '{policy}'");
+                log::debug!("Registering wallet '{wallet_name}' with policy '{policy}'");
                 let device = first_hwi_device(network, &hwi_wallet, target_fp).await?;
                 match device.register_wallet(wallet_name, &policy).await {
                     Ok(hmac) => {
@@ -305,11 +307,6 @@ impl WalletHwiCommand {
     }
 }
 
-/// Strip a trailing descriptor checksum.
-fn strip_checksum(descriptor: &str) -> &str {
-    descriptor.split('#').next().unwrap_or(descriptor)
-}
-
 /// How a wallet's descriptor maps onto a hardware device's capabilities.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum WalletKind {
@@ -360,64 +357,23 @@ fn taproot_address_path(
     Some(base.extend([index]))
 }
 
-/// Infer the single-sig descriptor script type from a derivation path's.
-fn infer_script_type(path: &str) -> Option<&'static str> {
-    let purpose = path
-        .split('/')
-        .filter(|s| !s.is_empty() && *s != "m")
-        .find_map(|s| s.trim_end_matches(['\'', 'h']).parse::<u32>().ok())?;
-    match purpose {
-        44 => Some("pkh"),
-        49 => Some("sh-wpkh"),
-        84 => Some("wpkh"),
-        86 => Some("tr"),
-        _ => None,
-    }
-}
-
-/// Wrap a key expression into a checksummed single-sig descriptor for the given
-/// keychain branch (0 = external, 1 = internal).
-fn build_descriptor(script_type: &str, key_expr: &str, branch: u32) -> Result<String, Error> {
-    let raw = match script_type {
-        "wpkh" => format!("wpkh({key_expr}/{branch}/*)"),
-        "tr" => format!("tr({key_expr}/{branch}/*)"),
-        "pkh" => format!("pkh({key_expr}/{branch}/*)"),
-        "sh-wpkh" => format!("sh(wpkh({key_expr}/{branch}/*))"),
-        other => return Err(Error::Generic(format!("Unsupported script type: {other}"))),
-    };
-    let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&raw)
-        .map_err(|e| Error::Generic(format!("Failed to build descriptor: {e}")))?;
-    Ok(descriptor.to_string())
-}
-
 /// Build the wallet policy
 ///
-/// - Rejects private-key.
-/// - Passes an already-multipath descriptor (`/**` or `/<..>/*`) through
-///   unchanged.
-/// - Combines a standard `/0/*` external and `/1/*` internal pair into a single
+/// - Passes an already-multipath descriptor through unchanged.
+/// - Combines a standard external and internal pair into a single
 ///   `/<0;1>/*` multipath descriptor.
-fn build_device_policy(ext: &str, int: Option<&str>) -> Result<String, Error> {
+///
+/// The result is parsed as a [`DescriptorPublicKey`] descriptor, which rejects
+/// any private key.
+fn build_device_policy(ext: &str, int: Option<&str>, network: Network) -> Result<String, Error> {
     let ext = strip_checksum(ext).trim();
-    if contains_private_key(ext) {
-        return Err(Error::Generic(
-            "Hardware wallet policy must use public keys (xpub), not private keys".to_string(),
-        ));
-    }
 
-    let raw = if ext.contains("/**") || ext.contains('<') {
-        // Already a multipath descriptor.
+    let raw = if is_multipath_descriptor(ext, network)? {
         ext.to_string()
     } else {
         match int {
             Some(int) => {
                 let int = strip_checksum(int).trim();
-                if contains_private_key(int) {
-                    return Err(Error::Generic(
-                        "Hardware wallet policy must use public keys (xpub), not private keys"
-                            .to_string(),
-                    ));
-                }
                 // `/0/*` and `/1/*` only ever appear as a key's wildcard branch.
                 if ext.replace("/0/*", "/1/*") != int {
                     return Err(Error::Generic(
@@ -429,7 +385,7 @@ fn build_device_policy(ext: &str, int: Option<&str>) -> Result<String, Error> {
                 ext.replace("/0/*", "/<0;1>/*")
             }
             None => {
-                tracing::warn!(
+                log::warn!(
                     "Wallet has no separate internal (change) descriptor; the device policy will \
                      only cover receive addresses."
                 );
@@ -438,20 +394,20 @@ fn build_device_policy(ext: &str, int: Option<&str>) -> Result<String, Error> {
         }
     };
 
-    // Canonicalize so the device receives one well-formed, checksummed form.
-    let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&raw)
-        .map_err(|e| Error::Generic(format!("Invalid wallet policy descriptor: {e}")))?;
+    // Parsing as a public descriptor also rejects any private key.
+    let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&raw).map_err(|e| {
+        Error::Generic(format!(
+            "Invalid wallet policy (must be a public descriptor): {e}"
+        ))
+    })?;
     Ok(descriptor.to_string())
-}
-
-fn contains_private_key(descriptor: &str) -> bool {
-    descriptor.contains("xprv") || descriptor.contains("tprv")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::commands::CliOpts;
+    use bdk_wallet::bitcoin::{Network, bip32::Xpriv};
     use clap::CommandFactory;
 
     const EXT: &str = "wpkh([f5acc2fd/84'/1'/0']tpubDCbK3Ysvk8HjcF6mPyrgMu3KgLiaaP19RjKpNezd8GrbAbNg6v5BtWLaCt8FNm6QkLseopKLf5MNYQFtochDTKHdfgG6iqJ8cqnLNAwtXuP/0/*)";
@@ -463,22 +419,8 @@ mod tests {
     }
 
     #[test]
-    fn infers_script_type_from_purpose() {
-        assert_eq!(infer_script_type("m/44'/1'/0'"), Some("pkh"));
-        assert_eq!(infer_script_type("m/49'/1'/0'"), Some("sh-wpkh"));
-        assert_eq!(infer_script_type("m/84'/1'/0'"), Some("wpkh"));
-        assert_eq!(infer_script_type("m/86h/0h/0h"), Some("tr"));
-        assert_eq!(infer_script_type("m/48'/1'/0'/2'"), None);
-    }
-
-    #[test]
-    fn build_descriptor_rejects_unknown_type() {
-        assert!(build_descriptor("foo", "key", 0).is_err());
-    }
-
-    #[test]
     fn policy_combines_and_canonicalizes() {
-        let policy = build_device_policy(EXT, Some(INT)).unwrap();
+        let policy = build_device_policy(EXT, Some(INT), Network::Testnet).unwrap();
         // Combined into a single multipath descriptor...
         assert!(policy.contains("<0;1>"));
         assert!(!policy.contains("/0/*"));
@@ -489,13 +431,14 @@ mod tests {
 
     #[test]
     fn policy_rejects_private_keys() {
-        let xprv = "wpkh([f5acc2fd/84'/1'/0']tprv8ZgxMBicQKsPd.../0/*)";
-        assert!(build_device_policy(xprv, None).is_err());
+        let tprv = Xpriv::new_master(Network::Testnet, &[0u8; 32]).unwrap();
+        let desc = format!("wpkh({tprv}/0/*)");
+        assert!(build_device_policy(&desc, None, Network::Testnet).is_err());
     }
 
     #[test]
     fn policy_rejects_mismatched_pair() {
         let other = "wpkh([f5acc2fd/84'/1'/0']tpubDDtb2WPYwEWw2WWDV7reLV348iJHw2HmhzvPysKKrJw3hYmvrd4jasyoioVPdKGQqjyaBMEvTn1HvHWDSVqQ6amyyxRZ5YjpPBBGjJ8yu8S/1/*)";
-        assert!(build_device_policy(EXT, Some(other)).is_err());
+        assert!(build_device_policy(EXT, Some(other), Network::Testnet).is_err());
     }
 }
