@@ -18,9 +18,12 @@ use async_hwi::{
     specter::{Specter, SpecterSimulator},
 };
 use bdk_wallet::bitcoin::{Network, hex::FromHex};
-use tracing::warn;
+use log::warn;
 
 use crate::error::BDKCliError as Error;
+
+/// TCP endpoint for BitBox02 simulator.
+const BITBOX_SIMULATOR_ENDPOINT: &str = "127.0.0.1:15423";
 
 /// Optional wallet context required by some devices (Ledger/Coldcard/BitBox)
 /// to register and operate on a specific multisig/miniscript policy.
@@ -53,7 +56,12 @@ pub async fn enumerate_hwi_devices(
     match Jade::enumerate().await {
         Ok(jades) => {
             for device in jades {
-                let device = device.with_network(network);
+                let mut device = device.with_network(network);
+                // The wallet name is required for `display_address` to find the
+                // registered descriptor on the device.
+                if let Some(name) = wallet.name {
+                    device = device.with_wallet(name.to_string());
+                }
                 match device.get_info().await {
                     Ok(info) => {
                         if info.jade_state == jade::api::JadeState::Locked
@@ -132,8 +140,11 @@ pub async fn enumerate_hwi_devices(
     }
 
     // BitBox02 simulator
-    if let Ok(bitbox) =
-        BitBoxApi::<TokioRuntime>::from_simulator(None, Box::new(NoiseConfigNoCache {})).await
+    if tokio::net::TcpStream::connect(BITBOX_SIMULATOR_ENDPOINT)
+        .await
+        .is_ok()
+        && let Ok(bitbox) =
+            BitBoxApi::<TokioRuntime>::from_simulator(None, Box::new(NoiseConfigNoCache {})).await
     {
         match bitbox.unlock_and_pair().await {
             Ok(pairing) => match pairing.wait_confirm().await {
