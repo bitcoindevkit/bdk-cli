@@ -64,11 +64,12 @@ pub async fn enumerate_hwi_devices(
                 }
                 match device.get_info().await {
                     Ok(info) => {
-                        if info.jade_state == jade::api::JadeState::Locked
-                            && let Err(e) = device.auth().await
-                        {
-                            warn!("Jade authentication failed: {e:?}");
-                            continue;
+                        if info.jade_state == jade::api::JadeState::Locked {
+                            eprintln!("Jade is locked; enter its PIN on the device to continue.");
+                            if let Err(e) = device.auth().await {
+                                warn!("Jade authentication failed: {e:?}");
+                                continue;
+                            }
                         }
                         devices.push(device.into());
                     }
@@ -175,8 +176,10 @@ pub async fn enumerate_hwi_devices(
 /// Select a single connected device, by `target_fingerprint` when given.
 ///
 /// With no target and several devices connected, the first (physical devices
-/// rank before simulators) is used and a warning lists the alternatives. The
-/// chosen device's fingerprint and model are always logged.
+/// rank before simulators) is used and a notice lists the alternatives. The
+/// chosen device's fingerprint and model are always printed to stderr, so the
+/// user can confirm which device an operation runs against regardless of the
+/// log level.
 pub async fn first_hwi_device(
     network: Network,
     wallet: &HwiWallet<'_>,
@@ -211,7 +214,7 @@ pub async fn first_hwi_device(
         None => {
             if labeled.len() > 1 {
                 let fingerprints: Vec<&str> = labeled.iter().map(|(fp, _)| fp.as_str()).collect();
-                warn!(
+                eprintln!(
                     "{} hardware wallets connected ({}); using the first. Select one with --fingerprint.",
                     labeled.len(),
                     fingerprints.join(", ")
@@ -224,7 +227,7 @@ pub async fn first_hwi_device(
         }
     };
 
-    warn!(
+    eprintln!(
         "Using hardware wallet {fingerprint} ({})",
         device.device_kind()
     );
@@ -286,4 +289,34 @@ fn parse_registration_hmac(hmac: Option<&str>) -> Result<Option<[u8; 32]>, Error
     }
     h.copy_from_slice(&bytes);
     Ok(Some(h))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hmac_none_is_none() {
+        assert_eq!(parse_registration_hmac(None).unwrap(), None);
+    }
+
+    #[test]
+    fn hmac_parses_32_bytes() {
+        let hex = "ab".repeat(32);
+        assert_eq!(
+            parse_registration_hmac(Some(&hex)).unwrap(),
+            Some([0xab; 32])
+        );
+    }
+
+    #[test]
+    fn hmac_rejects_wrong_length() {
+        // 31 bytes is one short.
+        assert!(parse_registration_hmac(Some(&"ab".repeat(31))).is_err());
+    }
+
+    #[test]
+    fn hmac_rejects_non_hex() {
+        assert!(parse_registration_hmac(Some("zz")).is_err());
+    }
 }

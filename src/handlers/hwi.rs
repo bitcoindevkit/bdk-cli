@@ -23,7 +23,7 @@ use crate::utils::descriptors::{SingleSigScriptType, is_multipath_descriptor, st
 use crate::utils::hwi::{HwiWallet, enumerate_hwi_devices, first_hwi_device};
 
 use bdk_wallet::bitcoin::{
-    Network, Psbt,
+    Network, NetworkKind, Psbt,
     bip32::{ChildNumber, DerivationPath},
     hex::DisplayHex,
 };
@@ -86,6 +86,20 @@ impl AsyncAppCommand<AppContext<Init>> for HwiCommand {
                     .map_err(|e| Error::Generic(format!("Invalid derivation path: {e}")))?;
                 let device = first_hwi_device(network, &hwi_wallet, target_fp).await?;
                 let xpub = device.get_extended_pubkey(&derivation).await?;
+
+                if xpub.network != network.into() {
+                    let device_network = if xpub.network == NetworkKind::Main {
+                        "mainnet"
+                    } else {
+                        "testnet"
+                    };
+
+                    return Err(Error::Generic(format!(
+                        "Device returned a {device_network} but wallet network is {network}.\
+                         Set the device to the matching network."
+                    )));
+                }
+
                 let master_fingerprint = device.get_master_fingerprint().await?.to_string();
                 let origin = path.trim_start_matches('m').trim_start_matches('/');
                 let key_expression = format!("[{master_fingerprint}/{origin}]{xpub}");
@@ -210,16 +224,19 @@ impl WalletHwiCommand {
         let ext = ext_desc.to_string();
         let int = int_desc.to_string();
         let int = if int == ext { None } else { Some(int) };
-        let policy = build_device_policy(&ext, int.as_deref(), network)?;
+        let policy = matches!(kind, WalletKind::Policy)
+            .then(|| build_device_policy(&ext, int.as_deref(), network))
+            .transpose()?;
 
         let hwi_wallet = HwiWallet {
             name: Some(wallet_name),
-            policy: matches!(kind, WalletKind::Policy).then_some(policy.as_str()),
+            policy: policy.as_deref(),
             hmac: self.hmac.as_deref(),
         };
 
         match &self.subcommand {
             WalletHwiSubCommand::Register => {
+                let policy = build_device_policy(&ext, int.as_deref(), network)?;
                 log::debug!("Registering wallet '{wallet_name}' with policy '{policy}'");
                 let device = first_hwi_device(network, &hwi_wallet, target_fp).await?;
                 match device.register_wallet(wallet_name, &policy).await {
@@ -308,7 +325,7 @@ impl WalletHwiCommand {
 }
 
 /// How a wallet's descriptor maps onto a hardware device's capabilities.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
 enum WalletKind {
     /// BIP-86 taproot single-sig — shown on device via the simple P2TR path.
     TaprootSingleSig,
@@ -412,10 +429,50 @@ mod tests {
 
     const EXT: &str = "wpkh([f5acc2fd/84'/1'/0']tpubDCbK3Ysvk8HjcF6mPyrgMu3KgLiaaP19RjKpNezd8GrbAbNg6v5BtWLaCt8FNm6QkLseopKLf5MNYQFtochDTKHdfgG6iqJ8cqnLNAwtXuP/0/*)";
     const INT: &str = "wpkh([f5acc2fd/84'/1'/0']tpubDCbK3Ysvk8HjcF6mPyrgMu3KgLiaaP19RjKpNezd8GrbAbNg6v5BtWLaCt8FNm6QkLseopKLf5MNYQFtochDTKHdfgG6iqJ8cqnLNAwtXuP/1/*)";
+    const TPUB: &str = "tpubDCbK3Ysvk8HjcF6mPyrgMu3KgLiaaP19RjKpNezd8GrbAbNg6v5BtWLaCt8FNm6QkLseopKLf5MNYQFtochDTKHdfgG6iqJ8cqnLNAwtXuP";
+
+    fn desc(s: &str) -> Descriptor<DescriptorPublicKey> {
+        Descriptor::<DescriptorPublicKey>::from_str(s).unwrap()
+    }
 
     #[test]
     fn cli_definition_is_valid() {
         CliOpts::command().debug_assert();
+    }
+
+    #[test]
+    fn classifies_wallet_kinds() {
+        assert_eq!(WalletKind::classify(&desc(EXT)), WalletKind::SingleSig); // wpkh
+        assert_eq!(
+            WalletKind::classify(&desc(&format!("pkh([f5acc2fd/44'/1'/0']{TPUB}/0/*)"))),
+            WalletKind::SingleSig
+        );
+        assert_eq!(
+            WalletKind::classify(&desc(&format!("sh(wpkh([f5acc2fd/49'/1'/0']{TPUB}/0/*))"))),
+            WalletKind::SingleSig
+        );
+        assert_eq!(
+            WalletKind::classify(&desc(&format!("tr([f5acc2fd/86'/1'/0']{TPUB}/0/*)"))),
+            WalletKind::TaprootSingleSig
+        );
+        // wsh(...) is neither single-sig nor taproot single-sig.
+        assert_eq!(
+            WalletKind::classify(&desc(&format!(
+                "wsh(multi(1,[f5acc2fd/84'/1'/0']{TPUB}/0/*))"
+            ))),
+            WalletKind::Policy
+        );
+    }
+
+    #[test]
+    fn taproot_address_path_builds_full_path() {
+        let tr = desc(&format!("tr([f5acc2fd/86'/1'/0']{TPUB}/0/*)"));
+        assert_eq!(
+            taproot_address_path(&tr, 5).unwrap(),
+            DerivationPath::from_str("m/86'/1'/0'/0/5").unwrap()
+        );
+        // A non-taproot descriptor has no on-device taproot path.
+        assert!(taproot_address_path(&desc(EXT), 0).is_none());
     }
 
     #[test]
@@ -425,7 +482,6 @@ mod tests {
         assert!(policy.contains("<0;1>"));
         assert!(!policy.contains("/0/*"));
         assert!(!policy.contains("/1/*"));
-        // ...and re-serialized with a checksum.
         assert!(policy.contains('#'));
     }
 
