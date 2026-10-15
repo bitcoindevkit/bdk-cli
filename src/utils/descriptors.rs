@@ -354,6 +354,14 @@ mod multipath_tests {
 
     #[cfg(feature = "hwi")]
     #[test]
+    fn strips_trailing_checksum() {
+        assert_eq!(strip_checksum(SINGLE), SINGLE.split('#').next().unwrap());
+        assert!(!strip_checksum(SINGLE).contains('#'));
+        assert_eq!(strip_checksum(MULTIPATH), MULTIPATH);
+    }
+
+    #[cfg(feature = "hwi")]
+    #[test]
     fn infers_script_type_from_purpose() {
         let p = |s: &str| DerivationPath::from_str(s).unwrap();
         type T = SingleSigScriptType;
