@@ -68,12 +68,14 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
             WalletSubCommand::OnlineWalletSubCommand(cmd) => {
                 let runtime = WalletRuntime::load(&home_dir, &wallet_name)?;
                 let mut wallet = runtime.build_wallet(true)?;
+                let signers = runtime.build_signers()?;
                 let client = runtime.build_client(&wallet)?;
                 {
                     let mut ctx = AppContext::new_online_wallet(
                         runtime.network,
                         runtime.home_dir.clone(),
                         &mut wallet,
+                        &signers,
                         &client,
                         runtime.wallet_name.clone(),
                     );
@@ -86,12 +88,14 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
             WalletSubCommand::OfflineWalletSubCommand(cmd) => {
                 let runtime = WalletRuntime::load(&home_dir, &wallet_name)?;
                 let mut wallet = runtime.build_wallet(command_requires_db(&cmd))?;
+                let signers = runtime.build_signers()?;
 
                 {
                     let mut ctx = AppContext::new_offline_wallet(
                         runtime.network,
                         runtime.home_dir.clone(),
                         &mut wallet,
+                        &signers,
                     );
 
                     match cmd {
@@ -142,6 +146,7 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
             let runtime = WalletRuntime::load(&home_dir, &wallet_name)?;
 
             let mut wallet = runtime.build_wallet(true)?;
+            let signers = runtime.build_signers()?;
 
             #[cfg(any(
                 feature = "electrum",
@@ -167,6 +172,7 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
                 let should_exit = crate::handlers::repl::respond(
                     runtime.network,
                     &mut wallet,
+                    &signers,
                     #[cfg(any(
                         feature = "electrum",
                         feature = "esplora",
