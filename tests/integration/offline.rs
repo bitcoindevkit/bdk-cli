@@ -50,13 +50,20 @@ mod test_offline {
         let (cli, mut cmd_init) = setup_wallet_config();
         cmd_init.assert().success();
 
+        // `unused-address` before revealing an address
+        cli.wallet_cmd(&["--wallet", WALLET_NAME, "unused_address"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("\"count\""))
+            .stdout(predicate::str::contains("\"items\": []"));
+
         // new address
         cli.wallet_cmd(&["--wallet", WALLET_NAME, "new_address"])
             .assert()
             .success()
             .stdout(predicate::str::contains("\"address\":"));
 
-        // `unused-address`
+        // `unused-address` now returns the revealed, unused address
         cli.wallet_cmd(&["--wallet", WALLET_NAME, "unused_address"])
             .assert()
             .success()

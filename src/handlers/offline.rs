@@ -111,12 +111,15 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for NewAddressCommand {
 pub struct UnusedAddressCommand;
 
 impl AppCommand<AppContext<OfflineOperations<'_>>> for UnusedAddressCommand {
-    type Output = AddressResult;
+    type Output = ListResult<AddressResult>;
 
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
         let wallet = &mut ctx.state.wallet;
-        let address_info = wallet.next_unused_address(KeychainKind::External);
-        Ok(AddressResult::from(address_info))
+        let address_info = wallet
+            .list_unused_addresses(KeychainKind::External)
+            .map(AddressResult::from)
+            .collect();
+        Ok(ListResult::new(address_info))
     }
 }
 
