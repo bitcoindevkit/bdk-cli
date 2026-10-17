@@ -117,7 +117,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for UnusedAddressCommand {
         let wallet = &mut ctx.state.wallet;
         let address_info = wallet
             .list_unused_addresses(KeychainKind::External)
-            .map(|addr| AddressResult::from(addr))
+            .map(AddressResult::from)
             .collect();
         Ok(ListResult::new(address_info))
     }
