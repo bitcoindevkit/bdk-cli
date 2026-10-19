@@ -14,6 +14,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Rejected `--proxy` on the `rpc` backend, and unsupported proxy options (`--proxy_auth`, `--timeout`) on the `rpc` and `cbf` backends, instead of silently ignoring them
 - Fixed `compile` rejecting policies that are valid for the requested script type
 - Fixed `warn!` messages, including the mainnet notice, being hidden unless `RUST_LOG` was set; warnings are now shown by default
+- Fixed `create_tx`, `create_dns_tx`, `create_sp_tx` and `bump_fee` building transactions over Bitcoin Core's 400,000 wu (100,000 vB) standard weight limit, which no default node relays
 
 ## [4.0.0]
 
