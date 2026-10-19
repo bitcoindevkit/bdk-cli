@@ -120,6 +120,30 @@ mod test_wallets {
             .stderr(predicate::str::contains("No wallets configured yet."));
     }
 
+    #[test]
+    fn test_mainnet_warning_shown_by_default() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("bitcoin", Some(temp_dir.path().to_path_buf()));
+
+        cli.cmd("wallets", &[])
+            .env_remove("RUST_LOG")
+            .assert()
+            .stderr(predicate::str::contains(
+                "not currently recommended for use on Bitcoin mainnet",
+            ));
+    }
+
+    #[test]
+    fn test_mainnet_warning_hidden_with_rust_log_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("bitcoin", Some(temp_dir.path().to_path_buf()));
+
+        cli.cmd("wallets", &[])
+            .env("RUST_LOG", "error")
+            .assert()
+            .stderr(predicate::str::contains("not currently recommended").not());
+    }
+
     #[cfg(feature = "rpc")]
     #[test]
     fn test_list_wallets_with_entries() {

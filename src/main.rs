@@ -33,7 +33,7 @@ use clap::{CommandFactory, Parser};
 
 #[tokio::main]
 async fn main() {
-    env_logger::init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let cli_opts: CliOpts = CliOpts::parse();
 
     let network = &cli_opts.network;
