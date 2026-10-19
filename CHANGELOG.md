@@ -16,6 +16,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Fixed `warn!` messages, including the mainnet notice, being hidden unless `RUST_LOG` was set; warnings are now shown by default
 - Added `hwi` feature with a hardware wallet `hwi` command to list connected devices, register a wallet policy, display a receive address, and sign PSBTs. Supports Ledger, Coldcard, BitBox02, Jade and Specter.
 - Replaced plain `wallets` with `wallets list`, and added `wallets delete <wallet_name>` for unused saved wallet configurations.
+- Fixed `create_tx`, `create_dns_tx`, `create_sp_tx` and `bump_fee` building transactions over Bitcoin Core's 400,000 wu (100,000 vB) standard weight limit, which no default node relays
 
 ## [4.0.0]
 

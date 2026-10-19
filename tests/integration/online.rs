@@ -552,6 +552,37 @@ mod test_online {
         );
     }
 
+    // An OP_RETURN payload is limited only by the transaction it is in having
+    // to stay within Bitcoin Core's 400_000 wu standard weight. A payload pushing
+    //it over must fail when building, not at broadcast after signing.
+    #[test]
+    fn test_create_tx_op_return_within_standard_weight() {
+        let (cli, mut cmd_init, env) = setup_online_wallet();
+        cmd_init.assert().success();
+        fund_and_sync_wallet(&cli, &env);
+
+        let to = format!("{RECIPIENT}:15000");
+
+        let data = "A".repeat(99_000);
+        run_wallet_json(&cli, &["create_tx", "--to", &to, "--add_string", &data]);
+
+        let too_large = "A".repeat(99_994);
+        cli.wallet_cmd(&[
+            "--wallet",
+            WALLET_NAME,
+            "create_tx",
+            "--to",
+            &to,
+            "--add_string",
+            &too_large,
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicates::str::contains(
+            "over the 400000 wu (100000 vB) standard limit",
+        ));
+    }
+
     // `create_tx --utxos` forces a specific UTXO to be spent;
     // `--unspendable`excludes one. Funds two UTXOs so the selection is actually observable.
     #[test]
