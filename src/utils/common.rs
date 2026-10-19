@@ -6,6 +6,10 @@ use bdk_message_signer::SignatureFormat;
 #[cfg(feature = "silent-payments")]
 use bdk_sp::encoding::SilentPaymentCode;
 use bdk_wallet::bitcoin::{Address, FeeRate, Network, OutPoint, ScriptBuf};
+use bdk_wallet::bitcoin::{
+    base64::{Engine, prelude::BASE64_STANDARD},
+    script::PushBytesBuf,
+};
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -133,6 +137,16 @@ pub(crate) fn parse_fee_rate(s: &str) -> Result<FeeRate, Error> {
     }
 
     Ok(FeeRate::from_sat_per_kwu(sat_kwu as u64))
+}
+
+/// Parse an `OP_RETURN` payload given as a UTF-8 string.
+pub(crate) fn parse_op_return_string(s: &str) -> Result<PushBytesBuf, Error> {
+    Ok(PushBytesBuf::try_from(s.as_bytes().to_vec())?)
+}
+
+/// Parse an `OP_RETURN` payload given as base64.
+pub(crate) fn parse_op_return_base64(s: &str) -> Result<PushBytesBuf, Error> {
+    Ok(PushBytesBuf::try_from(BASE64_STANDARD.decode(s)?)?)
 }
 
 /// Prepare bdk-cli home directory
@@ -577,6 +591,13 @@ mod tests {
             parse_fee_rate("0.9").unwrap(),
             FeeRate::from_sat_per_kwu(225)
         );
+    }
+
+    #[test]
+    fn parses_op_return_payloads() {
+        assert_eq!(parse_op_return_string("hi").unwrap().as_bytes(), b"hi");
+        assert_eq!(parse_op_return_base64("aGk=").unwrap().as_bytes(), b"hi");
+        assert!(parse_op_return_base64("!!!not-base64!!!").is_err());
     }
 
     #[test]
