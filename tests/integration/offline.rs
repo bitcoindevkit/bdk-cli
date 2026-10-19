@@ -148,7 +148,8 @@ mod test_offline {
     }
 
     /// A malformed `create_tx` argument must be reported as an error (exit 1),
-    /// never as a panic (exit 101).
+    /// never as a panic (exit 101). an unknown outpoint when building (exit 1), and
+    /// malformed base64 already at argument parsing (exit 2).
     #[test]
     fn test_create_tx_rejects_malformed_input_without_panicking() {
         let (cli, mut cmd_init) = setup_wallet_config();
@@ -179,7 +180,7 @@ mod test_offline {
             "!!!not-base64!!!",
         ])
         .assert()
-        .code(1)
+        .code(2)
         .stderr(predicate::str::contains("Base64 decoding error"));
     }
 
