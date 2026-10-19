@@ -2,12 +2,14 @@ use crate::commands::OfflineWalletSubCommand;
 use crate::error::BDKCliError as Error;
 use crate::handlers::{AppCommand, AppContext, OfflineOperations};
 use crate::utils::output::{FormatOutput, ListResult};
-use crate::utils::parse_address;
 use crate::utils::types::{
     AddressResult, BalanceResult, KeychainPair, PsbtResult, RawPsbt, TransactionDetails,
     UnspentDetails,
 };
-use crate::utils::{parse_fee_rate, parse_outpoint, parse_recipient};
+use crate::utils::{
+    check_standard_weight, max_signed_weight, parse_address, parse_fee_rate,
+    parse_op_return_base64, parse_op_return_string, parse_outpoint, parse_recipient,
+};
 use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
@@ -228,23 +230,26 @@ pub struct CreateTxCommand {
     #[arg(env = "INT_POLICY", long = "internal_policy")]
     pub internal_policy: Option<String>,
 
-    /// Optionally create an OP_RETURN output containing given String in utf8 encoding (max 80 bytes)
+    /// Optionally create an OP_RETURN output containing given String in utf8 encoding. The transaction must stay within Bitcoin Core's 100,000 vB standard size limit.
+
     #[arg(
         env = "ADD_STRING",
         long = "add_string",
         short = 's',
-        conflicts_with = "add_data"
+        conflicts_with = "add_data",
+        value_parser = parse_op_return_string,
     )]
-    pub add_string: Option<String>,
+    pub add_string: Option<PushBytesBuf>,
 
-    /// Optionally create an OP_RETURN output containing given base64 encoded String. (max 80 bytes)
+    /// Optionally create an OP_RETURN output containing given base64 encoded String. The transaction must stay within Bitcoin Core's 100,000 vB standard size limit.
     #[arg(
         env = "ADD_DATA",
         long = "add_data",
         short = 'o',
-        conflicts_with = "add_string"
+        conflicts_with = "add_string",
+        value_parser = parse_op_return_base64,
     )]
-    pub add_data: Option<String>,
+    pub add_data: Option<PushBytesBuf>,
 }
 
 impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
@@ -293,12 +298,8 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
             tx_builder.unspendable(unspendable.to_vec());
         }
 
-        if let Some(base64_data) = &self.add_data {
-            let op_return_data = BASE64_STANDARD.decode(base64_data)?;
-            tx_builder.add_data(&PushBytesBuf::try_from(op_return_data)?);
-        } else if let Some(string_data) = &self.add_string {
-            let data = PushBytesBuf::try_from(string_data.as_bytes().to_vec())?;
-            tx_builder.add_data(&data);
+        if let Some(data) = self.add_data.as_ref().or(self.add_string.as_ref()) {
+            tx_builder.add_data(data);
         }
 
         let policies = vec![
@@ -316,6 +317,8 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
         }
 
         let psbt = tx_builder.finish()?;
+
+        check_standard_weight(max_signed_weight(ctx.state.wallet, &psbt)?)?;
 
         Ok(PsbtResult::new(&psbt, Some(false)))
     }
@@ -353,22 +356,24 @@ pub struct CreateSpTxCommand {
     /// Selects which policy should be used to satisfy the internal descriptor.
     #[arg(env = "INT_POLICY", long = "internal_policy")]
     pub internal_policy: Option<String>,
-    /// Optionally create an OP_RETURN output containing given String in utf8 encoding (max 80 bytes)
+    /// Optionally create an OP_RETURN output containing given String in utf8 encoding. The transaction must stay within Bitcoin Core's 100,000 vB standard size limit.
     #[arg(
         env = "ADD_STRING",
         long = "add_string",
         short = 's',
-        conflicts_with = "add_data"
+        conflicts_with = "add_data",
+        value_parser = parse_op_return_string,
     )]
-    pub add_string: Option<String>,
-    /// Optionally create an OP_RETURN output containing given base64 encoded String. (max 80 bytes)
+    pub add_string: Option<PushBytesBuf>,
+    /// Optionally create an OP_RETURN output containing given base64 encoded String. The transaction must stay within Bitcoin Core's 100,000 vB standard size limit.
     #[arg(
         env = "ADD_DATA",
         long = "add_data",
         short = 'o',
-        conflicts_with = "add_string"
+        conflicts_with = "add_string",
+        value_parser = parse_op_return_base64,
     )]
-    pub add_data: Option<String>, //base 64 econding
+    pub add_data: Option<PushBytesBuf>,
 }
 
 #[cfg(feature = "silent-payments")]
@@ -444,12 +449,8 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
             tx_builder.unspendable(unspendable.to_vec());
         }
 
-        if let Some(base64_data) = &self.add_data {
-            let op_return_data = BASE64_STANDARD.decode(base64_data)?;
-            tx_builder.add_data(&PushBytesBuf::try_from(op_return_data)?);
-        } else if let Some(string_data) = &self.add_string {
-            let data = PushBytesBuf::try_from(string_data.as_bytes().to_vec())?;
-            tx_builder.add_data(&data);
+        if let Some(data) = self.add_data.as_ref().or(self.add_string.as_ref()) {
+            tx_builder.add_data(data);
         }
 
         let policies = vec![
@@ -528,6 +529,8 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
 
         let raw_tx = psbt.extract_tx()?;
 
+        check_standard_weight(raw_tx.weight())?;
+
         Ok(RawPsbt::new(&raw_tx))
     }
 }
@@ -593,7 +596,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for BumpFeeCommand {
 
         let psbt = tx_builder.finish()?;
 
-        // let psbt_base64 = BASE64_STANDARD.encode(psbt.serialize());
+        check_standard_weight(max_signed_weight(wallet, &psbt)?)?;
 
         Ok(PsbtResult::new(&psbt, Some(false)))
     }

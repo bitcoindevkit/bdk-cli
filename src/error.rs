@@ -1,6 +1,6 @@
 use bdk_wallet::bitcoin::hex::HexToBytesError;
 use bdk_wallet::bitcoin::psbt::ExtractTxError;
-use bdk_wallet::bitcoin::{base64, consensus};
+use bdk_wallet::bitcoin::{Transaction, Weight, base64, consensus};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -62,6 +62,15 @@ pub enum BDKCliError {
 
     #[error("Miniscript compiler error: {0}")]
     MiniscriptCompilerError(#[from] bdk_wallet::miniscript::policy::compiler::CompilerError),
+
+    #[error(
+        "Transaction can weigh up to {weight:#} ({} vB) once signed, over the {:#} ({} vB) \
+         standard limit, so Bitcoin Core nodes will not relay it",
+        weight.to_vbytes_ceil(),
+        Transaction::MAX_STANDARD_WEIGHT,
+        Transaction::MAX_STANDARD_WEIGHT.to_vbytes_ceil()
+    )]
+    NonStandardTxWeight { weight: Weight },
 
     #[error("ParseError: {0}")]
     ParseError(#[from] bdk_wallet::bitcoin::address::ParseError),

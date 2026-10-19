@@ -1,3 +1,4 @@
+use crate::commands::OfflineWalletSubCommand;
 use crate::{commands::WalletOpts, config::WalletConfig, error::BDKCliError as Error};
 #[cfg(feature = "cbf")]
 use bdk_kyoto::{Info, Receiver, UnboundedReceiver, Warning};
@@ -5,16 +6,20 @@ use bdk_kyoto::{Info, Receiver, UnboundedReceiver, Warning};
 use bdk_message_signer::SignatureFormat;
 #[cfg(feature = "silent-payments")]
 use bdk_sp::encoding::SilentPaymentCode;
-use bdk_wallet::bitcoin::{Address, FeeRate, Network, OutPoint, ScriptBuf};
+use bdk_wallet::Wallet;
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
     feature = "cbf",
     feature = "rpc"
 ))]
-use bdk_wallet::{WalletEvent, bitcoin::Psbt};
-
-use crate::commands::OfflineWalletSubCommand;
+use bdk_wallet::WalletEvent;
+use bdk_wallet::bitcoin::base64::Engine;
+use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
+use bdk_wallet::bitcoin::script::PushBytesBuf;
+use bdk_wallet::bitcoin::{
+    Address, FeeRate, Network, OutPoint, Psbt, ScriptBuf, Transaction, Weight,
+};
 use std::{
     path::{Path, PathBuf},
     str::FromStr,
@@ -133,6 +138,46 @@ pub(crate) fn parse_fee_rate(s: &str) -> Result<FeeRate, Error> {
     }
 
     Ok(FeeRate::from_sat_per_kwu(sat_kwu as u64))
+}
+
+/// Parse an `OP_RETURN` payload given as a UTF-8 string.
+pub(crate) fn parse_op_return_string(s: &str) -> Result<PushBytesBuf, Error> {
+    Ok(PushBytesBuf::try_from(s.as_bytes().to_vec())?)
+}
+
+/// Parse an `OP_RETURN` payload given as base64.
+pub(crate) fn parse_op_return_base64(s: &str) -> Result<PushBytesBuf, Error> {
+    Ok(PushBytesBuf::try_from(BASE64_STANDARD.decode(s)?)?)
+}
+/// Reject a transaction over Bitcoin Core's standard weight limit (`tx-size`).
+///
+/// This also bounds `OP_RETURN` data: Core derives its default `-datacarriersize`
+/// from this limit, so its `datacarrier` check cannot reject a transaction that
+/// passes this one.
+pub(crate) fn check_standard_weight(weight: Weight) -> Result<(), Error> {
+    if weight > Transaction::MAX_STANDARD_WEIGHT {
+        return Err(Error::NonStandardTxWeight { weight });
+    }
+    Ok(())
+}
+
+/// The most `psbt` can weigh once its inputs are signed.
+///
+/// An unsigned transaction can be under the standard limit and over it once
+/// signed, so each wallet input counts the largest witness its descriptor can
+/// need, as coin selection does. Inputs the wallet does not own count none.
+pub(crate) fn max_signed_weight(wallet: &Wallet, psbt: &Psbt) -> Result<Weight, Error> {
+    let tx = &psbt.unsigned_tx;
+    // The unsigned transaction is serialized without the segwit marker and flag
+    // (2 wu) or the witness count of each input (1 wu).
+    let mut weight = tx.weight() + Weight::from_wu(2 + tx.input.len() as u64);
+    for txin in &tx.input {
+        // Not `get_utxo`: the inputs of a fee bump are already spent.
+        if let Some(((keychain, _), _)) = wallet.spk_index().txout(txin.previous_output) {
+            weight += wallet.public_descriptor(keychain).max_weight_to_satisfy()?;
+        }
+    }
+    Ok(weight)
 }
 
 /// Prepare bdk-cli home directory
@@ -567,6 +612,111 @@ mod tests {
             parse_fee_rate("0.9").unwrap(),
             FeeRate::from_sat_per_kwu(225)
         );
+    }
+
+    #[test]
+    fn parses_op_return_payloads() {
+        assert_eq!(parse_op_return_string("hi").unwrap().as_bytes(), b"hi");
+        assert_eq!(parse_op_return_base64("aGk=").unwrap().as_bytes(), b"hi");
+        assert!(parse_op_return_base64("!!!not-base64!!!").is_err());
+    }
+
+    #[test]
+    fn standard_weight_limit_is_inclusive() {
+        let max = Transaction::MAX_STANDARD_WEIGHT;
+        assert!(check_standard_weight(max).is_ok());
+        assert!(check_standard_weight(max + Weight::from_wu(1)).is_err());
+    }
+
+    mod max_signed_weight_tests {
+        use super::*;
+        use bdk_wallet::bitcoin::hashes::Hash;
+        use bdk_wallet::bitcoin::{Amount, TxIn, TxOut, Txid, absolute, transaction};
+        use bdk_wallet::{KeychainKind, SignOptions};
+
+        const TPRV: &str = "tprv8ZgxMBicQKsPdy6LMhUtFHAgpocR8GC6QmwMSFpZs7h6Eziw3SpThFfczTDh5rW2krkqffa11UpX3XkeTTB2FvzZKWXqPY54Y6Rq4AQ5R8L";
+
+        /// A wallet for `template`, with `KEY` replaced by each keychain's key,
+        /// holding `utxos` unconfirmed coins.
+        fn funded_wallet(template: &str, utxos: usize) -> Wallet {
+            let desc = |keychain: u32| template.replace("KEY", &format!("{TPRV}/{keychain}/*"));
+            let mut wallet = Wallet::create(desc(0), desc(1))
+                .network(Network::Regtest)
+                .create_wallet_no_persist()
+                .unwrap();
+            let output = (0..utxos)
+                .map(|_| TxOut {
+                    value: Amount::from_sat(100_000),
+                    script_pubkey: wallet
+                        .reveal_next_address(KeychainKind::External)
+                        .script_pubkey(),
+                })
+                .collect();
+            let funding = Transaction {
+                version: transaction::Version::TWO,
+                lock_time: absolute::LockTime::ZERO,
+                input: vec![TxIn {
+                    previous_output: OutPoint::new(Txid::from_byte_array([1; 32]), 0),
+                    ..Default::default()
+                }],
+                output,
+            };
+            wallet.apply_unconfirmed_txs([(funding, 0)]);
+            wallet
+        }
+
+        /// Sign `psbt` and check `estimate` bounds the result.
+        ///
+        /// It may overshoot by the segwit marker, flag and witness counts a
+        /// legacy transaction does not have, and per input by the byte or two a
+        /// signature is shorter than assumed, at 4 wu each in a scriptSig.
+        fn assert_bounds(wallet: &Wallet, mut psbt: Psbt, estimate: Weight) -> Transaction {
+            assert!(wallet.sign(&mut psbt, SignOptions::default()).unwrap());
+            let tx = psbt.extract_tx().unwrap();
+            let slack = Weight::from_wu(2 + 9 * tx.input.len() as u64);
+            assert!(
+                tx.weight() <= estimate && estimate - tx.weight() <= slack,
+                "signed weight {} vs estimate {estimate}",
+                tx.weight()
+            );
+            tx
+        }
+
+        #[test]
+        fn bounds_the_signed_weight_for_each_script_type() {
+            for template in ["tr(KEY)", "wpkh(KEY)", "sh(wpkh(KEY))", "pkh(KEY)"] {
+                let mut wallet = funded_wallet(template, 3);
+                let to = wallet.peek_address(KeychainKind::External, 100);
+                let mut builder = wallet.build_tx();
+                builder.drain_wallet().drain_to(to.script_pubkey());
+                let psbt = builder.finish().unwrap();
+
+                let estimate = max_signed_weight(&wallet, &psbt).unwrap();
+                assert_bounds(&wallet, psbt, estimate);
+            }
+        }
+
+        #[test]
+        fn bounds_a_fee_bump_spending_the_same_inputs() {
+            let mut wallet = funded_wallet("wpkh(KEY)", 2);
+            let to = wallet.peek_address(KeychainKind::External, 100);
+            let mut builder = wallet.build_tx();
+            builder
+                .add_recipient(to.script_pubkey(), Amount::from_sat(150_000))
+                .fee_rate(FeeRate::from_sat_per_vb(1).unwrap());
+            let psbt = builder.finish().unwrap();
+            let estimate = max_signed_weight(&wallet, &psbt).unwrap();
+            let original = assert_bounds(&wallet, psbt, estimate);
+            let txid = original.compute_txid();
+            wallet.apply_unconfirmed_txs([(original, 1)]);
+
+            // The inputs are now spent, so they are no longer wallet UTXOs.
+            let mut builder = wallet.build_fee_bump(txid).unwrap();
+            builder.fee_rate(FeeRate::from_sat_per_vb(10).unwrap());
+            let psbt = builder.finish().unwrap();
+            let estimate = max_signed_weight(&wallet, &psbt).unwrap();
+            assert_bounds(&wallet, psbt, estimate);
+        }
     }
 
     #[test]
