@@ -7,8 +7,8 @@ use crate::handlers::dns::dns_payment_instructions::{
 use crate::handlers::{AppContext, AsyncAppCommand, Init, OfflineOperations};
 use crate::utils::types::{PsbtResult, StatusResult};
 use crate::utils::{
-    parse_dns_recipient, parse_fee_rate, parse_op_return_base64, parse_op_return_string,
-    parse_outpoint, parse_recipient,
+    check_standard_weight, max_signed_weight, parse_dns_recipient, parse_fee_rate,
+    parse_op_return_base64, parse_op_return_string, parse_outpoint, parse_recipient,
 };
 use bdk_wallet::KeychainKind;
 use bdk_wallet::bitcoin::{Amount, FeeRate, OutPoint, ScriptBuf, Sequence, script::PushBytesBuf};
@@ -158,6 +158,7 @@ impl AsyncAppCommand<AppContext<OfflineOperations<'_>>> for CreateDnsTxCommand {
         }
 
         let psbt = tx_builder.finish()?;
+        check_standard_weight(max_signed_weight(ctx.state.wallet, &psbt)?)?;
         Ok(PsbtResult::new(&psbt, Some(false)))
     }
 }
