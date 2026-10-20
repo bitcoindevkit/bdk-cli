@@ -652,10 +652,8 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for SignCommand {
 
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
         let wallet = &mut ctx.state.wallet;
-        let psbt_bytes = BASE64_STANDARD
-            .decode(&self.psbt)
-            .map_err(|e| Error::Generic(e.to_string()))?;
-        let mut psbt = Psbt::deserialize(&psbt_bytes).map_err(|e| Error::Generic(e.to_string()))?;
+        let psbt_bytes = BASE64_STANDARD.decode(&self.psbt)?;
+        let mut psbt = Psbt::deserialize(&psbt_bytes)?;
 
         let signopt = SignOptions {
             assume_height: self.assume_height,
