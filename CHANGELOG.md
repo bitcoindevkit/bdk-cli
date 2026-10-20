@@ -17,6 +17,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Added `hwi` feature with a hardware wallet `hwi` command to list connected devices, register a wallet policy, display a receive address, and sign PSBTs. Supports Ledger, Coldcard, BitBox02, Jade and Specter.
 - Replaced plain `wallets` with `wallets list`, and added `wallets delete <wallet_name>` for unused saved wallet configurations.
 - Removed the redundant `wallet` field from `wallets list` output; the wallet name is still available as the top-level key
+- Fixed `compile` silently accepting placeholder keys/hashes instead of validating them; added `--placeholders` to opt back into the old permissive behavior
 
 ## [4.0.0]
 
