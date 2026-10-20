@@ -94,7 +94,6 @@ impl AppCommand<AppContext<Init>> for SaveConfigCommand {
         };
 
         let wallet_config = WalletConfigInner {
-            wallet: wallet_name.clone(),
             network: ctx.network.to_string(),
             ext_descriptor: self.wallet_opts.ext_descriptor.clone(),
             int_descriptor: self.wallet_opts.int_descriptor.clone(),
