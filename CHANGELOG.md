@@ -14,6 +14,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Rejected `--proxy` on the `rpc` backend, and unsupported proxy options (`--proxy_auth`, `--timeout`) on the `rpc` and `cbf` backends, instead of silently ignoring them
 - Fixed `compile` rejecting policies that are valid for the requested script type
 - Fixed `warn!` messages, including the mainnet notice, being hidden unless `RUST_LOG` was set; warnings are now shown by default
+- Changed unused address output to a list
 
 ## [4.0.0]
 
