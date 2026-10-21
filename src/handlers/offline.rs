@@ -639,38 +639,44 @@ pub struct SignCommand {
     pub psbt: String,
 
     /// Assume the blockchain has reached a specific height. This affects the transaction finalization, if there are timelocks in the descriptor.
-    #[arg(env = "HEIGHT", long = "assume_height")]
+    #[arg(env = "HEIGHT", short = 'H', long = "assume_height")]
     pub assume_height: Option<u32>,
 
     /// Whether the signer should trust the witness_utxo, if the non_witness_utxo hasn’t been provided.
-    #[arg(env = "WITNESS", long = "trust_witness_utxo")]
+    #[arg(env = "WITNESS", short = 'W', long = "trust_witness_utxo")]
     pub trust_witness_utxo: Option<bool>,
 
     /// Whether the signer should use the sighash type set in the PSBT.
-    #[arg(env = "ALLOW_ALL_SIGHASHES", long = "allow_all_sighashes")]
+    #[arg(env = "ALLOW_ALL_SIGHASHES", short = 'A', long = "allow_all_sighashes")]
     pub allow_all_sighashes: Option<bool>,
 
     /// Whether to remove partial signatures from the PSBT after signing.
-    #[arg(env = "REMOVE_PARTIAL_SIGS", long = "remove_partial_sigs")]
+    #[arg(env = "REMOVE_PARTIAL_SIGS", short = 'R', long = "remove_partial_sigs")]
     pub remove_partial_sigs: Option<bool>,
 
     /// Whether to try finalizing the PSBT after signing.
-    #[arg(env = "TRY_FINALIZE", long = "try_finalize")]
+    #[arg(env = "TRY_FINALIZE", short = 'F', long = "try_finalize")]
     pub try_finalize: Option<bool>,
 
     /// Taproot script leaves to sign. Accepts `all` or `none`.
-    #[arg(env = "TAP_LEAVES_OPTIONS", long = "tap_leaves_options", value_enum)]
+    #[arg(
+        env = "TAP_LEAVES_OPTIONS",
+        short = 'L',
+        long = "tap_leaves_options",
+        value_enum
+    )]
     pub tap_leaves_options: Option<TapLeavesOption>,
 
     /// Whether to sign Taproot inputs with the internal key.
     #[arg(
         env = "SIGN_WITH_TAP_INTERNAL_KEY",
+        short = 'T',
         long = "sign_with_tap_internal_key"
     )]
     pub sign_with_tap_internal_key: Option<bool>,
 
     /// Whether to grind ECDSA signatures to ensure low-r signatures.
-    #[arg(env = "ALLOW_GRINDING", long = "allow_grinding")]
+    #[arg(env = "ALLOW_GRINDING", short = 'G', long = "allow_grinding")]
     pub allow_grinding: Option<bool>,
 }
 
