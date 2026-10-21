@@ -1,6 +1,10 @@
 use bdk_wallet::bitcoin::Network;
+#[cfg(feature = "hwi")]
+use bdk_wallet::bitcoin::bip32::ChildNumber;
 use bdk_wallet::descriptor::IntoWalletDescriptor;
 use bdk_wallet::keys::GeneratableKey;
+#[cfg(feature = "hwi")]
+use clap::ValueEnum;
 use std::{str::FromStr, sync::Arc};
 
 use bdk_wallet::keys::DescriptorPublicKey;
@@ -240,6 +244,88 @@ pub fn validate_descriptor_pair(
     Ok(ext_is_multipath)
 }
 
+/// Strip a trailing descriptor checksum.
+#[cfg(feature = "hwi")]
+pub(crate) fn strip_checksum(descriptor: &str) -> &str {
+    descriptor.split('#').next().unwrap_or(descriptor)
+}
+
+/// Returns `true` if `descriptor` is a BIP-389 multipath descriptor (more than
+/// one derivation path).
+///
+/// Errors if the descriptor is unparseable or its keys don't match `network`.
+#[cfg(feature = "hwi")]
+pub fn is_multipath_descriptor(descriptor: &str, network: Network) -> Result<bool, Error> {
+    Ok(descriptor_path_count(descriptor, network)? > 1)
+}
+
+/// Single-sig descriptor script types.
+#[cfg(feature = "hwi")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum SingleSigScriptType {
+    Wpkh,
+    Tr,
+    ShWpkh,
+    Pkh,
+}
+
+#[cfg(feature = "hwi")]
+impl SingleSigScriptType {
+    /// The BIP-43 purpose index for this type.
+    pub fn purpose(self) -> u32 {
+        match self {
+            Self::Pkh => 44,
+            Self::ShWpkh => 49,
+            Self::Wpkh => 84,
+            Self::Tr => 86,
+        }
+    }
+
+    /// Map a BIP-43 purpose index back to a type.
+    fn from_purpose(purpose: u32) -> Option<Self> {
+        match purpose {
+            44 => Some(Self::Pkh),
+            49 => Some(Self::ShWpkh),
+            84 => Some(Self::Wpkh),
+            86 => Some(Self::Tr),
+            _ => None,
+        }
+    }
+
+    /// Infer the type from a derivation path's purpose (BIP-43). The purpose
+    /// level must be hardened, so an unhardened path returns `None`.
+    pub fn from_derivation_path(path: &DerivationPath) -> Option<Self> {
+        let &ChildNumber::Hardened { index: purpose } = path.into_iter().next()? else {
+            return None;
+        };
+        Self::from_purpose(purpose)
+    }
+
+    /// The `--type` / descriptor name for this type.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Wpkh => "wpkh",
+            Self::Tr => "tr",
+            Self::ShWpkh => "sh-wpkh",
+            Self::Pkh => "pkh",
+        }
+    }
+
+    /// Build a checksummed single-sig descriptor from a key expression for the
+    /// given keychain branch (0 = external, 1 = internal).
+    pub fn descriptor(self, key_expr: &str, branch: u32) -> Result<String, Error> {
+        let raw = match self {
+            Self::Wpkh => format!("wpkh({key_expr}/{branch}/*)"),
+            Self::Tr => format!("tr({key_expr}/{branch}/*)"),
+            Self::ShWpkh => format!("sh(wpkh({key_expr}/{branch}/*))"),
+            Self::Pkh => format!("pkh({key_expr}/{branch}/*)"),
+        };
+        let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&raw)
+            .map_err(|e| Error::Generic(format!("Failed to build descriptor: {e}")))?;
+        Ok(descriptor.to_string())
+    }
+}
+
 #[cfg(test)]
 mod multipath_tests {
     use super::*;
@@ -258,5 +344,33 @@ mod multipath_tests {
     #[test]
     fn accepts_single_path_with_internal_descriptor() {
         assert!(!validate_descriptor_pair(SINGLE, Some(SINGLE), Network::Testnet).unwrap());
+    }
+    #[cfg(feature = "hwi")]
+    #[test]
+    fn detects_multipath_descriptor() {
+        assert!(is_multipath_descriptor(MULTIPATH, Network::Testnet).unwrap());
+        assert!(!is_multipath_descriptor(SINGLE, Network::Testnet).unwrap());
+    }
+
+    #[cfg(feature = "hwi")]
+    #[test]
+    fn strips_trailing_checksum() {
+        assert_eq!(strip_checksum(SINGLE), SINGLE.split('#').next().unwrap());
+        assert!(!strip_checksum(SINGLE).contains('#'));
+        assert_eq!(strip_checksum(MULTIPATH), MULTIPATH);
+    }
+
+    #[cfg(feature = "hwi")]
+    #[test]
+    fn infers_script_type_from_purpose() {
+        let p = |s: &str| DerivationPath::from_str(s).unwrap();
+        type T = SingleSigScriptType;
+        assert_eq!(T::from_derivation_path(&p("m/44'/1'/0'")), Some(T::Pkh));
+        assert_eq!(T::from_derivation_path(&p("m/49'/1'/0'")), Some(T::ShWpkh));
+        assert_eq!(T::from_derivation_path(&p("m/84'/1'/0'")), Some(T::Wpkh));
+        assert_eq!(T::from_derivation_path(&p("m/86h/0h/0h")), Some(T::Tr));
+        assert_eq!(T::from_derivation_path(&p("m/48'/1'/0'/2'")), None);
+        // BIP-43: an unhardened purpose is not a standard path.
+        assert_eq!(T::from_derivation_path(&p("m/84/1/0")), None);
     }
 }
