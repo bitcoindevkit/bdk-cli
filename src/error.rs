@@ -67,6 +67,9 @@ pub enum BDKCliError {
     #[error("Miniscript compiler error: {0}")]
     MiniscriptCompilerError(#[from] bdk_wallet::miniscript::policy::compiler::CompilerError),
 
+    #[error("Policy error: {0}")]
+    PolicyError(#[from] bdk_wallet::descriptor::policy::PolicyError),
+
     #[error("ParseError: {0}")]
     ParseError(#[from] bdk_wallet::bitcoin::address::ParseError),
 

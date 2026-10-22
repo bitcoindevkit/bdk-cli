@@ -25,6 +25,7 @@ pub mod repl;
 use crate::client::BlockchainClient;
 use std::path::PathBuf;
 
+use crate::persister::WalletSigners;
 use crate::{error::BDKCliError as Error, utils::output::FormatOutput};
 use bdk_wallet::{Wallet, bitcoin::Network};
 
@@ -35,6 +36,7 @@ pub struct Init;
 /// Requires only a wallet.
 pub struct OfflineOperations<'a> {
     pub wallet: &'a mut Wallet,
+    pub signers: &'a WalletSigners,
 }
 
 #[cfg(any(
@@ -47,6 +49,7 @@ pub struct OfflineOperations<'a> {
 /// Requires a wallet and a client.
 pub struct OnlineOperations<'a> {
     pub wallet: &'a mut Wallet,
+    pub signers: &'a WalletSigners,
     pub client: &'a BlockchainClient,
     pub wallet_name: String,
 }
@@ -70,11 +73,16 @@ impl AppContext<Init> {
 }
 
 impl<'a> AppContext<OfflineOperations<'a>> {
-    pub fn new_offline_wallet(network: Network, datadir: PathBuf, wallet: &'a mut Wallet) -> Self {
+    pub fn new_offline_wallet(
+        network: Network,
+        datadir: PathBuf,
+        wallet: &'a mut Wallet,
+        signers: &'a WalletSigners,
+    ) -> Self {
         Self {
             network,
             datadir,
-            state: OfflineOperations { wallet },
+            state: OfflineOperations { wallet, signers },
         }
     }
 }
@@ -90,6 +98,7 @@ impl<'a> AppContext<OnlineOperations<'a>> {
         network: Network,
         datadir: PathBuf,
         wallet: &'a mut Wallet,
+        signers: &'a WalletSigners,
         client: &'a BlockchainClient,
         wallet_name: String,
     ) -> Self {
@@ -98,6 +107,7 @@ impl<'a> AppContext<OnlineOperations<'a>> {
             datadir,
             state: OnlineOperations {
                 wallet,
+                signers,
                 client,
                 wallet_name,
             },

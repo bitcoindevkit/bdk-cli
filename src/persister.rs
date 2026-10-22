@@ -1,10 +1,12 @@
 use crate::commands::WalletOpts;
 use crate::error::BDKCliError as Error;
 use crate::utils::descriptors::validate_descriptor_pair;
-use bdk_wallet::Wallet;
-use bdk_wallet::bitcoin::Network;
+use bdk_wallet::bitcoin::{Network, NetworkKind, secp256k1::Secp256k1};
+use bdk_wallet::descriptor::IntoWalletDescriptor;
+use bdk_wallet::miniscript::descriptor::KeyMap;
+use bdk_wallet::{KeychainKind, Wallet};
 #[cfg(any(feature = "sqlite", feature = "redb"))]
-use bdk_wallet::{KeychainKind, PersistedWallet, WalletPersister};
+use bdk_wallet::{PersistedWallet, WalletPersister};
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 use clap::ValueEnum;
 
@@ -26,6 +28,68 @@ pub(crate) enum Persister {
     Connection(bdk_wallet::rusqlite::Connection),
     #[cfg(feature = "redb")]
     RedbStore(bdk_redb::Store),
+}
+
+/// Keep the descriptor key maps outside the
+/// wallet and construct the signer only when a PSBT is being signed.
+pub(crate) struct WalletSigners {
+    pub external: KeyMap,
+    pub internal: KeyMap,
+}
+
+impl WalletSigners {
+    pub(crate) fn new(network: Network, wallet_opts: &WalletOpts) -> Result<Self, Error> {
+        let secp = Secp256k1::new();
+        let ext_is_multipath = validate_descriptor_pair(
+            &wallet_opts.ext_descriptor,
+            wallet_opts.int_descriptor.as_deref(),
+            network,
+        )?;
+
+        if ext_is_multipath {
+            return Err(Error::Generic(
+                "Multipath descriptors are not supported by WalletSigners yet.".to_string(),
+            ));
+        }
+
+        let (_, external_keymap) = wallet_opts
+            .ext_descriptor
+            .clone()
+            .into_wallet_descriptor(&secp, NetworkKind::from(network))?;
+        let external = external_keymap;
+
+        let internal = wallet_opts
+            .int_descriptor
+            .clone()
+            .map(|descriptor| {
+                descriptor
+                    .into_wallet_descriptor(&secp, NetworkKind::from(network))
+                    .map(|(_, keymap)| keymap)
+            })
+            .transpose()?;
+
+        Ok(Self {
+            external,
+            internal: internal.unwrap_or_default(),
+        })
+    }
+
+    pub(crate) fn sign_psbt(
+        &self,
+        wallet: &Wallet,
+        psbt: &mut bdk_wallet::bitcoin::Psbt,
+    ) -> Result<(), Error> {
+        let signer = bdk_wallet::bdk_tx::Signer(
+            self.external
+                .clone()
+                .into_iter()
+                .chain(self.internal.clone())
+                .collect(),
+        );
+        psbt.sign(&signer, wallet.secp_ctx())
+            .map(|_| ())
+            .map_err(|(_, errors)| Error::Generic(format!("Failed to sign PSBT: {errors:?}")))
+    }
 }
 
 #[cfg(any(feature = "sqlite", feature = "redb"))]
