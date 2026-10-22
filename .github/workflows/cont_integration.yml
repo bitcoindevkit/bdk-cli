@@ -18,6 +18,7 @@ jobs:
         features:
           - --features default
           - --no-default-features
+          - --no-default-features --features redb
           - --all-features
     steps:
       - name: Checkout
