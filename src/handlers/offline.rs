@@ -12,8 +12,8 @@ use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
 use bdk_wallet::bitcoin::{Address, Amount, FeeRate, OutPoint, Psbt, ScriptBuf, Sequence, Txid};
-use bdk_wallet::{KeychainKind, SignOptions};
-use clap::Parser;
+use bdk_wallet::{KeychainKind, SignOptions, signer::TapLeavesOptions};
+use clap::{Parser, ValueEnum};
 use serde_json::json;
 use std::collections::BTreeMap;
 #[cfg(feature = "silent-payments")]
@@ -639,12 +639,51 @@ pub struct SignCommand {
     pub psbt: String,
 
     /// Assume the blockchain has reached a specific height. This affects the transaction finalization, if there are timelocks in the descriptor.
-    #[arg(env = "HEIGHT", long = "assume_height")]
+    #[arg(env = "HEIGHT", short = 'H', long = "assume_height")]
     pub assume_height: Option<u32>,
 
     /// Whether the signer should trust the witness_utxo, if the non_witness_utxo hasn’t been provided.
-    #[arg(env = "WITNESS", long = "trust_witness_utxo")]
+    #[arg(env = "WITNESS", short = 'W', long = "trust_witness_utxo")]
     pub trust_witness_utxo: Option<bool>,
+
+    /// Whether the signer should use the sighash type set in the PSBT.
+    #[arg(env = "ALLOW_ALL_SIGHASHES", short = 'A', long = "allow_all_sighashes")]
+    pub allow_all_sighashes: Option<bool>,
+
+    /// Whether to remove partial signatures from the PSBT after signing.
+    #[arg(env = "REMOVE_PARTIAL_SIGS", short = 'R', long = "remove_partial_sigs")]
+    pub remove_partial_sigs: Option<bool>,
+
+    /// Whether to try finalizing the PSBT after signing.
+    #[arg(env = "TRY_FINALIZE", short = 'F', long = "try_finalize")]
+    pub try_finalize: Option<bool>,
+
+    /// Taproot script leaves to sign. Accepts `all` or `none`.
+    #[arg(
+        env = "TAP_LEAVES_OPTIONS",
+        short = 'L',
+        long = "tap_leaves_options",
+        value_enum
+    )]
+    pub tap_leaves_options: Option<TapLeavesOption>,
+
+    /// Whether to sign Taproot inputs with the internal key.
+    #[arg(
+        env = "SIGN_WITH_TAP_INTERNAL_KEY",
+        short = 'T',
+        long = "sign_with_tap_internal_key"
+    )]
+    pub sign_with_tap_internal_key: Option<bool>,
+
+    /// Whether to grind ECDSA signatures to ensure low-r signatures.
+    #[arg(env = "ALLOW_GRINDING", short = 'G', long = "allow_grinding")]
+    pub allow_grinding: Option<bool>,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum, PartialEq)]
+pub enum TapLeavesOption {
+    All,
+    None,
 }
 
 impl AppCommand<AppContext<OfflineOperations<'_>>> for SignCommand {
@@ -659,10 +698,25 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for SignCommand {
 
         let signopt = SignOptions {
             assume_height: self.assume_height,
-            trust_witness_utxo: self.trust_witness_utxo.unwrap_or(false),
-            ..Default::default()
+            trust_witness_utxo: self.trust_witness_utxo.unwrap_or_default(),
+            allow_all_sighashes: self.allow_all_sighashes.unwrap_or_default(),
+            try_finalize: self.try_finalize.unwrap_or_default(),
+            tap_leaves_options: self
+                .tap_leaves_options
+                .map(|option| match option {
+                    TapLeavesOption::All => TapLeavesOptions::All,
+                    TapLeavesOption::None => TapLeavesOptions::None,
+                })
+                .unwrap_or_default(),
+            sign_with_tap_internal_key: self.sign_with_tap_internal_key.unwrap_or_default(),
+            allow_grinding: self.allow_grinding.unwrap_or_default(),
         };
         let finalized = wallet.sign(&mut psbt, signopt)?;
+        if self.remove_partial_sigs.unwrap_or(false) {
+            for input in &mut psbt.inputs {
+                input.partial_sigs.clear();
+            }
+        }
         Ok(PsbtResult::new(&psbt, Some(finalized)))
     }
 }
