@@ -646,6 +646,21 @@ mod test_compile {
             .success()
             .stdout(predicate::str::contains("tr("));
     }
+
+    /// Mirrors `test_compile_rejects_x_only_key_for_non_tr_types`, for the other
+    /// direction: an uncompressed key is valid for `sh`/`wsh`/`sh-wsh` but not `tr`.
+    #[test]
+    fn test_compile_rejects_uncompressed_key_for_tr() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy = "pk(04003c3d7e58ed3a9d988b0310928df65943973996a4b2882aee1726bd6046828c4befeaef638ccec55c79ef12b069c8032fed5ccf86c4912d53759ccc2d148c8e)";
+
+        cli.cmd("compile", &[policy, "--type", "tr"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Invalid policy"));
+    }
 }
 
 // --- CONFIG COMMAND TESTS ---

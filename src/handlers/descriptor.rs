@@ -102,11 +102,11 @@ pub enum ScriptType {
     Tr,
 }
 
-#[cfg(feature = "compiler")]
 /// Rejects keys that parse fine on their own but aren't valid for `Ctx` (e.g. an
 /// x-only key under `Segwitv0`), which miniscript's compiler otherwise turns into
 /// a panic instead of an error. A no-op for `Pk = String`, since `String` never
 /// reports itself as uncompressed or x-only.
+#[cfg(feature = "compiler")]
 fn check_policy_keys<Pk: MiniscriptKey, Ctx: ScriptContext>(
     policy: &Concrete<Pk>,
 ) -> Result<(), Error> {
@@ -125,10 +125,10 @@ fn check_policy_keys<Pk: MiniscriptKey, Ctx: ScriptContext>(
     }
 }
 
-#[cfg(feature = "compiler")]
 /// Parses `policy_str` as `Pk` and compiles it for `script_type`. Returns the
 /// descriptor string and, for `tr`, the random tweak `r` used to derive the
 /// unspendable internal key so the caller can verify it.
+#[cfg(feature = "compiler")]
 fn compile_policy<Pk: FromStrKey>(
     policy_str: &str,
     script_type: ScriptType,
