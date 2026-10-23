@@ -22,7 +22,12 @@ use {
             key::{Parity, rand},
             secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey},
         },
-        miniscript::{Descriptor, descriptor::TapTree, policy::Concrete},
+        miniscript::{
+            Descriptor, ForEachKey, FromStrKey, Legacy, MiniscriptKey, ScriptContext, Segwitv0,
+            Tap,
+            descriptor::{DescriptorPublicKey, TapTree},
+            policy::Concrete,
+        },
     },
     std::{str::FromStr, sync::Arc},
 };
@@ -80,6 +85,11 @@ pub struct CompileCommand {
         default_value_t = ScriptType::Wsh
     )]
     script_type: ScriptType,
+    /// Skip key and hash validation, accepting placeholders (e.g. pk(A)). Useful for
+    /// inspecting a policy's shape without real keys. Descriptors compiled with this
+    /// flag are not usable for spending.
+    #[arg(long = "placeholders")]
+    placeholders: bool,
 }
 
 /// Script types the compiled policy can be embedded in.
@@ -92,48 +102,99 @@ pub enum ScriptType {
     Tr,
 }
 
+/// Rejects keys that parse fine on their own but aren't valid for `Ctx` (e.g. an
+/// x-only key under `Segwitv0`), which miniscript's compiler otherwise turns into
+/// a panic instead of an error. A no-op for `Pk = String`, since `String` never
+/// reports itself as uncompressed or x-only.
+#[cfg(feature = "compiler")]
+fn check_policy_keys<Pk: MiniscriptKey, Ctx: ScriptContext>(
+    policy: &Concrete<Pk>,
+) -> Result<(), Error> {
+    let mut key_error = None;
+    policy.for_each_key(|pk| match Ctx::check_pk(pk) {
+        Ok(()) => true,
+        Err(e) => {
+            key_error = Some(e);
+            false
+        }
+    });
+
+    match key_error {
+        Some(e) => Err(Error::Generic(format!("Invalid policy: {e}"))),
+        None => Ok(()),
+    }
+}
+
+/// Parses `policy_str` as `Pk` and compiles it for `script_type`. Returns the
+/// descriptor string and, for `tr`, the random tweak `r` used to derive the
+/// unspendable internal key so the caller can verify it.
+#[cfg(feature = "compiler")]
+fn compile_policy<Pk: FromStrKey>(
+    policy_str: &str,
+    script_type: ScriptType,
+) -> Result<(String, Option<String>), Error> {
+    let policy: Concrete<Pk> = Concrete::from_str(policy_str)
+        .map_err(|e| Error::Generic(format!("Invalid policy: {e}")))?;
+
+    let mut r = None;
+
+    // Compile per branch, not once up front: the contexts have different script
+    // limits, and the narrowest one would reject policies valid for the requested type.
+    let descriptor = match script_type {
+        ScriptType::Sh => {
+            check_policy_keys::<Pk, Legacy>(&policy)?;
+            Descriptor::new_sh(policy.compile()?)
+        }
+        ScriptType::Wsh => {
+            check_policy_keys::<Pk, Segwitv0>(&policy)?;
+            Descriptor::new_wsh(policy.compile()?)
+        }
+        ScriptType::ShWsh => {
+            check_policy_keys::<Pk, Segwitv0>(&policy)?;
+            Descriptor::new_sh_wsh(policy.compile()?)
+        }
+        ScriptType::Tr => {
+            check_policy_keys::<Pk, Tap>(&policy)?;
+            // Use a randomized unspendable internal key (H + rG) instead of a fixed NUMS
+            // point. This improves privacy by preventing observers from determining whether
+            // key-path spending is disabled. `r` is returned so the user can verify the key
+            // is derived from the NUMS point. See BIP-341.
+            let secp = Secp256k1::new();
+            let r_secret = SecretKey::new(&mut rand::thread_rng());
+            r = Some(r_secret.display_secret().to_string());
+
+            let nums_key = XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)
+                .map_err(|e| Error::Generic(format!("Invalid NUMS key: {e}")))?;
+            let nums_point = PublicKey::from_x_only_public_key(nums_key, Parity::Even);
+
+            let internal_key_point = nums_point
+                .add_exp_tweak(&secp, &Scalar::from(r_secret))
+                .map_err(|e| Error::Generic(format!("Failed to tweak NUMS key: {e}")))?;
+            let (xonly_internal_key, _) = internal_key_point.x_only_public_key();
+
+            let tree = TapTree::Leaf(Arc::new(policy.compile()?));
+            let internal_key = Pk::from_str(&xonly_internal_key.to_string())
+                .map_err(|e| Error::Generic(format!("Failed to parse internal key: {e}")))?;
+            Descriptor::new_tr(internal_key, Some(tree))
+        }
+    }?;
+
+    Ok((descriptor.to_string(), r))
+}
+
 #[cfg(feature = "compiler")]
 impl AppCommand<AppContext<Init>> for CompileCommand {
     type Output = DescriptorResult;
 
     fn execute(&self, _ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
-        let policy: Concrete<String> = Concrete::from_str(&self.policy)
-            .map_err(|e| Error::Generic(format!("Invalid policy: {e}")))?;
-
-        let mut r = None;
-
-        // Compile per branch, not once up front: the contexts have different script
-        // limits, and the narrowest one would reject policies valid for the requested type.
-        let descriptor = match self.script_type {
-            ScriptType::Sh => Descriptor::new_sh(policy.compile()?),
-            ScriptType::Wsh => Descriptor::new_wsh(policy.compile()?),
-            ScriptType::ShWsh => Descriptor::new_sh_wsh(policy.compile()?),
-            ScriptType::Tr => {
-                // Use a randomized unspendable internal key (H + rG) instead of a fixed NUMS
-                // point. This improves privacy by preventing observers from determining whether
-                // key-path spending is disabled. `r` is returned so the user can verify the key
-                // is derived from the NUMS point. See BIP-341.
-                let secp = Secp256k1::new();
-                let r_secret = SecretKey::new(&mut rand::thread_rng());
-                r = Some(r_secret.display_secret().to_string());
-
-                let nums_key = XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)
-                    .map_err(|e| Error::Generic(format!("Invalid NUMS key: {e}")))?;
-                let nums_point = PublicKey::from_x_only_public_key(nums_key, Parity::Even);
-
-                let internal_key_point =
-                    nums_point
-                        .add_exp_tweak(&secp, &Scalar::from(r_secret))
-                        .map_err(|e| Error::Generic(format!("Failed to tweak NUMS key: {e}")))?;
-                let (xonly_internal_key, _) = internal_key_point.x_only_public_key();
-
-                let tree = TapTree::Leaf(Arc::new(policy.compile()?));
-                Descriptor::new_tr(xonly_internal_key.to_string(), Some(tree))
-            }
-        }?;
+        let (descriptor, r) = if self.placeholders {
+            compile_policy::<String>(&self.policy, self.script_type)?
+        } else {
+            compile_policy::<DescriptorPublicKey>(&self.policy, self.script_type)?
+        };
 
         Ok(DescriptorResult {
-            descriptor: Some(descriptor.to_string()),
+            descriptor: Some(descriptor),
             mnemonic: None,
             multipath_descriptor: None,
             public_descriptors: None,

@@ -16,6 +16,8 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Fixed `warn!` messages, including the mainnet notice, being hidden unless `RUST_LOG` was set; warnings are now shown by default
 - Added `hwi` feature with a hardware wallet `hwi` command to list connected devices, register a wallet policy, display a receive address, and sign PSBTs. Supports Ledger, Coldcard, BitBox02, Jade and Specter.
 - Replaced plain `wallets` with `wallets list`, and added `wallets delete <wallet_name>` for unused saved wallet configurations.
+- Fixed `compile` silently accepting placeholder keys/hashes instead of validating them; added `--placeholders` to opt back into the old permissive behavior
+- Fixed `compile` panicking instead of returning an error when a key is valid on its own but the wrong shape for the requested script type (e.g. an x-only key under `sh`/`wsh`/`sh-wsh`, or an uncompressed key under `tr`)
 
 ## [4.0.0]
 
