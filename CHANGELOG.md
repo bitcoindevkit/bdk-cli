@@ -18,6 +18,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Replaced plain `wallets` with `wallets list`, and added `wallets delete <wallet_name>` for unused saved wallet configurations.
 - Removed the redundant `wallet` field from `wallets list` output; the wallet name is still available as the top-level key
 - Fixed `compile` silently accepting placeholder keys/hashes instead of validating them; added `--placeholders` to opt back into the old permissive behavior
+- Fixed `compile` panicking instead of returning an error when a key is valid on its own but the wrong shape for the requested script type (e.g. an x-only key under `sh`/`wsh`/`sh-wsh`, or an uncompressed key under `tr`)
 
 ## [4.0.0]
 
