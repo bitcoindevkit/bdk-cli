@@ -49,6 +49,49 @@ mod test_key {
     }
 
     #[test]
+    fn test_descriptor_rejects_descriptor_key_expression_with_guidance() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let generate_output = cli
+            .key_cmd(&["generate"])
+            .output()
+            .expect("Failed to execute generate command");
+        assert!(generate_output.status.success(), "Generate command failed");
+
+        let generate_json: Value =
+            serde_json::from_slice(&generate_output.stdout).expect("Invalid JSON");
+        let xprv = generate_json["xprv"].as_str().expect("Missing XPRV");
+
+        let derive_output = cli
+            .key_cmd(&[
+                "derive",
+                "--xprv",
+                xprv,
+                "--derivation_path",
+                "m/84'/1'/0'/0",
+            ])
+            .output()
+            .expect("Failed to execute derive command");
+        assert!(derive_output.status.success(), "Derive command failed");
+
+        let derive_json: Value =
+            serde_json::from_slice(&derive_output.stdout).expect("Invalid JSON");
+        let descriptor_key = derive_json["xprv"]
+            .as_str()
+            .expect("Missing derived descriptor key");
+
+        cli.cmd("descriptor", &["--type", "wpkh", descriptor_key])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "Descriptor key expressions are not accepted by this command",
+            ))
+            .stderr(predicate::str::contains("Provide a raw xpub/xprv"))
+            .stderr(predicate::str::contains("wallet config --ext-descriptor"));
+    }
+
+    #[test]
     fn test_cli_key_restore() {
         let temp_dir = TempDir::new().unwrap();
         let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));

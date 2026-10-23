@@ -33,6 +33,12 @@ pub fn generate_descriptors(
     key: &str,
     network: NetworkKind,
 ) -> Result<DescriptorResult, Error> {
+    if key.trim_start().starts_with('[') {
+        return Err(Error::Generic(
+            "Descriptor key expressions are not accepted by this command. Provide a raw xpub/xprv, or use the expression in a full descriptor with `wallet config --ext-descriptor`.".to_string(),
+        ));
+    }
+
     let is_private = key.starts_with("xprv") || key.starts_with("tprv");
 
     if is_private {
