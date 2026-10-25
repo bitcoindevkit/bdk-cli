@@ -204,6 +204,39 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::FullScanCommand;
+    use clap::Parser;
+
+    #[test]
+    fn stop_gap_is_gated_to_supported_backends() {
+        #[cfg(any(feature = "electrum", feature = "esplora"))]
+        {
+            let default = FullScanCommand::try_parse_from(["bdk-cli"]).unwrap();
+            assert_eq!(default.stop_gap, 20);
+            let custom =
+                FullScanCommand::try_parse_from(["bdk-cli", "--scan-stop-gap", "42"]).unwrap();
+            assert_eq!(custom.stop_gap, 42);
+        }
+
+        #[cfg(not(any(feature = "electrum", feature = "esplora")))]
+        assert!(FullScanCommand::try_parse_from(["bdk-cli", "--scan-stop-gap", "42"]).is_err());
+    }
+
+    #[cfg(feature = "esplora")]
+    #[test]
+    fn parallel_request_overrides_or_uses_wallet_config() {
+        let configured = 7;
+        let default = FullScanCommand::try_parse_from(["bdk-cli"]).unwrap();
+        assert_eq!(default.parallel_request.unwrap_or(configured), configured);
+
+        let custom =
+            FullScanCommand::try_parse_from(["bdk-cli", "--parallel-request", "2"]).unwrap();
+        assert_eq!(custom.parallel_request.unwrap_or(configured), 2);
+    }
+}
+
 #[derive(Parser, Debug, PartialEq, Eq, Clone)]
 pub struct SyncCommand;
 

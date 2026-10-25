@@ -13,6 +13,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Routed compact filter (cbf) traffic through the configured SOCKS5 proxy
 - Rejected `--proxy` on the `rpc` backend, and unsupported proxy options (`--proxy_auth`, `--timeout`) on the `rpc` and `cbf` backends, instead of silently ignoring them
 - Fixed `compile` rejecting policies that are valid for the requested script type
+- Gated full-scan `stop_gap` to Electrum and Esplora, and made the Esplora parallel-request override optional
 
 ## [4.0.0]
 
