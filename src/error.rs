@@ -49,6 +49,10 @@ pub enum BDKCliError {
     #[error("Key error: {0}")]
     KeyError(#[from] bdk_wallet::keys::KeyError),
 
+    #[cfg(feature = "hwi")]
+    #[error("Hardware wallet error: {0}")]
+    HwiError(#[from] async_hwi::Error),
+
     #[error("LocalChain error: {0}")]
     LocalChainError(#[from] bdk_wallet::chain::local_chain::ApplyHeaderError),
 
@@ -89,6 +93,17 @@ pub enum BDKCliError {
     #[cfg(feature = "redb")]
     #[error("Redb dabtabase error: {0}")]
     RedbDatabaseError(Box<bdk_redb::redb::DatabaseError>),
+
+    #[cfg(feature = "redb")]
+    #[error(
+        "Failed to inspect shared Redb store while determining whether wallet '{wallet_name}' has persisted data at {db_path:?}: {source}"
+    )]
+    RedbInspection {
+        wallet_name: String,
+        db_path: std::path::PathBuf,
+        #[source]
+        source: Box<bdk_redb::redb::Error>,
+    },
 
     #[error("Serde json error: {0}")]
     SerdeJson(#[from] serde_json::Error),

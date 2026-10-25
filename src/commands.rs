@@ -16,7 +16,7 @@
 #[cfg(feature = "message_signer")]
 use crate::handlers::offline::{SignMessageCommand, VerifyMessageCommand};
 use crate::handlers::{
-    config::{ListWalletsCommand, SaveConfigCommand},
+    config::{DeleteWalletConfigCommand, ListWalletsCommand, SaveConfigCommand},
     descriptor::DescriptorCommand,
     key::{DeriveKeyCommand, GenerateKeyCommand, RestoreKeyCommand},
     offline::{
@@ -59,6 +59,9 @@ use crate::error::BDKCliError as Error;
 use crate::handlers::dns::{CreateDnsTxCommand, ResolveDnsRecipientCommand};
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
 use crate::utils::parse_proxy_auth;
+
+#[cfg(feature = "hwi")]
+use crate::handlers::hwi::{HwiCommand, WalletHwiCommand};
 
 /// The BDK Command Line Wallet App
 ///
@@ -142,8 +145,12 @@ pub enum CliSubCommand {
     /// This feature is intended for development and testing purposes only.
     Descriptor(DescriptorCommand),
 
-    /// List all saved wallet configurations.
-    Wallets(ListWalletsCommand),
+    /// Saved wallet configuration operations.
+    Wallets {
+        #[command(subcommand)]
+        subcommand: WalletsSubCommand,
+    },
+
     /// Generate tab-completion scripts for your shell.
     ///
     /// The completion script is output on stdout, allowing you to redirect
@@ -207,6 +214,25 @@ pub enum CliSubCommand {
     /// Resolves BIP-353 DNS payment instructions for a human-readable name.
     #[cfg(feature = "dns_payment")]
     ResolveDnsRecipient(ResolveDnsRecipientCommand),
+    /// Hardware wallet (HWI) operations.
+    ///
+    /// List connected devices, register a wallet policy, display a receive
+    /// address for verification, or sign a PSBT with a hardware wallet.
+    #[cfg(feature = "hwi")]
+    Hwi(HwiCommand),
+}
+
+/// Saved wallet configuration subcommands.
+#[derive(Debug, Subcommand, Clone, PartialEq)]
+pub enum WalletsSubCommand {
+    /// List saved wallet configurations.
+    List(ListWalletsCommand),
+
+    /// Delete an unused saved wallet configuration.
+    ///
+    /// The command refuses deletion once persistent wallet data exists.
+    /// Wallet database files are never deleted.
+    Delete(DeleteWalletConfigCommand),
 }
 
 /// Wallet operation subcommands.
@@ -214,6 +240,12 @@ pub enum CliSubCommand {
 pub enum WalletSubCommand {
     /// Save wallet configuration to `config.toml`.
     Config(SaveConfigCommand),
+    /// Hardware wallet (HWI) operations for this wallet.
+    ///
+    /// Register the wallet's policy on a device, display a receive
+    /// address, or sign a PSBT.
+    #[cfg(feature = "hwi")]
+    Hwi(WalletHwiCommand),
     #[cfg(any(
         feature = "electrum",
         feature = "esplora",
