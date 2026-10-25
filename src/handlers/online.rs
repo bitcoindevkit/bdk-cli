@@ -82,10 +82,14 @@ impl OnlineWalletSubCommand {
 #[derive(Parser, Debug, PartialEq, Clone, Eq)]
 pub struct FullScanCommand {
     /// Stop searching addresses for transactions after finding an unused gap of this length.
+    #[cfg(any(feature = "electrum", feature = "esplora"))]
     #[arg(env = "STOP_GAP", long = "scan-stop-gap", default_value = "20")]
     stop_gap: usize,
-    #[clap(long, default_value = "5")]
-    pub parallel_request: usize,
+
+    /// Override the Esplora wallet's configured parallel request count.
+    #[cfg(feature = "esplora")]
+    #[arg(long)]
+    pub parallel_request: Option<usize>,
 }
 
 #[cfg(any(
@@ -132,7 +136,11 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
                 parallel_requests,
             } => {
                 let update = client
-                    .full_scan(request, self.stop_gap, *parallel_requests)
+                    .full_scan(
+                        request,
+                        self.stop_gap,
+                        self.parallel_request.unwrap_or(*parallel_requests),
+                    )
                     .await
                     .map_err(|e| *e)?;
                 let events = wallet.apply_update_events(update)?;
