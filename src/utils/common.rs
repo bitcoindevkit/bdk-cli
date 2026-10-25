@@ -437,6 +437,16 @@ pub(crate) fn write_file_content(path: &Path, contents: &str) -> std::io::Result
     std::fs::write(path, contents)
 }
 
+pub(crate) fn path_exists(path: &std::path::Path) -> Result<bool, Error> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(Error::Generic(format!(
+            "Failed to inspect wallet data at {path:?}: {error}"
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

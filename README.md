@@ -56,6 +56,7 @@ bdk-cli can be compiled with different features to suit your experimental needs.
      - `message_signer`: BIP322 message signing/verification.
      - `silent-payments`: Experimental BIP-352 silent payment sending
      - `dns_payment`: BIP-353 DNS payment instructions
+     - `hwi`: Hardware wallet support (Ledger, Coldcard, BitBox02, Jade, Specter) to list devices, register a wallet policy, display a receive address, and sign PSBTs.
     
 The `default` feature set is `repl` and `sqlite`. With the `default` features, `bdk-cli` can be used as an **air-gapped** wallet, and can do everything that doesn't require a network connection.
 
@@ -206,6 +207,36 @@ View all payjoin sessions (active and completed) and also see their status:
 cargo run -- wallet --wallet <wallet_name> payjoin_history
 ```
 
+## Hardware wallet (HWI)
+
+Compile with the `hwi` feature to interact with a connected hardware wallet (Ledger, Coldcard, BitBox02, Jade or Specter). On Linux you need the USB/HID system libraries first:
+
+```shell
+sudo apt-get install -y libudev-dev libusb-1.0-0-dev pkg-config
+```
+List every connected device (fingerprint and model):
+
+```shell
+cargo run --features hwi -- hwi devices
+```
+Register a wallet policy on the device. 
+
+```shell
+cargo run --features hwi -- wallet --wallet my_wallet hwi register
+```
+
+Display a receive address on the device:
+
+```shell
+cargo run --features hwi -- wallet --wallet my_wallet hwi address
+```
+
+Sign a PSBT with the device:
+
+```shell
+cargo run --features hwi -- wallet --wallet my_wallet hwi sign <base64-psbt>
+```
+
 ## Justfile
 
 We have added the `just` command runner to help you with common commands (during development) and running regtest `bitcoind` if you are using the `rpc` feature. 
@@ -328,12 +359,18 @@ cargo run --features electrum wallet -w my_wallet full_scan
 
 Note that each wallet has its own configuration, allowing multiple wallets with different configurations.
 
-#### View all saved Wallet Configs
+#### Manage saved Wallet Configs
 
 To view all saved wallet configurations:
 
 ```shell
-cargo run wallets`
+cargo run -- wallets list
+```
+
+To delete a saved wallet configuration:
+
+```shell
+cargo run -- wallets delete <wallet_name>
 ```
 
 ## Adding new features/command

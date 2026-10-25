@@ -18,10 +18,15 @@ jobs:
         features:
           - --features default
           - --no-default-features
+          - --no-default-features --features redb
           - --all-features
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev libusb-1.0-0-dev pkg-config
       - name: Setup Rust Toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
@@ -45,7 +50,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev libusb-1.0-0-dev pkg-config
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v2
         with:

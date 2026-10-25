@@ -7,14 +7,16 @@ use std::collections::HashMap;
     feature = "cbf"
 ))]
 use crate::client::ClientType;
-use crate::commands::WalletOpts;
-use crate::config::{WalletConfig, WalletConfigInner};
+use crate::commands::{WalletOpts, WalletsSubCommand};
+use crate::config::{WalletConfig, WalletConfigInner, remove_wallet_from_config_file};
 use crate::error::BDKCliError as Error;
 use crate::handlers::Init;
 use crate::handlers::{AppCommand, AppContext};
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 use crate::persister::DatabaseType;
+use crate::persister::wallet_data_exists;
 use crate::utils::descriptors::validate_descriptor_pair;
+use crate::utils::output::FormatOutput;
 use crate::utils::types::{StatusResult, WalletsListResult};
 use bdk_wallet::bitcoin::Network;
 use clap::Args;
@@ -173,5 +175,73 @@ impl AppCommand<AppContext<Init>> for ListWalletsCommand {
         };
 
         Ok(WalletsListResult(config.wallets))
+    }
+}
+
+#[derive(Args, Debug, Clone, PartialEq)]
+pub struct DeleteWalletConfigCommand {
+    /// Name of the saved wallet configuration to delete.
+    #[arg(value_name = "WALLET_NAME")]
+    pub(crate) wallet_name: String,
+}
+
+impl AppCommand<AppContext<Init>> for DeleteWalletConfigCommand {
+    type Output = StatusResult;
+
+    fn execute(&self, ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
+        let config = match WalletConfig::load(&ctx.datadir)? {
+            Some(config) => config,
+            None => return Err(Error::Generic("No wallets configured yet.".into())),
+        };
+
+        #[cfg(any(feature = "sqlite", feature = "redb"))]
+        let data_exists = {
+            let wallet_config = config.wallets.get(&self.wallet_name).ok_or_else(|| {
+                Error::Generic(format!("Wallet '{}' not found in config", self.wallet_name))
+            })?;
+
+            wallet_data_exists(
+                &ctx.datadir,
+                &self.wallet_name,
+                &wallet_config.database_type,
+            )?
+        };
+
+        #[cfg(not(any(feature = "sqlite", feature = "redb")))]
+        let data_exists = {
+            if !config.wallets.contains_key(&self.wallet_name) {
+                return Err(Error::Generic(format!(
+                    "Wallet '{}' not found in config",
+                    self.wallet_name
+                )));
+            }
+
+            wallet_data_exists(&ctx.datadir, &self.wallet_name)?
+        };
+
+        if data_exists {
+            return Err(Error::Generic(format!(
+                "Wallet data exists for configuration '{}'; the saved configuration was not deleted",
+                self.wallet_name
+            )));
+        }
+
+        remove_wallet_from_config_file(&ctx.datadir, &self.wallet_name)?;
+
+        Ok(StatusResult {
+            message: format!(
+                "Wallet configuration '{}' deleted successfully",
+                self.wallet_name
+            ),
+        })
+    }
+}
+
+impl WalletsSubCommand {
+    pub fn execute(&self, ctx: &mut AppContext<Init>) -> Result<(), Error> {
+        match self {
+            Self::List(command) => command.execute(ctx)?.write_out(std::io::stdout()),
+            Self::Delete(command) => command.execute(ctx)?.write_out(std::io::stdout()),
+        }
     }
 }
