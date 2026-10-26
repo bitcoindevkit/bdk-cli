@@ -118,6 +118,10 @@ pub enum BDKCliError {
     #[error("Secp256k1 error: {0}")]
     Secp256k1Error(#[from] bdk_wallet::bitcoin::secp256k1::Error),
 
+    #[cfg(feature = "compiler")]
+    #[error("Internal key is not the NUMS point tweaked by the given r")]
+    UnspendableKeyMismatch,
+
     #[cfg(feature = "electrum")]
     #[error("Electrum error: {0}")]
     Electrum(#[from] bdk_electrum::electrum_client::Error),
