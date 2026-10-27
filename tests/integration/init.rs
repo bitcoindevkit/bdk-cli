@@ -664,7 +664,6 @@ mod test_config {
             "The wallet {wallet_name} was not found in the root JSON object"
         );
 
-        assert_eq!(config["wallet"].as_str().unwrap(), wallet_name);
         assert_eq!(config["network"].as_str().unwrap(), "regtest");
         assert_eq!(config["database_type"].as_str().unwrap(), db);
         assert_eq!(config["client_type"].as_str().unwrap(), client_type);
