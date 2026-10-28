@@ -263,7 +263,7 @@ const NUMS_UNSPENDABLE_KEY_HEX: &str =
 /// Script types the compiled policy can be embedded in.
 #[cfg(feature = "compiler")]
 #[derive(Clone, Copy, ValueEnum, Debug, Eq, PartialEq)]
-pub enum ScriptType {
+pub enum CompileScriptType {
     Sh,
     Wsh,
     ShWsh,
@@ -299,7 +299,7 @@ fn check_policy_keys<Pk: MiniscriptKey, Ctx: ScriptContext>(
 #[cfg(feature = "compiler")]
 pub fn compile_policy<Pk: FromStrKey>(
     policy_str: &str,
-    script_type: ScriptType,
+    script_type: CompileScriptType,
 ) -> Result<(String, Option<String>), Error> {
     let policy: Concrete<Pk> = Concrete::from_str(policy_str)
         .map_err(|e| Error::Generic(format!("Invalid policy: {e}")))?;
@@ -309,19 +309,19 @@ pub fn compile_policy<Pk: FromStrKey>(
     // Compile per branch, not once up front: the contexts have different script
     // limits, and the narrowest one would reject policies valid for the requested type.
     let descriptor = match script_type {
-        ScriptType::Sh => {
+        CompileScriptType::Sh => {
             check_policy_keys::<Pk, Legacy>(&policy)?;
             Descriptor::new_sh(policy.compile()?)
         }
-        ScriptType::Wsh => {
+        CompileScriptType::Wsh => {
             check_policy_keys::<Pk, Segwitv0>(&policy)?;
             Descriptor::new_wsh(policy.compile()?)
         }
-        ScriptType::ShWsh => {
+        CompileScriptType::ShWsh => {
             check_policy_keys::<Pk, Segwitv0>(&policy)?;
             Descriptor::new_sh_wsh(policy.compile()?)
         }
-        ScriptType::Tr => {
+        CompileScriptType::Tr => {
             check_policy_keys::<Pk, Tap>(&policy)?;
             // Use a randomized unspendable internal key (H + rG) instead of a fixed NUMS
             // point. This improves privacy by preventing observers from determining whether

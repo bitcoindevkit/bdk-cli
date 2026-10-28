@@ -14,7 +14,7 @@ use crate::{
 use clap::Parser;
 #[cfg(feature = "compiler")]
 use {
-    crate::utils::descriptors::{ScriptType, compile_policy},
+    crate::utils::descriptors::{CompileScriptType, compile_policy},
     bdk_wallet::miniscript::descriptor::DescriptorPublicKey,
 };
 
@@ -64,9 +64,9 @@ pub struct CompileCommand {
         short = 't',
         long = "type",
         value_enum,
-        default_value_t = ScriptType::Wsh
+        default_value_t = CompileScriptType::Wsh
     )]
-    script_type: ScriptType,
+    script_type: CompileScriptType,
     /// Skip key and hash validation, accepting placeholders (e.g. pk(A)). Useful for
     /// inspecting a policy's shape without real keys. Descriptors compiled with this
     /// flag are not usable for spending.
