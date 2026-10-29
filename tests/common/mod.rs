@@ -11,7 +11,9 @@
 //! This module provides the necessary helper methods for tests
 //!
 use assert_cmd::Command;
+use bdk_testenv::{TestEnv, anyhow, bitcoincore_rpc::RpcApi, electrum_client::ElectrumApi};
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 /// The bdk-cli command struct
 #[allow(dead_code)]
@@ -83,4 +85,32 @@ impl BdkCli {
         cmd.args(args);
         cmd
     }
+}
+
+/// Waits until electrs has indexed up to bitcoind's current tip.
+///
+/// `TestEnv::wait_until_electrum_sees_block` returns on the first queued header
+/// notification, which may be a stale one left over from an earlier `mine_blocks`
+/// call, so a following scan can run before the latest blocks are indexed.
+#[allow(unused)]
+pub fn wait_for_electrum_tip(env: &TestEnv, timeout: Duration) -> anyhow::Result<()> {
+    let tip = env.rpc_client().get_block_count()? as usize;
+    let client = env.electrum_client();
+    client.block_headers_subscribe()?;
+    let start = Instant::now();
+
+    while start.elapsed() < timeout {
+        env.electrsd.trigger()?;
+        client.ping()?;
+        while let Some(notif) = client.block_headers_pop()? {
+            if notif.height >= tip {
+                return Ok(());
+            }
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    Err(anyhow::anyhow!(
+        "electrs did not reach tip {tip} within {timeout:?}"
+    ))
 }
