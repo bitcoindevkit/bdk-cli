@@ -1,19 +1,22 @@
 use crate::commands::OfflineWalletSubCommand;
 use crate::error::BDKCliError as Error;
 use crate::handlers::{AppCommand, AppContext, OfflineOperations};
+use crate::utils::labels::LabelStore;
 use crate::utils::output::{FormatOutput, ListResult};
 use crate::utils::parse_address;
 use crate::utils::types::{
-    AddressResult, BalanceResult, KeychainPair, PsbtResult, RawPsbt, TransactionDetails,
-    UnspentDetails,
+    AddressResult, BalanceResult, KeychainPair, LabelResult, PsbtResult, RawPsbt,
+    TransactionDetails, UnspentDetails,
 };
 use crate::utils::{parse_fee_rate, parse_outpoint, parse_recipient};
+use bdk_labels::{Bip329, LabelledWallet, OutputTarget};
+use bdk_wallet::bitcoin::address::NetworkUnchecked;
 use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
 use bdk_wallet::bitcoin::{Address, Amount, FeeRate, OutPoint, Psbt, ScriptBuf, Sequence, Txid};
 use bdk_wallet::{KeychainKind, SignOptions};
-use clap::Parser;
+use clap::{ArgGroup, Parser};
 use serde_json::json;
 use std::collections::BTreeMap;
 #[cfg(feature = "silent-payments")]
@@ -86,6 +89,7 @@ impl OfflineWalletSubCommand {
             Self::LockedUtxos(locked_utxos) => {
                 locked_utxos.execute(ctx)?.write_out(std::io::stdout())
             }
+            Self::Label(label) => label.execute(ctx)?.write_out(std::io::stdout()),
             #[cfg(feature = "dns_payment")]
             Self::CreateDnsTx(_) => Err(Error::Generic(
                 "CreateDnsTx is dispatched asynchronously through main".to_string(),
@@ -906,5 +910,98 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for LockedUtxosCommand {
             .map(|o| o.to_string())
             .collect();
         Ok(ListResult::new(locked))
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq)]
+#[command(group(
+    ArgGroup::new("target")
+        .required(true)
+        .multiple(false)
+        .args(["txid", "utxo", "address"])
+))]
+pub struct LabelCommand {
+    /// Transaction to label. It must be known to the wallet, sync first.
+    #[arg(long = "txid")]
+    pub txid: Option<Txid>,
+
+    /// Wallet UTXO to label, format TXID:VOUT. It must be known to the wallet, sync first.
+    #[arg(long = "utxo", value_parser = parse_outpoint)]
+    pub utxo: Option<OutPoint>,
+
+    /// Wallet address to label. It must belong to the wallet and match the network.
+    #[arg(long = "address")]
+    pub address: Option<Address<NetworkUnchecked>>,
+
+    /// The label.
+    #[arg(long = "text", allow_hyphen_values = true)]
+    pub text: String,
+}
+
+impl AppCommand<AppContext<OfflineOperations<'_>>> for LabelCommand {
+    type Output = LabelResult;
+
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        if self.text.trim().is_empty() {
+            return Err(Error::Generic("The label must not be empty.".to_string()));
+        }
+
+        let network = ctx.network;
+        let mut store = LabelStore::new(&ctx.datadir, &ctx.state.wallet_name);
+        let mut labels = store.load()?;
+        let mut labelled = LabelledWallet {
+            wallet: &mut *ctx.state.wallet,
+            labels: &mut labels,
+        };
+
+        let (kind, reference) = match (&self.txid, &self.utxo, &self.address) {
+            (Some(txid), None, None) => {
+                labelled
+                    .add_label(*txid, self.text.clone())
+                    .map_err(unknown_to_wallet)?;
+                ("tx", txid.to_string())
+            }
+            (None, Some(outpoint), None) => {
+                labelled
+                    .add_label(OutputTarget(*outpoint), self.text.clone())
+                    .map_err(unknown_to_wallet)?;
+                ("output", outpoint.to_string())
+            }
+            (None, None, Some(address)) => {
+                // `add_label` only checks that the address is the wallet's, not its network.
+                let address = address.clone().require_network(network).map_err(|_| {
+                    Error::Generic(format!(
+                        "Address {} is not valid on {network}.",
+                        address.assume_checked_ref()
+                    ))
+                })?;
+                labelled.add_label(address.clone().into_unchecked(), self.text.clone())?;
+                ("addr", address.to_string())
+            }
+            _ => {
+                return Err(Error::Generic(
+                    "Exactly one of --txid, --utxo or --address is required.".to_string(),
+                ));
+            }
+        };
+
+        labelled.persist(&mut store)?;
+
+        Ok(LabelResult {
+            kind,
+            reference,
+            label: self.text.clone(),
+        })
+    }
+}
+
+/// Explain what to do when a transaction or UTXO to label is unknown to the wallet.
+fn unknown_to_wallet(error: bdk_labels::Error) -> Error {
+    match error {
+        bdk_labels::Error::Validation(message) => Error::Generic(format!(
+            "{message}. Transactions and UTXOs can only be labelled once the wallet knows about \
+             them, sync the wallet first."
+        )),
+        other => Error::LabelsError(other),
     }
 }

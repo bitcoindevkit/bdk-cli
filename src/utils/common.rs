@@ -271,7 +271,8 @@ pub fn command_requires_db(command: &OfflineWalletSubCommand) -> bool {
         | OfflineWalletSubCommand::CreateTx(_)
         | OfflineWalletSubCommand::LockUtxo(_)
         | OfflineWalletSubCommand::UnlockUtxo(_)
-        | OfflineWalletSubCommand::LockedUtxos(_) => true,
+        | OfflineWalletSubCommand::LockedUtxos(_)
+        | OfflineWalletSubCommand::Label(_) => true,
 
         OfflineWalletSubCommand::Policies(_)
         | OfflineWalletSubCommand::PublicDescriptor(_)

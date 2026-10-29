@@ -35,6 +35,7 @@ pub struct Init;
 /// Requires only a wallet.
 pub struct OfflineOperations<'a> {
     pub wallet: &'a mut Wallet,
+    pub wallet_name: String,
 }
 
 #[cfg(any(
@@ -70,11 +71,19 @@ impl AppContext<Init> {
 }
 
 impl<'a> AppContext<OfflineOperations<'a>> {
-    pub fn new_offline_wallet(network: Network, datadir: PathBuf, wallet: &'a mut Wallet) -> Self {
+    pub fn new_offline_wallet(
+        network: Network,
+        datadir: PathBuf,
+        wallet: &'a mut Wallet,
+        wallet_name: String,
+    ) -> Self {
         Self {
             network,
             datadir,
-            state: OfflineOperations { wallet },
+            state: OfflineOperations {
+                wallet,
+                wallet_name,
+            },
         }
     }
 }

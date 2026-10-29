@@ -128,6 +128,18 @@ pub struct StatusResult {
     pub message: String,
 }
 
+/// The label that was set, shaped like the BIP-329 record it is stored as.
+#[derive(Serialize, Debug)]
+pub struct LabelResult {
+    /// The BIP-329 record type: `tx`, `output` or `addr`.
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+    /// What was labelled: a txid, a `TXID:VOUT` outpoint or an address.
+    #[serde(rename = "ref")]
+    pub reference: String,
+    pub label: String,
+}
+
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",

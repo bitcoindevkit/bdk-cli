@@ -490,3 +490,303 @@ mod multipath_tests {
             .failure();
     }
 }
+
+/// Label tests need a persisted wallet, and only an `rpc` or a backend-less config can be
+/// created here without a running server.
+#[cfg(all(
+    feature = "sqlite",
+    any(
+        feature = "rpc",
+        not(any(feature = "electrum", feature = "esplora", feature = "cbf"))
+    )
+))]
+mod label_tests {
+    use crate::common::BdkCli;
+    use assert_cmd::Command;
+    use predicates::prelude::*;
+    use serde_json::Value;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    const WALLET_NAME: &str = "label_wallet";
+    /// A valid regtest address that does not belong to the test wallet.
+    const FOREIGN_REGTEST_ADDRESS: &str = "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080";
+    /// A valid mainnet address.
+    const MAINNET_ADDRESS: &str = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
+    /// A txid the wallet has never seen.
+    const UNKNOWN_TXID: &str = "5fe2524f0c46bb12767d1865114031cd631578ac05422a767c0edf23f5c0aeaa";
+
+    /// A regtest wallet in a fresh data directory.
+    fn setup() -> (BdkCli, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+
+        let desc = cli
+            .cmd("descriptor", &["--type", "tr"])
+            .output()
+            .expect("Command to generate descriptors failed");
+        let desc: Value =
+            serde_json::from_slice(&desc.stdout).expect("Invalid JSON from output descriptor");
+        let ext_desc = desc["private_descriptors"]["external"].as_str().unwrap();
+        let int_desc = desc["private_descriptors"]["internal"].as_str().unwrap();
+
+        let mut config = cli.build_base_cmd();
+        config
+            .arg("wallet")
+            .args(["--wallet", WALLET_NAME])
+            .arg("config")
+            .args(["--ext-descriptor", ext_desc])
+            .args(["--int-descriptor", int_desc])
+            .args(["--database-type", "sqlite"]);
+        #[cfg(feature = "rpc")]
+        config
+            .args(["--client-type", "rpc"])
+            .args(["--url", "http://localhost:18443"]);
+        config.assert().success();
+
+        (cli, temp_dir)
+    }
+
+    fn wallet(cli: &BdkCli, args: &[&str]) -> Command {
+        let mut all = vec!["--wallet", WALLET_NAME];
+        all.extend_from_slice(args);
+        cli.wallet_cmd(&all)
+    }
+
+    fn labels_file(temp_dir: &TempDir) -> PathBuf {
+        temp_dir.path().join(WALLET_NAME).join("labels.jsonl")
+    }
+
+    fn new_address(cli: &BdkCli) -> String {
+        let output = wallet(cli, &["new_address"]).output().unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        json["address"].as_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn labels_an_address_and_writes_a_bip329_file() {
+        let (cli, temp_dir) = setup();
+        let address = new_address(&cli);
+
+        let output = wallet(
+            &cli,
+            &["label", "--address", &address, "--text", "from Alice"],
+        )
+        .output()
+        .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(result["type"], "addr");
+        assert_eq!(result["ref"], address.as_str());
+        assert_eq!(result["label"], "from Alice");
+
+        let file = std::fs::read_to_string(labels_file(&temp_dir)).unwrap();
+        assert_eq!(file.lines().count(), 1);
+        let record: Value = serde_json::from_str(file.lines().next().unwrap()).unwrap();
+        assert_eq!(record["type"], "addr");
+        assert_eq!(record["ref"], address.as_str());
+        assert_eq!(record["label"], "from Alice");
+    }
+
+    #[test]
+    fn relabelling_replaces_the_label() {
+        let (cli, temp_dir) = setup();
+        let address = new_address(&cli);
+
+        for text in ["first", "second"] {
+            wallet(&cli, &["label", "--address", &address, "--text", text])
+                .assert()
+                .success();
+        }
+
+        let file = std::fs::read_to_string(labels_file(&temp_dir)).unwrap();
+        assert_eq!(file.lines().count(), 1);
+        assert!(file.contains("second"));
+        assert!(!file.contains("first"));
+    }
+
+    #[test]
+    fn labels_for_different_addresses_accumulate() {
+        let (cli, temp_dir) = setup();
+        let first = new_address(&cli);
+        let second = new_address(&cli);
+
+        wallet(&cli, &["label", "--address", &first, "--text", "one"])
+            .assert()
+            .success();
+        wallet(&cli, &["label", "--address", &second, "--text", "two"])
+            .assert()
+            .success();
+
+        let file = std::fs::read_to_string(labels_file(&temp_dir)).unwrap();
+        assert_eq!(file.lines().count(), 2);
+    }
+
+    #[test]
+    fn a_label_may_start_with_a_hyphen() {
+        let (cli, temp_dir) = setup();
+        let address = new_address(&cli);
+
+        wallet(&cli, &["label", "--address", &address, "--text", "-5 sats"])
+            .assert()
+            .success();
+
+        let file = std::fs::read_to_string(labels_file(&temp_dir)).unwrap();
+        assert!(file.contains("-5 sats"));
+    }
+
+    #[test]
+    fn rejects_an_address_of_another_network() {
+        let (cli, temp_dir) = setup();
+
+        wallet(
+            &cli,
+            &["label", "--address", MAINNET_ADDRESS, "--text", "wrong net"],
+        )
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("is not valid on regtest"));
+
+        assert!(!labels_file(&temp_dir).exists());
+    }
+
+    #[test]
+    fn rejects_an_address_that_is_not_the_wallets() {
+        let (cli, temp_dir) = setup();
+
+        wallet(
+            &cli,
+            &[
+                "label",
+                "--address",
+                FOREIGN_REGTEST_ADDRESS,
+                "--text",
+                "not mine",
+            ],
+        )
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("does not belong to this wallet"));
+
+        assert!(!labels_file(&temp_dir).exists());
+    }
+
+    #[test]
+    fn an_unknown_transaction_asks_to_sync_first() {
+        let (cli, temp_dir) = setup();
+
+        wallet(
+            &cli,
+            &["label", "--txid", UNKNOWN_TXID, "--text", "mystery"],
+        )
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("sync the wallet first"));
+
+        assert!(!labels_file(&temp_dir).exists());
+    }
+
+    #[test]
+    fn an_unknown_utxo_asks_to_sync_first() {
+        let (cli, _temp_dir) = setup();
+        let outpoint = format!("{UNKNOWN_TXID}:0");
+
+        wallet(&cli, &["label", "--utxo", &outpoint, "--text", "mystery"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("sync the wallet first"));
+    }
+
+    #[test]
+    fn exactly_one_target_is_required() {
+        let (cli, _temp_dir) = setup();
+        let address = new_address(&cli);
+
+        wallet(&cli, &["label", "--text", "no target"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("--txid"));
+
+        wallet(
+            &cli,
+            &[
+                "label",
+                "--txid",
+                UNKNOWN_TXID,
+                "--address",
+                &address,
+                "--text",
+                "two targets",
+            ],
+        )
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+    }
+
+    #[test]
+    fn an_empty_label_is_rejected() {
+        let (cli, temp_dir) = setup();
+        let address = new_address(&cli);
+
+        wallet(&cli, &["label", "--address", &address, "--text", "  "])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("must not be empty"));
+
+        assert!(!labels_file(&temp_dir).exists());
+    }
+
+    #[test]
+    fn a_corrupt_labels_file_fails_label_only() {
+        let (cli, temp_dir) = setup();
+        let address = new_address(&cli);
+        std::fs::write(labels_file(&temp_dir), "this is not jsonl\n").unwrap();
+
+        // The label command names the file it could not read...
+        wallet(&cli, &["label", "--address", &address, "--text", "x"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("labels.jsonl"));
+
+        // ...and does not touch it...
+        assert_eq!(
+            std::fs::read_to_string(labels_file(&temp_dir)).unwrap(),
+            "this is not jsonl\n"
+        );
+
+        // ...while commands that do not use labels keep working.
+        wallet(&cli, &["balance"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("\"total\":"));
+    }
+
+    #[cfg(feature = "repl")]
+    #[test]
+    fn labels_can_be_set_in_the_repl() {
+        let (cli, temp_dir) = setup();
+        let address = new_address(&cli);
+
+        let output = cli
+            .build_base_cmd()
+            .args(["repl", "--wallet", WALLET_NAME])
+            .write_stdin(format!(
+                "wallet label --address {address} --text \"from the repl\"\nexit\n"
+            ))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let file = std::fs::read_to_string(labels_file(&temp_dir)).unwrap();
+        assert!(file.contains("from the repl"), "labels file: {file}");
+    }
+}
