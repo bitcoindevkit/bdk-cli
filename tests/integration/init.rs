@@ -20,6 +20,37 @@ mod test_key {
     }
 
     #[test]
+    fn test_cli_key_generate_word_counts() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        for word_count in [12, 15, 18, 21, 24] {
+            let output = cli
+                .key_cmd(&["generate", "--entropy", &word_count.to_string()])
+                .output()
+                .expect("Failed to execute generate command");
+            assert!(output.status.success(), "Generate command failed");
+
+            let json: Value = serde_json::from_slice(&output.stdout).expect("Invalid JSON");
+            let mnemonic = json["mnemonic"].as_str().expect("Missing mnemonic");
+            assert_eq!(mnemonic.split_whitespace().count(), word_count);
+        }
+    }
+
+    #[test]
+    fn test_cli_key_generate_rejects_invalid_word_count() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        for word_count in ["0", "13", "999"] {
+            cli.key_cmd(&["generate", "--entropy", word_count])
+                .assert()
+                .failure()
+                .stderr(predicate::str::contains("possible values"));
+        }
+    }
+
+    #[test]
     fn test_cli_key_derive() {
         let temp_dir = TempDir::new().unwrap();
         let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
