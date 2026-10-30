@@ -1,5 +1,6 @@
 pub mod common;
 pub mod descriptors;
+pub mod labels;
 pub mod output;
 pub use common::*;
 #[cfg(feature = "hwi")]

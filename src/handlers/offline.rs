@@ -1,21 +1,27 @@
 use crate::commands::OfflineWalletSubCommand;
 use crate::error::BDKCliError as Error;
 use crate::handlers::{AppCommand, AppContext, OfflineOperations};
+use crate::utils::labels::LabelStore;
 use crate::utils::output::{FormatOutput, ListResult};
 use crate::utils::parse_address;
 use crate::utils::types::{
-    AddressResult, BalanceResult, KeychainPair, PsbtResult, RawPsbt, TransactionDetails,
-    UnspentDetails,
+    AddressResult, BalanceResult, ExportLabelsResult, ImportLabelsResult, KeychainPair,
+    LabelResult, PsbtResult, RawPsbt, TransactionDetails, UnspentDetails,
 };
-use crate::utils::{parse_fee_rate, parse_outpoint, parse_recipient};
+use crate::utils::{parse_fee_rate, parse_outpoint, parse_recipient, write_file_content};
+use bdk_labels::{Bip329, LabelledWallet, MergeStrategy, OutputTarget};
+use bdk_wallet::bitcoin::address::NetworkUnchecked;
 use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
 use bdk_wallet::bitcoin::{Address, Amount, FeeRate, OutPoint, Psbt, ScriptBuf, Sequence, Txid};
 use bdk_wallet::{KeychainKind, SignOptions};
-use clap::Parser;
+use clap::{ArgGroup, Parser, ValueEnum};
 use serde_json::json;
 use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::BufReader;
+use std::path::PathBuf;
 #[cfg(feature = "silent-payments")]
 use {
     crate::utils::common::parse_sp_code_value_pairs,
@@ -86,6 +92,9 @@ impl OfflineWalletSubCommand {
             Self::LockedUtxos(locked_utxos) => {
                 locked_utxos.execute(ctx)?.write_out(std::io::stdout())
             }
+            Self::Label(label) => label.execute(ctx)?.write_out(std::io::stdout()),
+            Self::ImportLabels(import) => import.execute(ctx)?.write_out(std::io::stdout()),
+            Self::ExportLabels(export) => export.execute(ctx)?.write_out(std::io::stdout()),
             #[cfg(feature = "dns_payment")]
             Self::CreateDnsTx(_) => Err(Error::Generic(
                 "CreateDnsTx is dispatched asynchronously through main".to_string(),
@@ -114,9 +123,11 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for UnusedAddressCommand {
     type Output = AddressResult;
 
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let labels = LabelStore::new(&ctx.datadir, &ctx.state.wallet_name).load_for_display();
         let wallet = &mut ctx.state.wallet;
         let address_info = wallet.next_unused_address(KeychainKind::External);
-        Ok(AddressResult::from(address_info))
+        let label = labels.address(&address_info.address);
+        Ok(AddressResult::from(address_info).with_label(label))
     }
 }
 
@@ -127,13 +138,15 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for UnspentCommand {
     type Output = ListResult<UnspentDetails>;
 
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let labels = LabelStore::new(&ctx.datadir, &ctx.state.wallet_name).load_for_display();
         let wallet = &mut ctx.state.wallet;
         let outputs: Vec<_> = wallet.list_unspent().collect();
         let utxos = outputs
             .into_iter()
             .map(|utxo| {
                 let is_locked = wallet.is_outpoint_locked(utxo.outpoint);
-                UnspentDetails::from_local_output(&utxo, ctx.network, is_locked)
+                let label = labels.output(utxo.outpoint);
+                UnspentDetails::from_local_output(&utxo, ctx.network, is_locked, label)
             })
             .collect();
 
@@ -148,6 +161,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for TransactionsCommand {
     type Output = ListResult<TransactionDetails>;
 
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let labels = LabelStore::new(&ctx.datadir, &ctx.state.wallet_name).load_for_display();
         let transactions = &mut ctx.state.wallet.transactions();
 
         let txns: Vec<TransactionDetails> = transactions
@@ -171,6 +185,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for TransactionsCommand {
                     input_count: tx.tx_node.input.len(),
                     output_count: tx.tx_node.output.len(),
                     total_value,
+                    label: labels.tx(tx.tx_node.txid),
                 }
             })
             .collect();
@@ -906,5 +921,188 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for LockedUtxosCommand {
             .map(|o| o.to_string())
             .collect();
         Ok(ListResult::new(locked))
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq)]
+#[command(group(
+    ArgGroup::new("target")
+        .required(true)
+        .multiple(false)
+        .args(["txid", "utxo", "address"])
+))]
+pub struct LabelCommand {
+    /// Transaction to label. It must be known to the wallet, sync first.
+    #[arg(long = "txid")]
+    pub txid: Option<Txid>,
+
+    /// Wallet UTXO to label, format TXID:VOUT. It must be known to the wallet, sync first.
+    #[arg(long = "utxo", value_parser = parse_outpoint)]
+    pub utxo: Option<OutPoint>,
+
+    /// Wallet address to label. It must belong to the wallet and match the network.
+    #[arg(long = "address")]
+    pub address: Option<Address<NetworkUnchecked>>,
+
+    /// The label.
+    #[arg(long = "text", allow_hyphen_values = true)]
+    pub text: String,
+}
+
+impl AppCommand<AppContext<OfflineOperations<'_>>> for LabelCommand {
+    type Output = LabelResult;
+
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        if self.text.trim().is_empty() {
+            return Err(Error::Generic("The label must not be empty.".to_string()));
+        }
+
+        let network = ctx.network;
+        let mut store = LabelStore::new(&ctx.datadir, &ctx.state.wallet_name);
+        let mut labels = store.load()?;
+        let mut labelled = LabelledWallet {
+            wallet: &mut *ctx.state.wallet,
+            labels: &mut labels,
+        };
+
+        let (kind, reference) = match (&self.txid, &self.utxo, &self.address) {
+            (Some(txid), None, None) => {
+                labelled
+                    .add_label(*txid, self.text.clone())
+                    .map_err(unknown_to_wallet)?;
+                ("tx", txid.to_string())
+            }
+            (None, Some(outpoint), None) => {
+                labelled
+                    .add_label(OutputTarget(*outpoint), self.text.clone())
+                    .map_err(unknown_to_wallet)?;
+                ("output", outpoint.to_string())
+            }
+            (None, None, Some(address)) => {
+                // `add_label` only checks that the address is the wallet's, not its network.
+                let address = address.clone().require_network(network).map_err(|_| {
+                    Error::Generic(format!(
+                        "Address {} is not valid on {network}.",
+                        address.assume_checked_ref()
+                    ))
+                })?;
+                labelled.add_label(address.clone().into_unchecked(), self.text.clone())?;
+                ("addr", address.to_string())
+            }
+            _ => {
+                return Err(Error::Generic(
+                    "Exactly one of --txid, --utxo or --address is required.".to_string(),
+                ));
+            }
+        };
+
+        labelled.persist(&mut store)?;
+
+        Ok(LabelResult {
+            kind,
+            reference,
+            label: self.text.clone(),
+        })
+    }
+}
+
+/// Explain what to do when a transaction or UTXO to label is unknown to the wallet.
+fn unknown_to_wallet(error: bdk_labels::Error) -> Error {
+    match error {
+        bdk_labels::Error::Validation(message) => Error::Generic(format!(
+            "{message}. Transactions and UTXOs can only be labelled once the wallet knows about \
+             them, sync the wallet first."
+        )),
+        other => Error::LabelsError(other),
+    }
+}
+
+/// What to do with an imported label for something that already has a label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum LabelMergeStrategy {
+    /// Keep the wallet's label, ignore the imported one.
+    KeepExisting,
+    /// Replace the wallet's label with the imported one.
+    Overwrite,
+}
+
+impl From<LabelMergeStrategy> for MergeStrategy {
+    fn from(strategy: LabelMergeStrategy) -> Self {
+        match strategy {
+            LabelMergeStrategy::KeepExisting => MergeStrategy::KeepExisting,
+            LabelMergeStrategy::Overwrite => MergeStrategy::Overwrite,
+        }
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq)]
+pub struct ImportLabelsCommand {
+    /// The BIP-329 JSONL file to import.
+    #[arg(value_name = "FILE")]
+    pub file: PathBuf,
+
+    /// What to do with an imported label for something that already has a label.
+    #[arg(long = "strategy", value_enum, default_value_t = LabelMergeStrategy::KeepExisting)]
+    pub strategy: LabelMergeStrategy,
+}
+
+impl AppCommand<AppContext<OfflineOperations<'_>>> for ImportLabelsCommand {
+    type Output = ImportLabelsResult;
+
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let mut store = LabelStore::new(&ctx.datadir, &ctx.state.wallet_name);
+        let mut labels = store.load()?;
+
+        let file = File::open(&self.file)
+            .map_err(|e| Error::Generic(format!("Cannot open {}: {e}", self.file.display())))?;
+
+        let mut labelled = LabelledWallet {
+            wallet: &mut *ctx.state.wallet,
+            labels: &mut labels,
+        };
+        // The whole file is read before any label is merged, so a bad file imports nothing.
+        labelled
+            .import_labels(BufReader::new(file), self.strategy.into())
+            .map_err(|e| Error::Generic(format!("Cannot import {}: {e}", self.file.display())))?;
+        let imported = labelled.labels.diff().len();
+        labelled.persist(&mut store)?;
+
+        Ok(ImportLabelsResult {
+            file: self.file.display().to_string(),
+            imported,
+            total: labels.len(),
+        })
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq)]
+pub struct ExportLabelsCommand {
+    /// The BIP-329 JSONL file to write, an existing file is replaced.
+    #[arg(value_name = "FILE")]
+    pub file: PathBuf,
+}
+
+impl AppCommand<AppContext<OfflineOperations<'_>>> for ExportLabelsCommand {
+    type Output = ExportLabelsResult;
+
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let store = LabelStore::new(&ctx.datadir, &ctx.state.wallet_name);
+        let mut labels = store.load()?;
+        let labelled = LabelledWallet {
+            wallet: &mut *ctx.state.wallet,
+            labels: &mut labels,
+        };
+
+        let mut jsonl = Vec::new();
+        labelled.export_labels(&mut jsonl)?;
+        let jsonl = String::from_utf8(jsonl).map_err(|e| Error::Generic(e.to_string()))?;
+        // Labels say what the wallet's owner spends on and with whom, so the export is owner-only.
+        write_file_content(&self.file, &jsonl)
+            .map_err(|e| Error::Generic(format!("Cannot write {}: {e}", self.file.display())))?;
+
+        Ok(ExportLabelsResult {
+            file: self.file.display().to_string(),
+            exported: labels.len(),
+        })
     }
 }

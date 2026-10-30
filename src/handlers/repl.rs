@@ -33,12 +33,6 @@ pub(crate) async fn respond(
     client: Option<&BlockchainClient>,
     line: &str,
     datadir: std::path::PathBuf,
-    #[cfg(any(
-        feature = "electrum",
-        feature = "esplora",
-        feature = "rpc",
-        feature = "cbf"
-    ))]
     wallet_name: &str,
 ) -> Result<bool, String> {
     let args = shlex::split(line).ok_or("error: Invalid quoting".to_string())?;
@@ -54,7 +48,12 @@ pub(crate) async fn respond(
     let response = match repl_subcommand {
         ReplSubCommand::Wallet { subcommand } => match subcommand {
             WalletSubCommand::OfflineWalletSubCommand(cmd) => {
-                let mut ctx = AppContext::new_offline_wallet(network, datadir, wallet);
+                let mut ctx = AppContext::new_offline_wallet(
+                    network,
+                    datadir,
+                    wallet,
+                    wallet_name.to_string(),
+                );
                 cmd.execute(&mut ctx).map_err(|e| e.to_string())?;
                 Some(())
             }

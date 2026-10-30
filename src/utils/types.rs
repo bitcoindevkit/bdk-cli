@@ -14,6 +14,16 @@ use serde_json::json;
 pub struct AddressResult {
     pub address: String,
     pub index: u32,
+    /// The address' BIP-329 label, left out when it has none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+impl AddressResult {
+    pub fn with_label(mut self, label: Option<String>) -> Self {
+        self.label = label;
+        self
+    }
 }
 
 impl From<AddressInfo> for AddressResult {
@@ -21,6 +31,7 @@ impl From<AddressInfo> for AddressResult {
         Self {
             address: info.address.to_string(),
             index: info.index,
+            label: None,
         }
     }
 }
@@ -44,6 +55,9 @@ pub struct TransactionDetails {
     pub output_count: usize,
     #[serde(skip)]
     pub total_value: u64,
+    /// The transaction's BIP-329 label, left out when it has none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 /// single UTXO
@@ -56,10 +70,18 @@ pub struct UnspentDetails {
     pub derivation_index: u32,
     pub chain_position: serde_json::Value,
     pub is_locked: bool,
+    /// The UTXO's BIP-329 label, left out when it has none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 impl UnspentDetails {
-    pub fn from_local_output(utxo: &LocalOutput, _network: Network, is_locked: bool) -> Self {
+    pub fn from_local_output(
+        utxo: &LocalOutput,
+        _network: Network,
+        is_locked: bool,
+        label: Option<String>,
+    ) -> Self {
         let outpoint_str = utxo.outpoint.to_string();
 
         Self {
@@ -70,6 +92,7 @@ impl UnspentDetails {
             derivation_index: utxo.derivation_index,
             chain_position: serde_json::to_value(utxo.chain_position).unwrap_or(json!({})),
             is_locked,
+            label,
         }
     }
 }
@@ -126,6 +149,35 @@ pub struct MessageResult {
 #[derive(Serialize, Debug)]
 pub struct StatusResult {
     pub message: String,
+}
+
+/// What importing a BIP-329 file did to the wallet's labels.
+#[derive(Serialize, Debug)]
+pub struct ImportLabelsResult {
+    pub file: String,
+    /// Labels added or replaced, which excludes the ones that were kept.
+    pub imported: usize,
+    /// All the wallet's labels, after the import.
+    pub total: usize,
+}
+
+/// What exporting the wallet's labels to a BIP-329 file wrote.
+#[derive(Serialize, Debug)]
+pub struct ExportLabelsResult {
+    pub file: String,
+    pub exported: usize,
+}
+
+/// The label that was set, shaped like the BIP-329 record it is stored as.
+#[derive(Serialize, Debug)]
+pub struct LabelResult {
+    /// The BIP-329 record type: `tx`, `output` or `addr`.
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+    /// What was labelled: a txid, a `TXID:VOUT` outpoint or an address.
+    #[serde(rename = "ref")]
+    pub reference: String,
+    pub label: String,
 }
 
 #[cfg(any(

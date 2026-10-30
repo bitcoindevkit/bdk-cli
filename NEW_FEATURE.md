@@ -17,7 +17,7 @@ __The Typestate (AppContext<T>):__ Defines the environment your command runs in.
 | Context	        | What it Holds         |	When to use            |
 |------             |--------               |-------
 | AppContext<Init>	| just network, datadir	| needs no wallet and blockchain |
-| AppContext<OfflineOperations>	 | wallet	| needs the wallet but not blockchain| 
+| AppContext<OfflineOperations>	 | wallet, wallet_name	| needs the wallet but not blockchain| 
 | AppContext<OnlineOperations>	 | wallet, client, wallet_name	| needs a wallet, and a blockchain backend |
 
 The below table should aid your decision:

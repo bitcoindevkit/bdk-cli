@@ -271,14 +271,17 @@ pub fn command_requires_db(command: &OfflineWalletSubCommand) -> bool {
         | OfflineWalletSubCommand::CreateTx(_)
         | OfflineWalletSubCommand::LockUtxo(_)
         | OfflineWalletSubCommand::UnlockUtxo(_)
-        | OfflineWalletSubCommand::LockedUtxos(_) => true,
+        | OfflineWalletSubCommand::LockedUtxos(_)
+        | OfflineWalletSubCommand::Label(_) => true,
 
         OfflineWalletSubCommand::Policies(_)
         | OfflineWalletSubCommand::PublicDescriptor(_)
         | OfflineWalletSubCommand::Sign(_)
         | OfflineWalletSubCommand::ExtractPsbt(_)
         | OfflineWalletSubCommand::FinalizePsbt(_)
-        | OfflineWalletSubCommand::CombinePsbt(_) => false,
+        | OfflineWalletSubCommand::CombinePsbt(_)
+        | OfflineWalletSubCommand::ImportLabels(_)
+        | OfflineWalletSubCommand::ExportLabels(_) => false,
 
         #[cfg(feature = "message_signer")]
         OfflineWalletSubCommand::SignMessage(_) => true,
