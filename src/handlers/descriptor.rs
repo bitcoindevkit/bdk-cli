@@ -13,26 +13,13 @@ use crate::{
 };
 use clap::Parser;
 #[cfg(feature = "compiler")]
-use clap::ValueEnum;
-#[cfg(feature = "compiler")]
 use {
-    bdk_wallet::{
-        bitcoin::{
-            XOnlyPublicKey,
-            key::{Parity, rand},
-            secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey},
-        },
-        miniscript::{Descriptor, descriptor::TapTree, policy::Concrete},
-    },
-    std::{str::FromStr, sync::Arc},
+    crate::utils::descriptors::{CompileScriptType, compile_policy},
+    bdk_wallet::miniscript::descriptor::DescriptorPublicKey,
 };
 
 #[cfg(feature = "silent-payments")]
 use crate::utils::types::StatusResult;
-
-#[cfg(feature = "compiler")]
-const NUMS_UNSPENDABLE_KEY_HEX: &str =
-    "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
 
 #[derive(Parser, Debug, Clone, PartialEq)]
 pub struct DescriptorCommand {
@@ -77,19 +64,14 @@ pub struct CompileCommand {
         short = 't',
         long = "type",
         value_enum,
-        default_value_t = ScriptType::Wsh
+        default_value_t = CompileScriptType::Wsh
     )]
-    script_type: ScriptType,
-}
-
-/// Script types the compiled policy can be embedded in.
-#[cfg(feature = "compiler")]
-#[derive(Clone, Copy, ValueEnum, Debug, Eq, PartialEq)]
-pub enum ScriptType {
-    Sh,
-    Wsh,
-    ShWsh,
-    Tr,
+    script_type: CompileScriptType,
+    /// Skip key and hash validation, accepting placeholders (e.g. pk(A)). Useful for
+    /// inspecting a policy's shape without real keys. Descriptors compiled with this
+    /// flag are not usable for spending.
+    #[arg(long = "placeholders")]
+    placeholders: bool,
 }
 
 #[cfg(feature = "compiler")]
@@ -97,43 +79,14 @@ impl AppCommand<AppContext<Init>> for CompileCommand {
     type Output = DescriptorResult;
 
     fn execute(&self, _ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
-        let policy: Concrete<String> = Concrete::from_str(&self.policy)
-            .map_err(|e| Error::Generic(format!("Invalid policy: {e}")))?;
-
-        let mut r = None;
-
-        // Compile per branch, not once up front: the contexts have different script
-        // limits, and the narrowest one would reject policies valid for the requested type.
-        let descriptor = match self.script_type {
-            ScriptType::Sh => Descriptor::new_sh(policy.compile()?),
-            ScriptType::Wsh => Descriptor::new_wsh(policy.compile()?),
-            ScriptType::ShWsh => Descriptor::new_sh_wsh(policy.compile()?),
-            ScriptType::Tr => {
-                // Use a randomized unspendable internal key (H + rG) instead of a fixed NUMS
-                // point. This improves privacy by preventing observers from determining whether
-                // key-path spending is disabled. `r` is returned so the user can verify the key
-                // is derived from the NUMS point. See BIP-341.
-                let secp = Secp256k1::new();
-                let r_secret = SecretKey::new(&mut rand::thread_rng());
-                r = Some(r_secret.display_secret().to_string());
-
-                let nums_key = XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)
-                    .map_err(|e| Error::Generic(format!("Invalid NUMS key: {e}")))?;
-                let nums_point = PublicKey::from_x_only_public_key(nums_key, Parity::Even);
-
-                let internal_key_point =
-                    nums_point
-                        .add_exp_tweak(&secp, &Scalar::from(r_secret))
-                        .map_err(|e| Error::Generic(format!("Failed to tweak NUMS key: {e}")))?;
-                let (xonly_internal_key, _) = internal_key_point.x_only_public_key();
-
-                let tree = TapTree::Leaf(Arc::new(policy.compile()?));
-                Descriptor::new_tr(xonly_internal_key.to_string(), Some(tree))
-            }
-        }?;
+        let (descriptor, r) = if self.placeholders {
+            compile_policy::<String>(&self.policy, self.script_type)?
+        } else {
+            compile_policy::<DescriptorPublicKey>(&self.policy, self.script_type)?
+        };
 
         Ok(DescriptorResult {
-            descriptor: Some(descriptor.to_string()),
+            descriptor: Some(descriptor),
             mnemonic: None,
             multipath_descriptor: None,
             public_descriptors: None,

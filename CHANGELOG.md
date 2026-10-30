@@ -17,6 +17,10 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Added `hwi` feature with a hardware wallet `hwi` command to list connected devices, register a wallet policy, display a receive address, and sign PSBTs. Supports Ledger, Coldcard, BitBox02, Jade and Specter.
 - Replaced plain `wallets` with `wallets list`, and added `wallets delete <wallet_name>` for unused saved wallet configurations.
 - Fixed `create_tx`, `create_sp_tx` and `create_dns_tx` to reject `--to` addresses and `--to-sp` silent payment codes from a different network instead of building an unspendable PSBT
+- Removed the redundant `wallet` field from `wallets list` output; the wallet name is still available as the top-level key
+- Fixed `compile` silently accepting placeholder keys/hashes instead of validating them; added `--placeholders` to opt back into the old permissive behavior
+- Fixed `compile` panicking instead of returning an error when a key is valid on its own but the wrong shape for the requested script type (e.g. an x-only key under `sh`/`wsh`/`sh-wsh`, or an uncompressed key under `tr`)
+- Updated dependencies to resolve RUSTSEC advisories in rustls, rustls-webpki, webpki-roots, quinn-proto, h2 and zstd-sys; bumped async-hwi to 0.0.35.
 
 ## [4.0.0]
 
