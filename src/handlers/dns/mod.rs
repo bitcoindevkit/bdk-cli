@@ -6,12 +6,15 @@ use crate::handlers::dns::dns_payment_instructions::{
 };
 use crate::handlers::{AppContext, AsyncAppCommand, Init, OfflineOperations};
 use crate::utils::types::{PsbtResult, StatusResult};
-use crate::utils::{parse_dns_recipient, parse_fee_rate, parse_outpoint, parse_recipient};
+use crate::utils::{
+    parse_dns_recipient, parse_fee_rate, parse_outpoint, parse_recipient, recipient_script,
+};
 use bdk_wallet::KeychainKind;
+use bdk_wallet::bitcoin::address::NetworkUnchecked;
 use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
-use bdk_wallet::bitcoin::{Amount, FeeRate, OutPoint, ScriptBuf, Sequence};
+use bdk_wallet::bitcoin::{Address, Amount, FeeRate, OutPoint, ScriptBuf, Sequence};
 use clap::Parser;
 use std::collections::BTreeMap;
 
@@ -42,7 +45,7 @@ impl AsyncAppCommand<AppContext<Init>> for ResolveDnsRecipientCommand {
 #[derive(Parser, Debug, Clone, PartialEq)]
 pub struct CreateDnsTxCommand {
     #[arg(env = "ADDRESS_SAT", long = "to", value_parser = parse_recipient)]
-    pub recipients: Vec<(ScriptBuf, u64)>,
+    pub recipients: Vec<(Address<NetworkUnchecked>, u64)>,
     #[arg(long = "to_dns", value_parser = parse_dns_recipient)]
     pub dns_recipients: Vec<(String, u64)>,
     #[arg(long = "dns_resolver", default_value = "8.8.8.8")]
@@ -86,8 +89,12 @@ impl AsyncAppCommand<AppContext<OfflineOperations<'_>>> for CreateDnsTxCommand {
         &self,
         ctx: &mut AppContext<OfflineOperations<'_>>,
     ) -> Result<Self::Output, Error> {
-        let network = ctx.network;
-        let mut recipients: Vec<(ScriptBuf, u64)> = self.recipients.clone();
+        let network = ctx.state.wallet.network();
+        let mut recipients: Vec<(ScriptBuf, u64)> = self
+            .recipients
+            .iter()
+            .map(|(address, amount)| Ok((recipient_script(address, network)?, *amount)))
+            .collect::<Result<_, Error>>()?;
 
         for (hrn, amount_sat) in &self.dns_recipients {
             log::info!("Resolving DNS instructions for recipient {hrn}");

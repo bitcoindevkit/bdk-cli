@@ -10,7 +10,7 @@ mod test_online {
     use tempfile::TempDir;
 
     static WALLET_NAME: &str = "test_online_wallet";
-    static RECIPIENT: &str = "tb1p4tp4l6glyr2gs94neqcpr5gha7344nfyznfkc8szkreflscsdkgqsdent4";
+    static RECIPIENT: &str = "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080";
 
     /// Spins up the envt, a Regtest node + electrs, and saves the wallet config.
     fn setup_online_wallet() -> (BdkCli, Command, TestEnv) {

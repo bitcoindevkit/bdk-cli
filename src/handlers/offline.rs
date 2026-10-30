@@ -7,11 +7,12 @@ use crate::utils::types::{
     AddressResult, BalanceResult, KeychainPair, PsbtResult, RawPsbt, TransactionDetails,
     UnspentDetails,
 };
-use crate::utils::{parse_fee_rate, parse_outpoint, parse_recipient};
+use crate::utils::{parse_fee_rate, parse_outpoint, parse_recipient, recipient_script};
+use bdk_wallet::bitcoin::address::NetworkUnchecked;
 use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
-use bdk_wallet::bitcoin::{Address, Amount, FeeRate, OutPoint, Psbt, ScriptBuf, Sequence, Txid};
+use bdk_wallet::bitcoin::{Address, Amount, FeeRate, OutPoint, Psbt, Sequence, Txid};
 use bdk_wallet::{KeychainKind, SignOptions};
 use clap::Parser;
 use serde_json::json;
@@ -24,6 +25,7 @@ use {
         encoding::SilentPaymentCode,
         send::psbt::derive_sp,
     },
+    bdk_wallet::bitcoin::ScriptBuf,
     bdk_wallet::bitcoin::key::Secp256k1,
     bdk_wallet::keys::{DescriptorPublicKey, DescriptorSecretKey, SinglePubKey},
     std::collections::HashMap,
@@ -194,7 +196,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for BalanceCommand {
 pub struct CreateTxCommand {
     /// Adds a recipient to the transaction.
     #[arg(env = "ADDRESS_SAT", long = "to", required = true, value_parser = parse_recipient)]
-    pub recipients: Vec<(ScriptBuf, u64)>,
+    pub recipients: Vec<(Address<NetworkUnchecked>, u64)>,
 
     /// Sends all the funds (or all the selected utxos). Requires only one recipient with value 0.
     #[arg(long = "send_all", short = 'a')]
@@ -251,13 +253,14 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
     type Output = PsbtResult;
 
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let network = ctx.state.wallet.network();
         let mut tx_builder = ctx.state.wallet.build_tx();
 
         if self.send_all {
             if self.recipients.len() == 1 {
                 tx_builder
                     .drain_wallet()
-                    .drain_to(self.recipients[0].0.clone());
+                    .drain_to(recipient_script(&self.recipients[0].0, network)?);
             } else {
                 return Err(Error::Generic(
                     "Wallet can only be drained to a single output".to_string(),
@@ -266,10 +269,14 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
         } else {
             let recipients = self
                 .recipients
-                .clone()
-                .into_iter()
-                .map(|(script, amount)| (script, Amount::from_sat(amount)))
-                .collect();
+                .iter()
+                .map(|(address, amount)| {
+                    Ok((
+                        recipient_script(address, network)?,
+                        Amount::from_sat(*amount),
+                    ))
+                })
+                .collect::<Result<_, Error>>()?;
             tx_builder.set_recipients(recipients);
         }
 
@@ -328,7 +335,7 @@ pub struct CreateSpTxCommand {
     // Clap Doesn't support complex vector parsing https://github.com/clap-rs/clap/issues/1704.
     // Address and amount parsing is done at run time in handler function.
     #[arg(env = "ADDRESS_SAT", long = "to", required = false, value_parser = parse_recipient)]
-    pub recipients: Option<Vec<(ScriptBuf, u64)>>,
+    pub recipients: Option<Vec<(Address<NetworkUnchecked>, u64)>>,
     /// Parse silent payment recipients
     #[arg(long = "to-sp", required = true, value_parser = parse_sp_code_value_pairs)]
     pub silent_payment_recipients: Vec<(SilentPaymentCode, u64)>,
@@ -376,13 +383,22 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
     type Output = RawPsbt;
 
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let network = ctx.state.wallet.network();
         let mut tx_builder = ctx.state.wallet.build_tx();
 
         let sp_recipients: Vec<SilentPaymentCode> = self
             .silent_payment_recipients
             .iter()
-            .map(|(sp_code, _)| sp_code.clone())
-            .collect();
+            .map(|(sp_code, _)| {
+                if sp_code.network != network {
+                    return Err(Error::Generic(format!(
+                        "Silent payment code network mismatch: expected {network}, found {} for {sp_code}",
+                        sp_code.network
+                    )));
+                }
+                Ok(sp_code.clone())
+            })
+            .collect::<Result<_, Error>>()?;
 
         if self.send_all {
             if sp_recipients.len() == 1 && self.recipients.is_none() {
@@ -393,7 +409,9 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
                 && sp_recipients.is_empty()
             {
                 if recipients.len() == 1 {
-                    tx_builder.drain_wallet().drain_to(recipients[0].0.clone());
+                    tx_builder
+                        .drain_wallet()
+                        .drain_to(recipient_script(&recipients[0].0, network)?);
                 } else {
                     return Err(Error::Generic(
                         "Wallet can only be drain to a single output".to_string(),
@@ -417,7 +435,13 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
             if let Some(recipients) = &self.recipients {
                 let recipients = recipients
                     .iter()
-                    .map(|(script, amount)| (script.clone(), Amount::from_sat(*amount)));
+                    .map(|(address, amount)| {
+                        Ok((
+                            recipient_script(address, network)?,
+                            Amount::from_sat(*amount),
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?;
 
                 outputs.extend(recipients);
             }
