@@ -8,7 +8,7 @@ mod test_offline {
 
     static WALLET_NAME: &str = "test_config_wallet";
     /// A `--to` argument, the wallet is unfunded, so nothing is spent.
-    static RECIPIENT: &str = "tb1p4tp4l6glyr2gs94neqcpr5gha7344nfyznfkc8szkreflscsdkgqsdent4:10000";
+    static RECIPIENT: &str = "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080:10000";
 
     /// Helper to spin up a sandboxed CLI with the generated descriptors
     fn setup_wallet_config() -> (BdkCli, Command) {
@@ -116,17 +116,18 @@ mod test_offline {
         let (cli, mut cmd_init) = setup_wallet_config();
         cmd_init.assert().success();
 
+        let address = cli
+            .wallet_cmd(&["--wallet", WALLET_NAME, "new_address"])
+            .output()
+            .unwrap();
+        let address_json: Value = serde_json::from_slice(&address.stdout).unwrap();
+        let recipient = format!("{}:1000", address_json["address"].as_str().unwrap());
+
         // create transaction
-        cli.wallet_cmd(&[
-            "--wallet",
-            WALLET_NAME,
-            "create_tx",
-            "--to",
-            "tb1p4tp4l6glyr2gs94neqcpr5gha7344nfyznfkc8szkreflscsdkgqsdent4:1000",
-        ])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("Insufficient"));
+        cli.wallet_cmd(&["--wallet", WALLET_NAME, "create_tx", "--to", &recipient])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Insufficient"));
     }
 
     #[test]
@@ -319,6 +320,112 @@ mod test_offline {
         .assert()
         .success()
         .stdout(predicate::str::contains("\"valid\": false"));
+    }
+
+    #[test]
+    fn test_create_tx_rejects_address_from_wrong_network() {
+        let (cli, mut cmd_init) = setup_wallet_config();
+        cmd_init.assert().success();
+
+        // Wallet is regtest, recipient is testnet.
+        let recipient = "tb1p4tp4l6glyr2gs94neqcpr5gha7344nfyznfkc8szkreflscsdkgqsdent4:1000";
+        cli.wallet_cmd(&["--wallet", WALLET_NAME, "create_tx", "--to", recipient])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "Network mismatch: expected regtest, found testnet",
+            ));
+    }
+
+    #[cfg(feature = "silent-payments")]
+    #[test]
+    fn test_create_sp_tx_rejects_address_from_wrong_network() {
+        let (cli, mut cmd_init) = setup_wallet_config();
+        cmd_init.assert().success();
+
+        let sp_code = cli
+            .cmd(
+                "silent_payment_code",
+                &[
+                    "--scan_key",
+                    "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+                    "--spend_key",
+                    "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+                ],
+            )
+            .output()
+            .unwrap();
+        let sp_code: Value = serde_json::from_slice(&sp_code.stdout).unwrap();
+        let sp_recipient = format!("{}:1000", sp_code["message"].as_str().unwrap());
+
+        // Wallet is regtest, recipient is testnet.
+        let recipient = "tb1p4tp4l6glyr2gs94neqcpr5gha7344nfyznfkc8szkreflscsdkgqsdent4:1000";
+        cli.wallet_cmd(&[
+            "--wallet",
+            WALLET_NAME,
+            "create_sp_tx",
+            "--to",
+            recipient,
+            "--to-sp",
+            &sp_recipient,
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Network mismatch: expected regtest, found testnet",
+        ));
+    }
+
+    #[cfg(feature = "silent-payments")]
+    #[test]
+    fn test_create_sp_tx_rejects_code_from_wrong_network() {
+        let (cli, mut cmd_init) = setup_wallet_config();
+        cmd_init.assert().success();
+
+        // Wallet is regtest, silent payment code is testnet.
+        let sp_code = BdkCli::new("testnet", None)
+            .cmd(
+                "silent_payment_code",
+                &[
+                    "--scan_key",
+                    "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+                    "--spend_key",
+                    "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+                ],
+            )
+            .output()
+            .unwrap();
+        let sp_code: Value = serde_json::from_slice(&sp_code.stdout).unwrap();
+        let sp_recipient = format!("{}:1000", sp_code["message"].as_str().unwrap());
+
+        cli.wallet_cmd(&[
+            "--wallet",
+            WALLET_NAME,
+            "create_sp_tx",
+            "--to-sp",
+            &sp_recipient,
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Silent payment code network mismatch: expected regtest, found testnet",
+        ));
+    }
+
+    #[cfg(feature = "dns_payment")]
+    #[test]
+    fn test_create_dns_tx_rejects_address_from_wrong_network() {
+        let (cli, mut cmd_init) = setup_wallet_config();
+        cmd_init.assert().success();
+
+        // Wallet is regtest, recipient is testnet.
+        let recipient = "tb1p4tp4l6glyr2gs94neqcpr5gha7344nfyznfkc8szkreflscsdkgqsdent4:1000";
+        cli.wallet_cmd(&["--wallet", WALLET_NAME, "create_dns_tx", "--to", recipient])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "Network mismatch: expected regtest, found testnet",
+            ));
     }
 
     #[test]
