@@ -503,6 +503,13 @@ mod multipath_tests {
 mod label_tests {
     use crate::common::BdkCli;
     use assert_cmd::Command;
+    use bdk_wallet::bitcoin::absolute::LockTime;
+    use bdk_wallet::bitcoin::hashes::Hash;
+    use bdk_wallet::bitcoin::transaction::Version;
+    use bdk_wallet::bitcoin::{
+        Amount, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
+    };
+    use bdk_wallet::{KeychainKind, Wallet};
     use predicates::prelude::*;
     use serde_json::Value;
     use std::path::PathBuf;
@@ -518,6 +525,12 @@ mod label_tests {
 
     /// A regtest wallet in a fresh data directory.
     fn setup() -> (BdkCli, TempDir) {
+        let (cli, temp_dir, _, _) = setup_with_descriptors();
+        (cli, temp_dir)
+    }
+
+    /// Like [`setup`], also returning the wallet's external and internal descriptors.
+    fn setup_with_descriptors() -> (BdkCli, TempDir, String, String) {
         let temp_dir = TempDir::new().unwrap();
         let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
 
@@ -544,7 +557,78 @@ mod label_tests {
             .args(["--url", "http://localhost:18443"]);
         config.assert().success();
 
-        (cli, temp_dir)
+        (cli, temp_dir, ext_desc.to_string(), int_desc.to_string())
+    }
+
+    /// A transaction the wallet received, and the output it received it in.
+    struct Received {
+        txid: Txid,
+        outpoint: OutPoint,
+    }
+
+    /// Writes `count` unconfirmed transactions, each paying 50 000 sats to a new address, into
+    /// the wallet's database, as if a sync had found them. No node is needed to do this.
+    fn receive(temp_dir: &TempDir, ext: &str, int: &str, count: u8) -> Vec<Received> {
+        let wallet_dir = temp_dir.path().join(WALLET_NAME);
+        std::fs::create_dir_all(&wallet_dir).unwrap();
+        let db_file = wallet_dir.join("wallet.sqlite");
+        let mut db = bdk_wallet::rusqlite::Connection::open(db_file).unwrap();
+        let mut wallet = Wallet::create(ext.to_string(), int.to_string())
+            .network(Network::Regtest)
+            .create_wallet(&mut db)
+            .unwrap();
+
+        let received: Vec<_> = (1..=count)
+            .map(|funding| {
+                let address = wallet.reveal_next_address(KeychainKind::External);
+                let tx = Transaction {
+                    version: Version::TWO,
+                    lock_time: LockTime::ZERO,
+                    input: vec![TxIn {
+                        previous_output: OutPoint::new(Txid::from_byte_array([funding; 32]), 0),
+                        script_sig: ScriptBuf::new(),
+                        sequence: Sequence::MAX,
+                        witness: Witness::new(),
+                    }],
+                    output: vec![TxOut {
+                        value: Amount::from_sat(50_000),
+                        script_pubkey: address.script_pubkey(),
+                    }],
+                };
+                let txid = tx.compute_txid();
+                wallet.apply_unconfirmed_txs([(tx, 1_700_000_000)]);
+                Received {
+                    txid,
+                    outpoint: OutPoint::new(txid, 0),
+                }
+            })
+            .collect();
+
+        wallet.persist(&mut db).unwrap();
+        received
+    }
+
+    /// The `label` of the entry of a JSON `items` list that has the given `key` equal to `id`.
+    fn label_in(list: &Value, key: &str, id: &str) -> Option<String> {
+        let entry = list["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry[key] == id)
+            .unwrap_or_else(|| panic!("{id} is not in {list}"));
+        entry
+            .get("label")
+            .map(|label| label.as_str().unwrap().to_string())
+    }
+
+    fn json(cli: &BdkCli, args: &[&str]) -> Value {
+        let output = wallet(cli, args).output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
     }
 
     fn wallet(cli: &BdkCli, args: &[&str]) -> Command {
@@ -788,5 +872,164 @@ mod label_tests {
 
         let file = std::fs::read_to_string(labels_file(&temp_dir)).unwrap();
         assert!(file.contains("from the repl"), "labels file: {file}");
+    }
+
+    #[test]
+    fn transactions_and_unspent_show_labels() {
+        let (cli, temp_dir, ext, int) = setup_with_descriptors();
+        let received = receive(&temp_dir, &ext, &int, 1);
+        let (txid, outpoint) = (
+            received[0].txid.to_string(),
+            received[0].outpoint.to_string(),
+        );
+
+        wallet(&cli, &["label", "--txid", &txid, "--text", "salary"])
+            .assert()
+            .success();
+        wallet(&cli, &["label", "--utxo", &outpoint, "--text", "my coin"])
+            .assert()
+            .success();
+
+        let transactions = json(&cli, &["transactions"]);
+        assert_eq!(
+            label_in(&transactions, "txid", &txid).as_deref(),
+            Some("salary")
+        );
+        let unspent = json(&cli, &["unspent"]);
+        assert_eq!(
+            label_in(&unspent, "outpoint", &outpoint).as_deref(),
+            Some("my coin")
+        );
+    }
+
+    #[test]
+    fn unlabelled_items_have_no_label_field() {
+        let (cli, temp_dir, ext, int) = setup_with_descriptors();
+        let received = receive(&temp_dir, &ext, &int, 1);
+
+        let transactions = json(&cli, &["transactions"]);
+        let unspent = json(&cli, &["unspent"]);
+
+        assert_eq!(
+            label_in(&transactions, "txid", &received[0].txid.to_string()),
+            None
+        );
+        assert_eq!(
+            label_in(&unspent, "outpoint", &received[0].outpoint.to_string()),
+            None
+        );
+    }
+
+    #[test]
+    fn a_dash_label_is_told_apart_from_no_label() {
+        let (cli, temp_dir, ext, int) = setup_with_descriptors();
+        let received = receive(&temp_dir, &ext, &int, 2);
+        let (first, second) = (received[0].txid.to_string(), received[1].txid.to_string());
+
+        wallet(&cli, &["label", "--txid", &first, "--text", "\u{2014}"])
+            .assert()
+            .success();
+
+        let transactions = json(&cli, &["transactions"]);
+        assert_eq!(
+            label_in(&transactions, "txid", &first).as_deref(),
+            Some("\u{2014}")
+        );
+        assert_eq!(label_in(&transactions, "txid", &second), None);
+    }
+
+    #[test]
+    fn labelling_a_utxo_keeps_it_spendable_or_frozen_as_it_was() {
+        let (cli, temp_dir, ext, int) = setup_with_descriptors();
+        let received = receive(&temp_dir, &ext, &int, 1);
+        let outpoint = received[0].outpoint.to_string();
+        let output_record = |file: &str| -> Value {
+            file.lines()
+                .map(|line| serde_json::from_str::<Value>(line).unwrap())
+                .find(|record| record["type"] == "output")
+                .unwrap()
+        };
+
+        // Naming a coin does not freeze it...
+        wallet(&cli, &["label", "--utxo", &outpoint, "--text", "my coin"])
+            .assert()
+            .success();
+        let file = std::fs::read_to_string(labels_file(&temp_dir)).unwrap();
+        assert_eq!(output_record(&file)["spendable"], true);
+
+        // ...and renaming a coin that was frozen elsewhere does not unfreeze it.
+        let frozen = file.replace("\"spendable\":true", "\"spendable\":false");
+        std::fs::write(labels_file(&temp_dir), frozen).unwrap();
+        wallet(&cli, &["label", "--utxo", &outpoint, "--text", "renamed"])
+            .assert()
+            .success();
+        let file = std::fs::read_to_string(labels_file(&temp_dir)).unwrap();
+        assert_eq!(output_record(&file)["spendable"], false);
+        assert_eq!(output_record(&file)["label"], "renamed");
+    }
+
+    #[test]
+    fn unused_address_shows_its_label() {
+        let (cli, _temp_dir) = setup();
+        let address = new_address(&cli);
+
+        assert_eq!(json(&cli, &["unused_address"]).get("label"), None);
+        wallet(
+            &cli,
+            &["label", "--address", &address, "--text", "from Alice"],
+        )
+        .assert()
+        .success();
+
+        let unused = json(&cli, &["unused_address"]);
+        assert_eq!(unused["address"], address.as_str());
+        assert_eq!(unused["label"], "from Alice");
+    }
+
+    #[test]
+    fn a_corrupt_labels_file_does_not_break_display_commands() {
+        let (cli, temp_dir, ext, int) = setup_with_descriptors();
+        let received = receive(&temp_dir, &ext, &int, 1);
+        std::fs::write(labels_file(&temp_dir), "this is not jsonl\n").unwrap();
+
+        // Commands that show labels warn about the file and carry on without labels...
+        for command in ["transactions", "unspent", "unused_address"] {
+            wallet(&cli, &[command])
+                .assert()
+                .success()
+                .stderr(predicate::str::contains("labels.jsonl"));
+        }
+        // ...and commands that have nothing to do with labels do not even look at it.
+        wallet(&cli, &["balance"])
+            .assert()
+            .success()
+            .stderr(predicate::str::contains("labels.jsonl").not());
+
+        let unspent = json(&cli, &["unspent"]);
+        assert_eq!(
+            label_in(&unspent, "outpoint", &received[0].outpoint.to_string()),
+            None
+        );
+    }
+
+    #[cfg(feature = "repl")]
+    #[test]
+    fn labels_are_shown_in_the_repl() {
+        let (cli, temp_dir, ext, int) = setup_with_descriptors();
+        let received = receive(&temp_dir, &ext, &int, 1);
+        let outpoint = received[0].outpoint.to_string();
+        wallet(&cli, &["label", "--utxo", &outpoint, "--text", "my coin"])
+            .assert()
+            .success();
+
+        let output = cli
+            .build_base_cmd()
+            .args(["repl", "--wallet", WALLET_NAME])
+            .write_stdin("wallet unspent\nexit\n")
+            .output()
+            .unwrap();
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("my coin"), "REPL output: {stdout}");
     }
 }

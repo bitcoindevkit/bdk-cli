@@ -7,7 +7,9 @@
 
 use crate::error::BDKCliError as Error;
 use crate::utils::write_file_content;
+use bdk_labels::bip329::LabelRef;
 use bdk_labels::{LabelChangeset, LabelPersister, MergeStrategy};
+use bdk_wallet::bitcoin::{Address, OutPoint, Txid};
 use std::fs::File;
 use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
@@ -37,6 +39,21 @@ impl LabelStore {
             .map_err(|e| Error::LabelsError(bdk_labels::Error::Io(e)))
     }
 
+    /// Load the labels to annotate the output of a command that merely displays them.
+    ///
+    /// A labels file that cannot be read is reported as a warning and the command
+    /// carries on without labels, as listing transactions should not need a healthy
+    /// labels file. Commands that set or change labels use [`Self::load`] instead.
+    pub fn load_for_display(&self) -> LabelLookup {
+        match self.load() {
+            Ok(labels) => LabelLookup(labels),
+            Err(e) => {
+                log::warn!("Not showing labels: {e}");
+                LabelLookup(LabelChangeset::new())
+            }
+        }
+    }
+
     /// An I/O error that names the labels file.
     fn io_error(&self, cause: impl std::fmt::Display) -> io::Error {
         io::Error::other(format!("{}: {cause}", self.path.display()))
@@ -45,6 +62,34 @@ impl LabelStore {
     /// Path of the temporary file a write goes through.
     fn temp_path(&self) -> PathBuf {
         self.path.with_extension("jsonl.tmp")
+    }
+}
+
+/// Labels, looked up by what they label.
+#[derive(Debug)]
+pub struct LabelLookup(LabelChangeset);
+
+impl LabelLookup {
+    /// The label of a transaction.
+    pub fn tx(&self, txid: Txid) -> Option<String> {
+        self.label(&LabelRef::Txid(txid))
+    }
+
+    /// The label of an output (a UTXO, when it is unspent).
+    pub fn output(&self, outpoint: OutPoint) -> Option<String> {
+        self.label(&LabelRef::Output(outpoint))
+    }
+
+    /// The label of an address.
+    pub fn address(&self, address: &Address) -> Option<String> {
+        self.label(&LabelRef::Address(address.clone().into_unchecked()))
+    }
+
+    fn label(&self, target: &LabelRef) -> Option<String> {
+        self.0
+            .get(target)
+            .and_then(|label| label.label())
+            .map(str::to_string)
     }
 }
 

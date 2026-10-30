@@ -42,7 +42,7 @@ bdk_message_signer = { version = "0.2.0", optional = true }
 bitcoin-payment-instructions = { version = "0.7.0", optional = true}
 
 async-hwi = { version = "0.0.35", features = ["specter", "coldcard", "ledger", "jade", "bitbox", "service"], optional = true}
-bdk-labels = "0.2.1"
+bdk-labels = "0.2.2"
 
 [features]
 default = ["repl", "sqlite"]

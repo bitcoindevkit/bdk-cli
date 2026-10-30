@@ -118,9 +118,11 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for UnusedAddressCommand {
     type Output = AddressResult;
 
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let labels = LabelStore::new(&ctx.datadir, &ctx.state.wallet_name).load_for_display();
         let wallet = &mut ctx.state.wallet;
         let address_info = wallet.next_unused_address(KeychainKind::External);
-        Ok(AddressResult::from(address_info))
+        let label = labels.address(&address_info.address);
+        Ok(AddressResult::from(address_info).with_label(label))
     }
 }
 
@@ -131,13 +133,15 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for UnspentCommand {
     type Output = ListResult<UnspentDetails>;
 
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let labels = LabelStore::new(&ctx.datadir, &ctx.state.wallet_name).load_for_display();
         let wallet = &mut ctx.state.wallet;
         let outputs: Vec<_> = wallet.list_unspent().collect();
         let utxos = outputs
             .into_iter()
             .map(|utxo| {
                 let is_locked = wallet.is_outpoint_locked(utxo.outpoint);
-                UnspentDetails::from_local_output(&utxo, ctx.network, is_locked)
+                let label = labels.output(utxo.outpoint);
+                UnspentDetails::from_local_output(&utxo, ctx.network, is_locked, label)
             })
             .collect();
 
@@ -152,6 +156,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for TransactionsCommand {
     type Output = ListResult<TransactionDetails>;
 
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let labels = LabelStore::new(&ctx.datadir, &ctx.state.wallet_name).load_for_display();
         let transactions = &mut ctx.state.wallet.transactions();
 
         let txns: Vec<TransactionDetails> = transactions
@@ -175,6 +180,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for TransactionsCommand {
                     input_count: tx.tx_node.input.len(),
                     output_count: tx.tx_node.output.len(),
                     total_value,
+                    label: labels.tx(tx.tx_node.txid),
                 }
             })
             .collect();
