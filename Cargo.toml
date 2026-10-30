@@ -30,7 +30,7 @@ serde= {version = "1.0", features = ["derive"]}
 # Optional dependencies
 bdk_bitcoind_rpc = { version = "0.22.0", features = ["std"], optional = true }
 bdk_electrum = { version = "0.24.0", optional = true }
-bdk_esplora = { version = "0.22.2", features = ["async-https", "tokio"], optional = true }
+bdk_esplora = { version = "0.22.2", default-features = false, features = ["async-https", "tokio"], optional = true }
 bdk_kyoto = { version = "0.17.0", optional = true }
 bdk_redb = { version = "0.2.0", optional = true }
 bdk_sp = { version = "0.2.0", optional = true }
@@ -40,7 +40,7 @@ reqwest = { version = "0.13.2", default-features = false, features = ["rustls"],
 url = { version = "2.5.8", optional = true }
 bdk_message_signer = { version = "0.2.0", optional = true }
 bitcoin-payment-instructions = { version = "0.7.0", optional = true}
-async-hwi = { version = "0.0.32", features = ["specter", "coldcard", "ledger", "jade", "bitbox", "service"], optional = true}
+async-hwi = { version = "0.0.35", features = ["specter", "coldcard", "ledger", "jade", "bitbox", "service"], optional = true}
 
 [features]
 default = ["repl", "sqlite"]

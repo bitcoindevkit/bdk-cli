@@ -1,6 +1,6 @@
 #[cfg(feature = "electrum")]
 mod test_online {
-    use crate::common::BdkCli;
+    use crate::common::{BdkCli, wait_for_electrum_tip};
     use assert_cmd::Command;
     use bdk_testenv::{TestEnv, bitcoincore_rpc::RpcApi};
     use bdk_wallet::bitcoin::{Address, Amount, Network, Txid};
@@ -60,7 +60,7 @@ mod test_online {
             .mine_blocks(101, Some(node_address))
             .expect("Failed to mine initial blocks");
         assert_eq!(mined_blocks.len(), 101, "expected exactly 101 blocks mined");
-        env.wait_until_electrum_sees_block(Duration::from_secs(10))
+        wait_for_electrum_tip(env, Duration::from_secs(10))
             .expect("Electrum did not catch up to initial blocks");
 
         let txid = env
@@ -71,7 +71,7 @@ mod test_online {
 
         env.mine_blocks(3, None)
             .expect("Failed to confirm funding tx");
-        env.wait_until_electrum_sees_block(Duration::from_secs(10))
+        wait_for_electrum_tip(env, Duration::from_secs(10))
             .expect("Electrum did not catch up to confirmation blocks");
 
         cli_full_scan(cli);
@@ -263,7 +263,7 @@ mod test_online {
 
         env.mine_blocks(1, None)
             .expect("Failed to mine drain confirmation block");
-        env.wait_until_electrum_sees_block(Duration::from_secs(10))
+        wait_for_electrum_tip(&env, Duration::from_secs(10))
             .expect("Electrum did not catch up to drain confirmation");
 
         cli_sync(&cli);
@@ -297,7 +297,7 @@ mod test_online {
         // Confirm the spend and verify the final balance
         env.mine_blocks(1, None)
             .expect("Failed to mine spend confirmation block");
-        env.wait_until_electrum_sees_block(Duration::from_secs(10))
+        wait_for_electrum_tip(&env, Duration::from_secs(10))
             .expect("Electrum did not catch up to spend confirmation");
 
         cli_sync(&cli);
@@ -446,7 +446,7 @@ mod test_online {
 
         env.mine_blocks(1, None)
             .expect("Failed to confirm bumped tx");
-        env.wait_until_electrum_sees_block(Duration::from_secs(10))
+        wait_for_electrum_tip(&env, Duration::from_secs(10))
             .expect("Electrum did not catch up after bump confirmation");
         cli_sync(&cli);
 
@@ -566,8 +566,7 @@ mod test_online {
             .unwrap()
             .assume_checked();
         env.mine_blocks(101, Some(node_addr)).unwrap();
-        env.wait_until_electrum_sees_block(Duration::from_secs(10))
-            .unwrap();
+        wait_for_electrum_tip(&env, Duration::from_secs(10)).unwrap();
         let a1 = cli_new_address(&cli);
         let t1 = env.send(&a1, Amount::from_btc(0.3).unwrap()).unwrap();
         env.wait_until_electrum_sees_txid(t1, Duration::from_secs(10))
@@ -577,8 +576,7 @@ mod test_online {
         env.wait_until_electrum_sees_txid(t2, Duration::from_secs(10))
             .unwrap();
         env.mine_blocks(3, None).unwrap();
-        env.wait_until_electrum_sees_block(Duration::from_secs(10))
-            .unwrap();
+        wait_for_electrum_tip(&env, Duration::from_secs(10)).unwrap();
         cli_full_scan(&cli);
 
         let unspent = run_wallet_json(&cli, &["unspent"]);
@@ -779,14 +777,12 @@ mod test_online {
                 .unwrap()
                 .assume_checked();
             env.mine_blocks(101, Some(node_address)).unwrap();
-            env.wait_until_electrum_sees_block(Duration::from_secs(10))
-                .unwrap();
+            wait_for_electrum_tip(&env, Duration::from_secs(10)).unwrap();
             let txid = env.send(&addr, Amount::from_btc(0.5).unwrap()).unwrap();
             env.wait_until_electrum_sees_txid(txid, Duration::from_secs(10))
                 .unwrap();
             env.mine_blocks(3, None).unwrap();
-            env.wait_until_electrum_sees_block(Duration::from_secs(10))
-                .unwrap();
+            wait_for_electrum_tip(&env, Duration::from_secs(10)).unwrap();
             cli.wallet_cmd(&["--wallet", WALLET, "full_scan"])
                 .assert()
                 .success();
@@ -874,14 +870,12 @@ mod test_online {
             .unwrap()
             .assume_checked();
         env.mine_blocks(101, Some(node_addr)).unwrap();
-        env.wait_until_electrum_sees_block(Duration::from_secs(10))
-            .unwrap();
+        wait_for_electrum_tip(&env, Duration::from_secs(10)).unwrap();
         let txid = env.send(&address, Amount::from_sat(5_000)).unwrap();
         env.wait_until_electrum_sees_txid(txid, Duration::from_secs(10))
             .unwrap();
         env.mine_blocks(3, None).unwrap();
-        env.wait_until_electrum_sees_block(Duration::from_secs(10))
-            .unwrap();
+        wait_for_electrum_tip(&env, Duration::from_secs(10)).unwrap();
         cli_full_scan(&cli);
 
         // The funded outpoint to prove control of.
@@ -1072,7 +1066,7 @@ mod test_online {
 
 #[cfg(feature = "esplora")]
 mod test_esplora {
-    use crate::common::BdkCli;
+    use crate::common::{BdkCli, wait_for_electrum_tip};
     use bdk_testenv::{TestEnv, bitcoincore_rpc::RpcApi};
     use bdk_wallet::bitcoin::{Address, Amount, Network};
     use serde_json::Value;
@@ -1132,14 +1126,12 @@ mod test_esplora {
             .unwrap()
             .assume_checked();
         env.mine_blocks(101, Some(node_addr)).unwrap();
-        env.wait_until_electrum_sees_block(Duration::from_secs(10))
-            .unwrap();
+        wait_for_electrum_tip(&env, Duration::from_secs(10)).unwrap();
         let txid = env.send(&address, Amount::from_btc(0.5).unwrap()).unwrap();
         env.wait_until_electrum_sees_txid(txid, Duration::from_secs(10))
             .unwrap();
         env.mine_blocks(3, None).unwrap();
-        env.wait_until_electrum_sees_block(Duration::from_secs(10))
-            .unwrap();
+        wait_for_electrum_tip(&env, Duration::from_secs(10)).unwrap();
 
         let scan = cli
             .wallet_cmd(&["--wallet", WALLET_NAME, "full_scan"])
