@@ -373,6 +373,38 @@ To delete a saved wallet configuration:
 cargo run -- wallets delete <wallet_name>
 ```
 
+## Wallet labels (BIP-329)
+
+`bdk-cli` can attach human-readable labels to a wallet's transactions, UTXOs and addresses, and import and export them in the [BIP-329](https://github.com/bitcoin/bips/blob/master/bip-0329.mediawiki) wallet labels format, so they can be moved to and from other wallets.
+
+Labels are stored in a `labels.jsonl` file in the wallet's data directory, for example `~/.bdk-bitcoin/<wallet_name>/labels.jsonl`. The file is only readable by its owner, and is independent of the wallet's database (sqlite or redb). Only the commands described here read it, so a damaged labels file cannot get in the way of other commands such as `balance`.
+
+To label a transaction, a UTXO (`<txid>:<vout>`) or an address, give exactly one of `--txid`, `--utxo` or `--address`, and the label with `--text`:
+
+```shell
+cargo run --features <list-of-features> -- wallet --wallet <wallet_name> label --txid <txid> --text "March salary"
+cargo run --features <list-of-features> -- wallet --wallet <wallet_name> label --utxo <txid>:<vout> --text "Cold storage coin"
+cargo run --features <list-of-features> -- wallet --wallet <wallet_name> label --address <address> --text "From Alice"
+```
+
+Setting a label again replaces the previous one. A transaction or a UTXO can only be labelled once the wallet knows about it, so sync the wallet first. An address must belong to the wallet and to the wallet's network.
+
+The `transactions`, `unspent` and `unused_address` commands show a `label` field for the items that have a label, and leave it out for the others. If the labels file cannot be read, these commands print a warning and carry on without labels, while `label`, `import_labels` and `export_labels` fail and name the file.
+
+To write the wallet's labels to a BIP-329 file, and to read labels from one:
+
+```shell
+cargo run --features <list-of-features> -- wallet --wallet <wallet_name> export_labels <file>
+cargo run --features <list-of-features> -- wallet --wallet <wallet_name> import_labels <file> [--strategy <keep-existing|overwrite>]
+```
+
+An exported file replaces any file already at that path, and is only readable by its owner. When an imported label is for something that already has a label, `--strategy keep-existing` (the default) keeps the wallet's label and `--strategy overwrite` replaces it. A file that cannot be read in full is rejected, and nothing is imported from it. Labels for things the wallet does not know about are kept, so a file from another wallet can be imported before the wallet has synced.
+
+> [!NOTE]
+> BIP-329 output labels have a `spendable` flag, which other wallets use to mark a coin as frozen. `bdk-cli` stores and exports the flag, and labelling a UTXO never changes it, but importing `spendable: false` does not lock the coin in `bdk-cli`. To stop a UTXO from being spent, use the `lock_utxo` command.
+>
+> There is no command to remove a label yet.
+
 ## Adding new features/command
 
 This [guide](./NEW_FEATURE.md) explains how to add a new command/feature to bdk-cli's modular architecture.
