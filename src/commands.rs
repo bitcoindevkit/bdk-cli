@@ -20,10 +20,11 @@ use crate::handlers::{
     descriptor::DescriptorCommand,
     key::{DeriveKeyCommand, GenerateKeyCommand, RestoreKeyCommand},
     offline::{
-        BalanceCommand, BumpFeeCommand, CombinePsbtCommand, CreateTxCommand, ExtractPsbtCommand,
-        FinalizePsbtCommand, LabelCommand, LockUtxoCommand, LockedUtxosCommand, NewAddressCommand,
-        PoliciesCommand, PublicDescriptorCommand, SignCommand, TransactionsCommand,
-        UnlockUtxoCommand, UnspentCommand, UnusedAddressCommand,
+        BalanceCommand, BumpFeeCommand, CombinePsbtCommand, CreateTxCommand, ExportLabelsCommand,
+        ExtractPsbtCommand, FinalizePsbtCommand, ImportLabelsCommand, LabelCommand,
+        LockUtxoCommand, LockedUtxosCommand, NewAddressCommand, PoliciesCommand,
+        PublicDescriptorCommand, SignCommand, TransactionsCommand, UnlockUtxoCommand,
+        UnspentCommand, UnusedAddressCommand,
     },
 };
 
@@ -491,6 +492,10 @@ pub enum OfflineWalletSubCommand {
     LockedUtxos(LockedUtxosCommand),
     /// Attach a BIP-329 label to a transaction, a UTXO or an address.
     Label(LabelCommand),
+    /// Import labels from a BIP-329 JSONL file.
+    ImportLabels(ImportLabelsCommand),
+    /// Export the wallet's labels to a BIP-329 JSONL file.
+    ExportLabels(ExportLabelsCommand),
     /// Creates a new unsigned transaction from DNS payment instructions.
     #[cfg(feature = "dns_payment")]
     CreateDnsTx(CreateDnsTxCommand),

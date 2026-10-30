@@ -1032,4 +1032,226 @@ mod label_tests {
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(stdout.contains("my coin"), "REPL output: {stdout}");
     }
+
+    /// A BIP-329 file with the given lines, in a fresh directory.
+    fn bip329_file(lines: &[String]) -> (TempDir, PathBuf) {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("incoming.jsonl");
+        std::fs::write(&path, lines.join("\n") + "\n").unwrap();
+        (dir, path)
+    }
+
+    fn addr_line(address: &str, label: &str) -> String {
+        format!(r#"{{"type":"addr","ref":"{address}","label":"{label}"}}"#)
+    }
+
+    fn records(path: &PathBuf) -> Vec<Value> {
+        std::fs::read_to_string(path)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+
+    fn label_of(records: &[Value], reference: &str) -> Option<String> {
+        records
+            .iter()
+            .find(|record| record["ref"] == reference)
+            .map(|record| record["label"].as_str().unwrap().to_string())
+    }
+
+    #[test]
+    fn exported_labels_can_be_imported_into_another_wallet() {
+        let (cli, _temp_dir) = setup();
+        let (first, second) = (new_address(&cli), new_address(&cli));
+        wallet(&cli, &["label", "--address", &first, "--text", "one"])
+            .assert()
+            .success();
+        wallet(&cli, &["label", "--address", &second, "--text", "two"])
+            .assert()
+            .success();
+        let out_dir = TempDir::new().unwrap();
+        let backup = out_dir.path().join("backup.jsonl");
+
+        let exported = json(&cli, &["export_labels", backup.to_str().unwrap()]);
+        assert_eq!(exported["exported"], 2);
+        let content = std::fs::read_to_string(&backup).unwrap();
+        assert!(
+            content.ends_with('\n'),
+            "JSONL lines are newline terminated"
+        );
+
+        // An empty wallet takes the backup, and exports the very same file again.
+        let (other, other_dir) = setup();
+        let imported = json(&other, &["import_labels", backup.to_str().unwrap()]);
+        assert_eq!(imported["imported"], 2);
+        assert_eq!(imported["total"], 2);
+        let again = out_dir.path().join("again.jsonl");
+        wallet(&other, &["export_labels", again.to_str().unwrap()])
+            .assert()
+            .success();
+        assert_eq!(std::fs::read_to_string(&again).unwrap(), content);
+        assert_eq!(records(&labels_file(&other_dir)).len(), 2);
+    }
+
+    #[test]
+    fn import_keeps_existing_labels_by_default() {
+        let (cli, temp_dir) = setup();
+        let mine = new_address(&cli);
+        wallet(&cli, &["label", "--address", &mine, "--text", "mine"])
+            .assert()
+            .success();
+        let (_dir, incoming) = bip329_file(&[
+            addr_line(&mine, "theirs"),
+            addr_line(FOREIGN_REGTEST_ADDRESS, "new"),
+        ]);
+
+        let result = json(&cli, &["import_labels", incoming.to_str().unwrap()]);
+
+        assert_eq!(result["imported"], 1);
+        assert_eq!(result["total"], 2);
+        let stored = records(&labels_file(&temp_dir));
+        assert_eq!(label_of(&stored, &mine).as_deref(), Some("mine"));
+        assert_eq!(
+            label_of(&stored, FOREIGN_REGTEST_ADDRESS).as_deref(),
+            Some("new")
+        );
+    }
+
+    #[test]
+    fn import_can_overwrite_existing_labels() {
+        let (cli, temp_dir) = setup();
+        let mine = new_address(&cli);
+        wallet(&cli, &["label", "--address", &mine, "--text", "mine"])
+            .assert()
+            .success();
+        let (_dir, incoming) = bip329_file(&[
+            addr_line(&mine, "theirs"),
+            addr_line(FOREIGN_REGTEST_ADDRESS, "new"),
+        ]);
+
+        let result = json(
+            &cli,
+            &[
+                "import_labels",
+                incoming.to_str().unwrap(),
+                "--strategy",
+                "overwrite",
+            ],
+        );
+
+        assert_eq!(result["imported"], 2);
+        let stored = records(&labels_file(&temp_dir));
+        assert_eq!(label_of(&stored, &mine).as_deref(), Some("theirs"));
+    }
+
+    #[test]
+    fn import_keeps_what_the_wallet_does_not_know_and_whether_a_coin_is_frozen() {
+        let (cli, temp_dir) = setup();
+        let frozen = format!(
+            r#"{{"type":"output","ref":"{UNKNOWN_TXID}:1","label":"frozen","spendable":false}}"#
+        );
+        let (_dir, incoming) = bip329_file(&[
+            format!(r#"{{"type":"tx","ref":"{UNKNOWN_TXID}","label":"elsewhere"}}"#),
+            frozen,
+        ]);
+
+        wallet(&cli, &["import_labels", incoming.to_str().unwrap()])
+            .assert()
+            .success();
+
+        let stored = records(&labels_file(&temp_dir));
+        assert_eq!(stored.len(), 2);
+        let output = stored.iter().find(|r| r["type"] == "output").unwrap();
+        assert_eq!(output["spendable"], false);
+    }
+
+    #[test]
+    fn a_bad_import_file_changes_nothing() {
+        let (cli, temp_dir) = setup();
+        let mine = new_address(&cli);
+        wallet(&cli, &["label", "--address", &mine, "--text", "mine"])
+            .assert()
+            .success();
+        let before = std::fs::read_to_string(labels_file(&temp_dir)).unwrap();
+        let (_dir, incoming) = bip329_file(&[
+            addr_line(FOREIGN_REGTEST_ADDRESS, "fine"),
+            "this is not jsonl".to_string(),
+        ]);
+
+        wallet(&cli, &["import_labels", incoming.to_str().unwrap()])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("incoming.jsonl"));
+
+        assert_eq!(
+            std::fs::read_to_string(labels_file(&temp_dir)).unwrap(),
+            before
+        );
+    }
+
+    #[test]
+    fn importing_a_missing_file_names_it() {
+        let (cli, temp_dir) = setup();
+
+        wallet(&cli, &["import_labels", "/nonexistent/incoming.jsonl"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("/nonexistent/incoming.jsonl"));
+
+        assert!(!labels_file(&temp_dir).exists());
+    }
+
+    #[test]
+    fn exporting_without_labels_writes_an_empty_file() {
+        let (cli, _temp_dir) = setup();
+        let out_dir = TempDir::new().unwrap();
+        let backup = out_dir.path().join("backup.jsonl");
+
+        let exported = json(&cli, &["export_labels", backup.to_str().unwrap()]);
+
+        assert_eq!(exported["exported"], 0);
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), "");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_export_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (cli, _temp_dir) = setup();
+        let address = new_address(&cli);
+        wallet(&cli, &["label", "--address", &address, "--text", "x"])
+            .assert()
+            .success();
+        let out_dir = TempDir::new().unwrap();
+        let backup = out_dir.path().join("backup.jsonl");
+
+        wallet(&cli, &["export_labels", backup.to_str().unwrap()])
+            .assert()
+            .success();
+
+        let mode = std::fs::metadata(&backup).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[test]
+    fn imported_labels_survive_for_later_commands() {
+        let (cli, temp_dir, ext, int) = setup_with_descriptors();
+        let received = receive(&temp_dir, &ext, &int, 1);
+        let txid = received[0].txid.to_string();
+        let (_dir, incoming) = bip329_file(&[format!(
+            r#"{{"type":"tx","ref":"{txid}","label":"from a backup"}}"#
+        )]);
+
+        wallet(&cli, &["import_labels", incoming.to_str().unwrap()])
+            .assert()
+            .success();
+
+        let transactions = json(&cli, &["transactions"]);
+        assert_eq!(
+            label_in(&transactions, "txid", &txid).as_deref(),
+            Some("from a backup")
+        );
+    }
 }

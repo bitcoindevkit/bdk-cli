@@ -5,20 +5,23 @@ use crate::utils::labels::LabelStore;
 use crate::utils::output::{FormatOutput, ListResult};
 use crate::utils::parse_address;
 use crate::utils::types::{
-    AddressResult, BalanceResult, KeychainPair, LabelResult, PsbtResult, RawPsbt,
-    TransactionDetails, UnspentDetails,
+    AddressResult, BalanceResult, ExportLabelsResult, ImportLabelsResult, KeychainPair,
+    LabelResult, PsbtResult, RawPsbt, TransactionDetails, UnspentDetails,
 };
-use crate::utils::{parse_fee_rate, parse_outpoint, parse_recipient};
-use bdk_labels::{Bip329, LabelledWallet, OutputTarget};
+use crate::utils::{parse_fee_rate, parse_outpoint, parse_recipient, write_file_content};
+use bdk_labels::{Bip329, LabelledWallet, MergeStrategy, OutputTarget};
 use bdk_wallet::bitcoin::address::NetworkUnchecked;
 use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
 use bdk_wallet::bitcoin::{Address, Amount, FeeRate, OutPoint, Psbt, ScriptBuf, Sequence, Txid};
 use bdk_wallet::{KeychainKind, SignOptions};
-use clap::{ArgGroup, Parser};
+use clap::{ArgGroup, Parser, ValueEnum};
 use serde_json::json;
 use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::BufReader;
+use std::path::PathBuf;
 #[cfg(feature = "silent-payments")]
 use {
     crate::utils::common::parse_sp_code_value_pairs,
@@ -90,6 +93,8 @@ impl OfflineWalletSubCommand {
                 locked_utxos.execute(ctx)?.write_out(std::io::stdout())
             }
             Self::Label(label) => label.execute(ctx)?.write_out(std::io::stdout()),
+            Self::ImportLabels(import) => import.execute(ctx)?.write_out(std::io::stdout()),
+            Self::ExportLabels(export) => export.execute(ctx)?.write_out(std::io::stdout()),
             #[cfg(feature = "dns_payment")]
             Self::CreateDnsTx(_) => Err(Error::Generic(
                 "CreateDnsTx is dispatched asynchronously through main".to_string(),
@@ -1009,5 +1014,95 @@ fn unknown_to_wallet(error: bdk_labels::Error) -> Error {
              them, sync the wallet first."
         )),
         other => Error::LabelsError(other),
+    }
+}
+
+/// What to do with an imported label for something that already has a label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum LabelMergeStrategy {
+    /// Keep the wallet's label, ignore the imported one.
+    KeepExisting,
+    /// Replace the wallet's label with the imported one.
+    Overwrite,
+}
+
+impl From<LabelMergeStrategy> for MergeStrategy {
+    fn from(strategy: LabelMergeStrategy) -> Self {
+        match strategy {
+            LabelMergeStrategy::KeepExisting => MergeStrategy::KeepExisting,
+            LabelMergeStrategy::Overwrite => MergeStrategy::Overwrite,
+        }
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq)]
+pub struct ImportLabelsCommand {
+    /// The BIP-329 JSONL file to import.
+    #[arg(value_name = "FILE")]
+    pub file: PathBuf,
+
+    /// What to do with an imported label for something that already has a label.
+    #[arg(long = "strategy", value_enum, default_value_t = LabelMergeStrategy::KeepExisting)]
+    pub strategy: LabelMergeStrategy,
+}
+
+impl AppCommand<AppContext<OfflineOperations<'_>>> for ImportLabelsCommand {
+    type Output = ImportLabelsResult;
+
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let mut store = LabelStore::new(&ctx.datadir, &ctx.state.wallet_name);
+        let mut labels = store.load()?;
+
+        let file = File::open(&self.file)
+            .map_err(|e| Error::Generic(format!("Cannot open {}: {e}", self.file.display())))?;
+
+        let mut labelled = LabelledWallet {
+            wallet: &mut *ctx.state.wallet,
+            labels: &mut labels,
+        };
+        // The whole file is read before any label is merged, so a bad file imports nothing.
+        labelled
+            .import_labels(BufReader::new(file), self.strategy.into())
+            .map_err(|e| Error::Generic(format!("Cannot import {}: {e}", self.file.display())))?;
+        let imported = labelled.labels.diff().len();
+        labelled.persist(&mut store)?;
+
+        Ok(ImportLabelsResult {
+            file: self.file.display().to_string(),
+            imported,
+            total: labels.len(),
+        })
+    }
+}
+
+#[derive(Parser, Debug, Clone, PartialEq)]
+pub struct ExportLabelsCommand {
+    /// The BIP-329 JSONL file to write, an existing file is replaced.
+    #[arg(value_name = "FILE")]
+    pub file: PathBuf,
+}
+
+impl AppCommand<AppContext<OfflineOperations<'_>>> for ExportLabelsCommand {
+    type Output = ExportLabelsResult;
+
+    fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let store = LabelStore::new(&ctx.datadir, &ctx.state.wallet_name);
+        let mut labels = store.load()?;
+        let labelled = LabelledWallet {
+            wallet: &mut *ctx.state.wallet,
+            labels: &mut labels,
+        };
+
+        let mut jsonl = Vec::new();
+        labelled.export_labels(&mut jsonl)?;
+        let jsonl = String::from_utf8(jsonl).map_err(|e| Error::Generic(e.to_string()))?;
+        // Labels say what the wallet's owner spends on and with whom, so the export is owner-only.
+        write_file_content(&self.file, &jsonl)
+            .map_err(|e| Error::Generic(format!("Cannot write {}: {e}", self.file.display())))?;
+
+        Ok(ExportLabelsResult {
+            file: self.file.display().to_string(),
+            exported: labels.len(),
+        })
     }
 }

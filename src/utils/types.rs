@@ -151,6 +151,23 @@ pub struct StatusResult {
     pub message: String,
 }
 
+/// What importing a BIP-329 file did to the wallet's labels.
+#[derive(Serialize, Debug)]
+pub struct ImportLabelsResult {
+    pub file: String,
+    /// Labels added or replaced, which excludes the ones that were kept.
+    pub imported: usize,
+    /// All the wallet's labels, after the import.
+    pub total: usize,
+}
+
+/// What exporting the wallet's labels to a BIP-329 file wrote.
+#[derive(Serialize, Debug)]
+pub struct ExportLabelsResult {
+    pub file: String,
+    pub exported: usize,
+}
+
 /// The label that was set, shaped like the BIP-329 record it is stored as.
 #[derive(Serialize, Debug)]
 pub struct LabelResult {

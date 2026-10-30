@@ -279,7 +279,9 @@ pub fn command_requires_db(command: &OfflineWalletSubCommand) -> bool {
         | OfflineWalletSubCommand::Sign(_)
         | OfflineWalletSubCommand::ExtractPsbt(_)
         | OfflineWalletSubCommand::FinalizePsbt(_)
-        | OfflineWalletSubCommand::CombinePsbt(_) => false,
+        | OfflineWalletSubCommand::CombinePsbt(_)
+        | OfflineWalletSubCommand::ImportLabels(_)
+        | OfflineWalletSubCommand::ExportLabels(_) => false,
 
         #[cfg(feature = "message_signer")]
         OfflineWalletSubCommand::SignMessage(_) => true,
