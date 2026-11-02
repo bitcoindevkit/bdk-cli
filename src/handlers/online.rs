@@ -296,9 +296,7 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for SyncCommand {
                 print_wallet_events(&evicted_events);
             }
             #[cfg(feature = "cbf")]
-            KyotoClient { client } => sync_kyoto_client(wallet, client)
-                .await
-                .map_err(|e| Error::Generic(e.to_string()))?,
+            KyotoClient { client } => sync_kyoto_client(wallet, client).await?,
         }
         Ok(StatusResult {
             message: "Wallet synced successfully.".to_string(),
@@ -343,9 +341,7 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for BroadcastCommand {
 
         let tx = match (&self.psbt, &self.tx) {
             (Some(psbt), None) => {
-                let psbt = BASE64_STANDARD
-                    .decode(psbt)
-                    .map_err(|e| Error::Generic(e.to_string()))?;
+                let psbt = BASE64_STANDARD.decode(psbt)?;
                 let psbt: Psbt = Psbt::deserialize(&psbt)?;
                 is_final(&psbt)?;
                 psbt.extract_tx()?
