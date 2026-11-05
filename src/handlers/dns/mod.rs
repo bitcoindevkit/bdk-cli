@@ -6,12 +6,12 @@ use crate::handlers::dns::dns_payment_instructions::{
 };
 use crate::handlers::{AppContext, AsyncAppCommand, Init, OfflineOperations};
 use crate::utils::types::{PsbtResult, StatusResult};
-use crate::utils::{parse_dns_recipient, parse_fee_rate, parse_outpoint, parse_recipient};
+use crate::utils::{
+    check_standard_weight, max_signed_weight, parse_dns_recipient, parse_fee_rate,
+    parse_op_return_base64, parse_op_return_string, parse_outpoint, parse_recipient,
+};
 use bdk_wallet::KeychainKind;
-use bdk_wallet::bitcoin::base64::Engine;
-use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
-use bdk_wallet::bitcoin::script::PushBytesBuf;
-use bdk_wallet::bitcoin::{Amount, FeeRate, OutPoint, ScriptBuf, Sequence};
+use bdk_wallet::bitcoin::{Amount, FeeRate, OutPoint, ScriptBuf, Sequence, script::PushBytesBuf};
 use clap::Parser;
 use std::collections::BTreeMap;
 
@@ -67,16 +67,18 @@ pub struct CreateDnsTxCommand {
         env = "ADD_STRING",
         long = "add_string",
         short = 's',
-        conflicts_with = "add_data"
+        conflicts_with = "add_data",
+        value_parser = parse_op_return_string,
     )]
-    pub add_string: Option<String>,
+    pub add_string: Option<PushBytesBuf>,
     #[arg(
         env = "ADD_DATA",
         long = "add_data",
         short = 'o',
-        conflicts_with = "add_string"
+        conflicts_with = "add_string",
+        value_parser = parse_op_return_base64,
     )]
-    pub add_data: Option<String>,
+    pub add_data: Option<PushBytesBuf>,
 }
 
 impl AsyncAppCommand<AppContext<OfflineOperations<'_>>> for CreateDnsTxCommand {
@@ -138,12 +140,8 @@ impl AsyncAppCommand<AppContext<OfflineOperations<'_>>> for CreateDnsTxCommand {
         if let Some(unspendable) = &self.unspendable {
             tx_builder.unspendable(unspendable.to_vec());
         }
-        if let Some(base64_data) = &self.add_data {
-            let op_return_data = BASE64_STANDARD.decode(base64_data)?;
-            tx_builder.add_data(&PushBytesBuf::try_from(op_return_data)?);
-        } else if let Some(string_data) = &self.add_string {
-            let data = PushBytesBuf::try_from(string_data.as_bytes().to_vec())?;
-            tx_builder.add_data(&data);
+        if let Some(data) = self.add_data.as_ref().or(self.add_string.as_ref()) {
+            tx_builder.add_data(data);
         }
 
         let policies = vec![
@@ -160,6 +158,7 @@ impl AsyncAppCommand<AppContext<OfflineOperations<'_>>> for CreateDnsTxCommand {
         }
 
         let psbt = tx_builder.finish()?;
+        check_standard_weight(max_signed_weight(ctx.state.wallet, &psbt)?)?;
         Ok(PsbtResult::new(&psbt, Some(false)))
     }
 }

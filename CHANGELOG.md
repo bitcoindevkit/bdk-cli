@@ -20,6 +20,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Fixed `compile` silently accepting placeholder keys/hashes instead of validating them; added `--placeholders` to opt back into the old permissive behavior
 - Fixed `compile` panicking instead of returning an error when a key is valid on its own but the wrong shape for the requested script type (e.g. an x-only key under `sh`/`wsh`/`sh-wsh`, or an uncompressed key under `tr`)
 - Updated dependencies to resolve RUSTSEC advisories in rustls, rustls-webpki, webpki-roots, quinn-proto, h2 and zstd-sys; bumped async-hwi to 0.0.35.
+- Fixed `create_tx`, `create_dns_tx`, `create_sp_tx` and `bump_fee` building transactions over Bitcoin Core's 400,000 wu (100,000 vB) standard weight limit, which no default node relays
 
 ## [4.0.0]
 
