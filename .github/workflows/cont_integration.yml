@@ -39,6 +39,56 @@ jobs:
         run: cargo build ${{ matrix.features }}
       - name: Test
         run: cargo test ${{ matrix.features }}
+
+  build-windows:
+    name: Build on Windows (${{ matrix.features }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - --features default
+          - --no-default-features
+          - --no-default-features --features redb
+          - --features electrum,esplora,rpc
+          - --features hwi
+          - --all-features
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          cache: true
+      - name: Build
+        run: cargo build ${{ matrix.features }}
+
+  # bdk_testenv (electrsd) only builds on Unix, so the online tests are skipped on Windows.
+  test-windows:
+    name: Test on Windows (${{ matrix.features }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - --features default
+          - --features electrum,esplora,rpc
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          cache: true
+      - name: Test
+        run: cargo test ${{ matrix.features }}
+
   clippy:
     name: Clippy (${{ matrix.features }})
     runs-on: ubuntu-latest
