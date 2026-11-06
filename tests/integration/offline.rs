@@ -46,6 +46,63 @@ mod test_offline {
     }
 
     #[test]
+    fn test_sign_rejects_invalid_base64() {
+        let (cli, mut cmd_init) = setup_wallet_config();
+        cmd_init.assert().success();
+
+        cli.wallet_cmd(&["--wallet", WALLET_NAME, "sign", "!!!"])
+            .assert()
+            .code(1)
+            .stderr(predicate::str::contains("Base64 decoding error:"));
+    }
+
+    #[test]
+    fn test_sign_rejects_invalid_psbt() {
+        let (cli, mut cmd_init) = setup_wallet_config();
+        cmd_init.assert().success();
+
+        // Valid Base64 for "hello", which is not a serialized PSBT.
+        cli.wallet_cmd(&["--wallet", WALLET_NAME, "sign", "aGVsbG8="])
+            .assert()
+            .code(1)
+            .stderr(predicate::str::contains("PsbtError:"));
+    }
+
+    #[test]
+    fn test_finalize_psbt_rejects_invalid_base64() {
+        let (cli, mut cmd_init) = setup_wallet_config();
+        cmd_init.assert().success();
+
+        cli.wallet_cmd(&["--wallet", WALLET_NAME, "finalize_psbt", "!!!"])
+            .assert()
+            .code(1)
+            .stderr(predicate::str::contains("Base64 decoding error:"));
+    }
+
+    #[test]
+    fn test_finalize_psbt_rejects_invalid_psbt() {
+        let (cli, mut cmd_init) = setup_wallet_config();
+        cmd_init.assert().success();
+
+        // Valid Base64 for "hello", which is not a serialized PSBT.
+        cli.wallet_cmd(&["--wallet", WALLET_NAME, "finalize_psbt", "aGVsbG8="])
+            .assert()
+            .code(1)
+            .stderr(predicate::str::contains("PsbtError:"));
+    }
+
+    #[test]
+    fn test_broadcast_rejects_invalid_base64() {
+        let (cli, mut cmd_init) = setup_wallet_config();
+        cmd_init.assert().success();
+
+        cli.wallet_cmd(&["--wallet", WALLET_NAME, "broadcast", "--psbt", "!!!"])
+            .assert()
+            .code(1)
+            .stderr(predicate::str::contains("Base64 decoding error:"));
+    }
+
+    #[test]
     fn test_new_and_unused_address() {
         let (cli, mut cmd_init) = setup_wallet_config();
         cmd_init.assert().success();
