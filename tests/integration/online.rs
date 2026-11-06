@@ -1,4 +1,4 @@
-#[cfg(feature = "electrum")]
+#[cfg(all(unix, feature = "electrum"))]
 mod test_online {
     use crate::common::{BdkCli, wait_for_electrum_tip};
     use assert_cmd::Command;
@@ -1111,7 +1111,7 @@ mod test_online {
     }
 }
 
-#[cfg(feature = "esplora")]
+#[cfg(all(unix, feature = "esplora"))]
 mod test_esplora {
     use crate::common::{BdkCli, wait_for_electrum_tip};
     use bdk_testenv::{TestEnv, bitcoincore_rpc::RpcApi};
