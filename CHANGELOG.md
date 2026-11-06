@@ -22,6 +22,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Updated dependencies to resolve RUSTSEC advisories in rustls, rustls-webpki, webpki-roots, quinn-proto, h2 and zstd-sys; bumped async-hwi to 0.0.35.
 - Fixed `create_tx`, `create_dns_tx`, `create_sp_tx` and `bump_fee` building transactions over Bitcoin Core's 400,000 wu (100,000 vB) standard weight limit, which no default node relays
 - Fixed `key generate` silently producing a 24-word mnemonic for any `--entropy` value other than 12; values other than 12 and 24 are now rejected
+- Gated full-scan `stop_gap` to Electrum and Esplora, and made the Esplora parallel-request override optional
 
 ## [4.0.0]
 

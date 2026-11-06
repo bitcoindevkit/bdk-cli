@@ -82,10 +82,14 @@ impl OnlineWalletSubCommand {
 #[derive(Parser, Debug, PartialEq, Clone, Eq)]
 pub struct FullScanCommand {
     /// Stop searching addresses for transactions after finding an unused gap of this length.
-    #[arg(env = "STOP_GAP", long = "scan-stop-gap", default_value = "20")]
-    stop_gap: usize,
-    #[clap(long, default_value = "5")]
-    pub parallel_request: usize,
+    #[cfg(any(feature = "electrum", feature = "esplora"))]
+    #[arg(env = "STOP_GAP", long = "scan-stop-gap")]
+    stop_gap: Option<usize>,
+
+    /// Override the Esplora wallet's configured parallel request count.
+    #[cfg(feature = "esplora")]
+    #[arg(long)]
+    pub parallel_request: Option<usize>,
 }
 
 #[cfg(any(
@@ -120,8 +124,15 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
         match client {
             #[cfg(feature = "electrum")]
             Electrum { client, batch_size } => {
+                #[cfg(feature = "esplora")]
+                if self.parallel_request.is_some() {
+                    return Err(Error::Generic(
+                        "`--parallel-request` is only supported by the esplora backend".into(),
+                    ));
+                }
                 client.populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
-                let update = client.full_scan(request, self.stop_gap, *batch_size, false)?;
+                let update =
+                    client.full_scan(request, self.stop_gap.unwrap_or(20), *batch_size, false)?;
                 let events = wallet.apply_update_events(update)?;
                 print_wallet_events(&events);
             }
@@ -132,7 +143,11 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
                 parallel_requests,
             } => {
                 let update = client
-                    .full_scan(request, self.stop_gap, *parallel_requests)
+                    .full_scan(
+                        request,
+                        self.stop_gap.unwrap_or(20),
+                        self.parallel_request.unwrap_or(*parallel_requests),
+                    )
                     .await
                     .map_err(|e| *e)?;
                 let events = wallet.apply_update_events(update)?;
@@ -140,6 +155,20 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
             }
             #[cfg(feature = "rpc")]
             RpcClient { client } => {
+                #[cfg(any(feature = "electrum", feature = "esplora"))]
+                if self.stop_gap.is_some() {
+                    return Err(Error::Generic(
+                        "`--scan-stop-gap` is only supported by the electrum and esplora backends"
+                            .into(),
+                    ));
+                }
+                #[cfg(feature = "esplora")]
+                if self.parallel_request.is_some() {
+                    return Err(Error::Generic(
+                        "`--parallel-request` is only supported by the esplora backend".into(),
+                    ));
+                }
+
                 let blockchain_info = client.get_blockchain_info()?;
 
                 let genesis_block = bdk_wallet::bitcoin::constants::genesis_block(wallet.network());
@@ -187,12 +216,59 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
 
             #[cfg(feature = "cbf")]
             KyotoClient { client } => {
+                #[cfg(any(feature = "electrum", feature = "esplora"))]
+                if self.stop_gap.is_some() {
+                    return Err(Error::Generic(
+                        "`--scan-stop-gap` is only supported by the electrum and esplora backends"
+                            .into(),
+                    ));
+                }
+                #[cfg(feature = "esplora")]
+                if self.parallel_request.is_some() {
+                    return Err(Error::Generic(
+                        "`--parallel-request` is only supported by the esplora backend".into(),
+                    ));
+                }
+
                 sync_kyoto_client(wallet, client).await?;
             }
         }
         Ok(StatusResult {
             message: "Full scan completed successfully.".to_string(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FullScanCommand;
+    use clap::Parser;
+
+    #[test]
+    fn stop_gap_is_gated_to_supported_backends() {
+        #[cfg(any(feature = "electrum", feature = "esplora"))]
+        {
+            let default = FullScanCommand::try_parse_from(["bdk-cli"]).unwrap();
+            assert_eq!(default.stop_gap, None);
+            let custom =
+                FullScanCommand::try_parse_from(["bdk-cli", "--scan-stop-gap", "42"]).unwrap();
+            assert_eq!(custom.stop_gap, Some(42));
+        }
+
+        #[cfg(not(any(feature = "electrum", feature = "esplora")))]
+        assert!(FullScanCommand::try_parse_from(["bdk-cli", "--scan-stop-gap", "42"]).is_err());
+    }
+
+    #[cfg(feature = "esplora")]
+    #[test]
+    fn parallel_request_overrides_or_uses_wallet_config() {
+        let configured = 7;
+        let default = FullScanCommand::try_parse_from(["bdk-cli"]).unwrap();
+        assert_eq!(default.parallel_request.unwrap_or(configured), configured);
+
+        let custom =
+            FullScanCommand::try_parse_from(["bdk-cli", "--parallel-request", "2"]).unwrap();
+        assert_eq!(custom.parallel_request.unwrap_or(configured), 2);
     }
 }
 
