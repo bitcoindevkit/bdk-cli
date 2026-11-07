@@ -9,7 +9,7 @@ use bdk_wallet::keys::{
     DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey, bip39::WordCount,
 };
 use bdk_wallet::miniscript::{self, Segwitv0};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
 impl KeySubCommand {
     pub fn execute(&self, ctx: &mut AppContext<Init>) -> Result<(), Error> {
@@ -26,6 +26,26 @@ impl KeySubCommand {
         }
     }
 }
+/// Mnemonic lengths supported by `key generate`: 12 and 24, the lengths hardware
+/// wallets and most BIP39 wallets generate. A local mirror of `WordCount`, which
+/// doesn't derive `Clone` and so can't be parsed by clap directly.
+#[derive(Clone, Copy, ValueEnum, Debug, Eq, PartialEq)]
+pub enum MnemonicWordCount {
+    #[value(name = "12")]
+    Words12,
+    #[value(name = "24")]
+    Words24,
+}
+
+impl From<MnemonicWordCount> for WordCount {
+    fn from(word_count: MnemonicWordCount) -> Self {
+        match word_count {
+            MnemonicWordCount::Words12 => WordCount::Words12,
+            MnemonicWordCount::Words24 => WordCount::Words24,
+        }
+    }
+}
+
 #[derive(Parser, Debug, Clone, PartialEq, Eq)]
 pub struct GenerateKeyCommand {
     /// Entropy level based on number of random seed mnemonic words.
@@ -33,9 +53,10 @@ pub struct GenerateKeyCommand {
         env = "WORD_COUNT",
         short = 'e',
         long = "entropy",
-        default_value = "12"
+        value_enum,
+        default_value_t = MnemonicWordCount::Words12
     )]
-    word_count: usize,
+    word_count: MnemonicWordCount,
     /// Seed password.
     #[arg(env = "PASSWORD", short = 'p', long = "password")]
     password: Option<String>,
@@ -46,13 +67,8 @@ impl AppCommand<AppContext<Init>> for GenerateKeyCommand {
 
     fn execute(&self, ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
         let secp = Secp256k1::new();
-        let mnemonic_type = match self.word_count {
-            12 => WordCount::Words12,
-            _ => WordCount::Words24,
-        };
-
         let mnemonic: GeneratedKey<_, miniscript::BareCtx> =
-            Mnemonic::generate((mnemonic_type, Language::English))
+            Mnemonic::generate((self.word_count.into(), Language::English))
                 .map_err(|_| Error::Generic("Mnemonic generation error".to_string()))?;
         let mnemonic = mnemonic.into_key();
         let xkey: ExtendedKey = (mnemonic.clone(), self.password.clone()).into_extended_key()?;
