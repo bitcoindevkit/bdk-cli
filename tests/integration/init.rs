@@ -702,7 +702,7 @@ mod test_config {
     use serde_json::Value;
     use std::fs;
 
-    fn save_wallet(cli: &BdkCli, wallet_name: &str) {
+    fn save_wallet_cmd(cli: &BdkCli, wallet_name: &str, force: bool) -> assert_cmd::Command {
         let desc = cli
             .cmd("descriptor", &["--type", "tr"])
             .output()
@@ -718,7 +718,13 @@ mod test_config {
             .arg("wallet")
             .arg("--wallet")
             .arg(wallet_name)
-            .arg("config")
+            .arg("config");
+
+        if force {
+            command.arg("--force");
+        }
+
+        command
             .arg("--ext-descriptor")
             .arg(pub_desc["external"].as_str().unwrap())
             .arg("--int-descriptor")
@@ -731,11 +737,13 @@ mod test_config {
             .arg("--url")
             .arg("http://localhost:18443");
 
+        command.arg("--database-type").arg("sqlite");
+
         command
-            .arg("--database-type")
-            .arg("sqlite")
-            .assert()
-            .success();
+    }
+
+    fn save_wallet(cli: &BdkCli, wallet_name: &str) {
+        save_wallet_cmd(cli, wallet_name, false).assert().success();
     }
 
     #[cfg(feature = "rpc")]
@@ -1029,6 +1037,48 @@ rpc_password = "preserved-password"
             preserved["rpc_password"].as_str(),
             Some("preserved-password")
         );
+    }
+
+    #[test]
+    fn test_config_force_rejects_network_change() {
+        let temp_dir = TempDir::new().unwrap();
+        let regtest = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+        let signet = BdkCli::new("signet", Some(temp_dir.path().to_path_buf()));
+        let wallet_name = "network_wallet";
+        let config_path = temp_dir.path().join("config.toml");
+
+        save_wallet(&regtest, wallet_name);
+        let before = fs::read_to_string(&config_path).unwrap();
+
+        save_wallet_cmd(&signet, wallet_name, true)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "Wallet 'network_wallet' is configured for network 'regtest', and --force cannot change it to 'signet'",
+            ));
+
+        let after = fs::read_to_string(&config_path).unwrap();
+        assert_eq!(
+            before, after,
+            "rejected --force must not change config.toml"
+        );
+    }
+
+    #[test]
+    fn test_config_force_same_network_updates_settings() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+        let wallet_name = "network_wallet";
+        let config_path = temp_dir.path().join("config.toml");
+
+        save_wallet(&cli, wallet_name);
+        let before = fs::read_to_string(&config_path).unwrap();
+
+        save_wallet_cmd(&cli, wallet_name, true).assert().success();
+
+        let after = fs::read_to_string(&config_path).unwrap();
+        assert_ne!(before, after, "--force should save the new descriptors");
+        assert!(after.contains("network = \"regtest\""));
     }
 }
 
