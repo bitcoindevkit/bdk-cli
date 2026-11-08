@@ -698,6 +698,40 @@ mod test_compile {
     const KEY_B: &str = "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd";
     const KEY_C: &str = "025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee6357";
 
+    /// A disjunction compiled for `tr` gets one leaf per spending path, so only the path
+    /// that is used gets revealed on-chain.
+    #[test]
+    fn test_compile_tr_splits_or_into_separate_leaves() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy = format!("or(pk({KEY_A}),pk({KEY_B}))");
+
+        cli.cmd("compile", &[&policy, "--type", "tr"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(format!(
+                ",{{pk({KEY_B}),pk({KEY_A})}}"
+            )))
+            .stdout(predicate::str::contains("or_b").not());
+    }
+
+    #[test]
+    fn test_compile_tr_splits_one_of_n_threshold_into_separate_leaves() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy = format!("thresh(1,pk({KEY_A}),pk({KEY_B}),pk({KEY_C}))");
+
+        cli.cmd("compile", &[&policy, "--type", "tr"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(format!("pk({KEY_A})")))
+            .stdout(predicate::str::contains(format!("pk({KEY_B})")))
+            .stdout(predicate::str::contains(format!("pk({KEY_C})")))
+            .stdout(predicate::str::contains("multi_a").not());
+    }
+
     /// The internal key is the randomized unspendable key and `r` is returned, never a key
     /// taken from the policy.
     #[test]
@@ -737,7 +771,7 @@ mod test_compile {
         cli.cmd("compile", &[&policy, "--type", "tr"])
             .assert()
             .success()
-            .stdout(predicate::str::contains(&format!("pk({KEY_A}))")));
+            .stdout(predicate::str::contains(format!("pk({KEY_A}))")));
     }
 
     /// A conjunction has a single spending path, so there is nothing to split.
@@ -797,6 +831,39 @@ mod test_compile {
             .assert()
             .failure()
             .stderr(predicate::str::contains("not safe"));
+    }
+
+    /// Uses placeholder keys, since only the number of branches matters here.
+    fn one_of_n_policy(n: usize) -> String {
+        let keys: Vec<String> = (1..=n).map(|i| format!("pk(K{i:04})")).collect();
+        format!("thresh(1,{})", keys.join(","))
+    }
+
+    #[test]
+    fn test_compile_tr_accepts_the_maximum_number_of_leaves() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        cli.cmd(
+            "compile",
+            &[&one_of_n_policy(1024), "--type", "tr", "--placeholders"],
+        )
+        .assert()
+        .success();
+    }
+
+    #[test]
+    fn test_compile_tr_rejects_more_than_the_maximum_number_of_leaves() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        cli.cmd(
+            "compile",
+            &[&one_of_n_policy(1025), "--type", "tr", "--placeholders"],
+        )
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("taproot leaves"));
     }
 }
 
