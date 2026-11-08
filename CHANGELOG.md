@@ -22,6 +22,9 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Updated dependencies to resolve RUSTSEC advisories in rustls, rustls-webpki, webpki-roots, quinn-proto, h2 and zstd-sys; bumped async-hwi to 0.0.35.
 - Fixed `create_tx`, `create_dns_tx`, `create_sp_tx` and `bump_fee` building transactions over Bitcoin Core's 400,000 wu (100,000 vB) standard weight limit, which no default node relays
 - Fixed `key generate` silently producing a 24-word mnemonic for any `--entropy` value other than 12; values other than 12 and 24 are now rejected
+- Fixed `wallet config --force` silently changing an existing wallet's network, which left the wallet unable to load; changing the network is now rejected
+- Improved the network mismatch error to name the wallet, the network in its database and the network in `config.toml`, and to say how to fix it
+- Clarified the `--network` help text: wallet commands other than `wallet config` use the network saved in the wallet configuration
 
 ## [4.0.0]
 
