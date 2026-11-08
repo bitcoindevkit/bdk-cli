@@ -100,7 +100,12 @@ impl WalletRuntime {
         #[cfg(any(feature = "sqlite", feature = "redb"))]
         if require_db {
             let mut persister = self.create_persister()?;
-            let wallet = new_persisted_wallet(self.network, &mut persister, &self.wallet_opts)?;
+            let wallet = new_persisted_wallet(
+                &self.wallet_name,
+                self.network,
+                &mut persister,
+                &self.wallet_opts,
+            )?;
             return Ok(RuntimeWallet::Persisted(
                 Box::new(wallet),
                 Box::new(persister),

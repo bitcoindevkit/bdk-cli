@@ -7,7 +7,9 @@ use bdk_redb::redb::TableHandle;
 use bdk_wallet::Wallet;
 use bdk_wallet::bitcoin::Network;
 #[cfg(any(feature = "sqlite", feature = "redb"))]
-use bdk_wallet::{KeychainKind, PersistedWallet, WalletPersister};
+use bdk_wallet::{
+    KeychainKind, LoadError, LoadMismatch, LoadWithPersistError, PersistedWallet, WalletPersister,
+};
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 use clap::ValueEnum;
 
@@ -62,6 +64,7 @@ impl WalletPersister for Persister {
 
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 pub(crate) fn new_persisted_wallet<P: WalletPersister>(
+    wallet_name: &str,
     network: Network,
     persister: &mut P,
     wallet_opts: &WalletOpts,
@@ -92,7 +95,16 @@ where
     let wallet_opt = wallet_load_params
         .check_network(network)
         .load_wallet(persister)
-        .map_err(|e| Error::Generic(e.to_string()))?;
+        .map_err(|e| match e {
+            LoadWithPersistError::InvalidChangeSet(LoadError::Mismatch(
+                LoadMismatch::Network { loaded, expected },
+            )) => Error::NetworkMismatch {
+                wallet_name: wallet_name.to_owned(),
+                db_network: loaded,
+                config_network: expected,
+            },
+            other => Error::Generic(other.to_string()),
+        })?;
 
     let wallet = match wallet_opt {
         Some(wallet) => wallet,

@@ -1080,6 +1080,37 @@ rpc_password = "preserved-password"
         assert_ne!(before, after, "--force should save the new descriptors");
         assert!(after.contains("network = \"regtest\""));
     }
+
+    #[test]
+    fn test_network_mismatch_error_names_wallet_and_networks() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+        let wallet_name = "mismatch_wallet";
+        let config_path = temp_dir.path().join("config.toml");
+
+        save_wallet(&cli, wallet_name);
+
+        // Create the wallet database on regtest.
+        cli.wallet_cmd(&["--wallet", wallet_name, "new_address"])
+            .assert()
+            .success();
+
+        // Make config.toml disagree with the database.
+        let config = fs::read_to_string(&config_path).unwrap();
+        assert!(config.contains("network = \"regtest\""));
+        fs::write(
+            &config_path,
+            config.replace("network = \"regtest\"", "network = \"signet\""),
+        )
+        .unwrap();
+
+        cli.wallet_cmd(&["--wallet", wallet_name, "new_address"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "Network mismatch for wallet 'mismatch_wallet': its database uses 'regtest', but config.toml has 'signet'",
+            ));
+    }
 }
 
 //  SILENT PAYMENTS
