@@ -14,6 +14,7 @@ use bdk_wallet::Wallet;
     feature = "rpc"
 ))]
 use bdk_wallet::WalletEvent;
+use bdk_wallet::bitcoin::address::NetworkUnchecked;
 use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
@@ -69,17 +70,44 @@ pub(crate) fn is_final(psbt: &Psbt) -> Result<(), Error> {
 }
 
 /// Parse the recipient (Address,Amount) argument from cli input.
-pub(crate) fn parse_recipient(s: &str) -> Result<(ScriptBuf, u64), String> {
+pub(crate) fn parse_recipient(s: &str) -> Result<(Address<NetworkUnchecked>, u64), String> {
     let parts: Vec<_> = s.split(':').collect();
     if parts.len() != 2 {
         return Err("Invalid format".to_string());
     }
-    let addr = Address::from_str(parts[0])
-        .map_err(|e| e.to_string())?
-        .assume_checked();
+    let addr = Address::from_str(parts[0]).map_err(|e| e.to_string())?;
     let val = u64::from_str(parts[1]).map_err(|e| e.to_string())?;
 
-    Ok((addr.script_pubkey(), val))
+    Ok((addr, val))
+}
+
+/// Return the network an unchecked address belongs to.
+fn address_network(address: &Address<NetworkUnchecked>) -> Result<Network, Error> {
+    [
+        Network::Bitcoin,
+        Network::Testnet,
+        Network::Testnet4,
+        Network::Signet,
+        Network::Regtest,
+    ]
+    .into_iter()
+    .find(|network| address.is_valid_for_network(*network))
+    .ok_or(Error::Generic(format!("Invalid address: {address:?}")))
+}
+
+/// Convert a recipient address to a script pubkey, requiring the wallet's network.
+pub(crate) fn recipient_script(
+    address: &Address<NetworkUnchecked>,
+    network: Network,
+) -> Result<ScriptBuf, Error> {
+    match address.clone().require_network(network) {
+        Ok(checked) => Ok(checked.script_pubkey()),
+        Err(_) => Err(Error::Generic(format!(
+            "Network mismatch: expected {network}, found {} for {}",
+            address_network(address)?,
+            address.clone().assume_checked()
+        ))),
+    }
 }
 
 #[cfg(any(feature = "electrum", feature = "esplora", feature = "rpc"))]
