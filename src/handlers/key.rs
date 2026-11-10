@@ -154,7 +154,7 @@ impl AppCommand<AppContext<Init>> for RestoreKeyCommand {
         let secp = Secp256k1::new();
 
         let mnemonic = Mnemonic::parse_in(Language::English, &self.mnemonic)?;
-        let xkey: ExtendedKey = (mnemonic.clone(), &self.password).0.into_extended_key()?;
+        let xkey: ExtendedKey = (mnemonic.clone(), self.password.clone()).into_extended_key()?;
         let xprv = xkey.into_xprv(ctx.network.into()).ok_or_else(|| {
             Error::Generic("Privatekey info not found (should not happen)".to_string())
         })?;

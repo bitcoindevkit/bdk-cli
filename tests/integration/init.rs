@@ -132,6 +132,43 @@ mod test_key {
             "The restored fingerprint does not match the generated fingerprint!"
         );
     }
+
+    #[test]
+    fn test_cli_key_restore_with_password() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let generate_cmd = cli
+            .key_cmd(&["generate", "--password", "foo"])
+            .output()
+            .expect("Failed to execute generate command");
+        assert!(generate_cmd.status.success(), "Generate command failed");
+        let generate_json: Value =
+            serde_json::from_slice(&generate_cmd.stdout).expect("Failed to parse JSON");
+        let mnemonic = generate_json["mnemonic"].as_str().unwrap();
+
+        // Restoring with the same password must give back the same key
+        let restore_cmd = cli
+            .key_cmd(&["restore", "--mnemonic", mnemonic, "--password", "foo"])
+            .output()
+            .expect("Failed to execute restore command");
+        assert!(restore_cmd.status.success(), "Restore command failed");
+        let restore_json: Value =
+            serde_json::from_slice(&restore_cmd.stdout).expect("Failed to parse JSON");
+        assert_eq!(generate_json["xprv"], restore_json["xprv"]);
+        assert_eq!(generate_json["fingerprint"], restore_json["fingerprint"]);
+
+        // Restoring without the password must give a different key
+        let no_password_cmd = cli
+            .key_cmd(&["restore", "--mnemonic", mnemonic])
+            .env_remove("PASSWORD")
+            .output()
+            .expect("Failed to execute restore command");
+        assert!(no_password_cmd.status.success(), "Restore command failed");
+        let no_password_json: Value =
+            serde_json::from_slice(&no_password_cmd.stdout).expect("Failed to parse JSON");
+        assert_ne!(generate_json["xprv"], no_password_json["xprv"]);
+    }
 }
 
 // --- WALLETS COMMAND TESTS ---
