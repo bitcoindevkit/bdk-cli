@@ -730,6 +730,178 @@ mod test_compile {
             .failure()
             .stderr(predicate::str::contains("Invalid policy"));
     }
+
+    const KEY_A: &str = "02e5b88fdb71c696e1a473f309a47535b7190e21a22bd25e7fc8bd055db3bba12f";
+    const KEY_B: &str = "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd";
+    const KEY_C: &str = "025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee6357";
+
+    /// A disjunction compiled for `tr` gets one leaf per spending path, so only the path
+    /// that is used gets revealed on-chain.
+    #[test]
+    fn test_compile_tr_splits_or_into_separate_leaves() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy = format!("or(pk({KEY_A}),pk({KEY_B}))");
+
+        cli.cmd("compile", &[&policy, "--type", "tr"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(format!(
+                ",{{pk({KEY_B}),pk({KEY_A})}}"
+            )))
+            .stdout(predicate::str::contains("or_b").not());
+    }
+
+    #[test]
+    fn test_compile_tr_splits_one_of_n_threshold_into_separate_leaves() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy = format!("thresh(1,pk({KEY_A}),pk({KEY_B}),pk({KEY_C}))");
+
+        cli.cmd("compile", &[&policy, "--type", "tr"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(format!("pk({KEY_A})")))
+            .stdout(predicate::str::contains(format!("pk({KEY_B})")))
+            .stdout(predicate::str::contains(format!("pk({KEY_C})")))
+            .stdout(predicate::str::contains("multi_a").not());
+    }
+
+    /// The internal key is the randomized unspendable key and `r` is returned, never a key
+    /// taken from the policy.
+    #[test]
+    fn test_compile_tr_uses_unspendable_internal_key() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy = format!("or(pk({KEY_A}),pk({KEY_B}))");
+
+        let output = cli
+            .cmd("compile", &[&policy, "--type", "tr"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+
+        let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let descriptor = json["descriptor"].as_str().unwrap();
+        let internal_key = descriptor
+            .strip_prefix("tr(")
+            .and_then(|d| d.split(',').next())
+            .unwrap();
+
+        // The internal key is a 32-byte x-only key that is none of the policy keys.
+        assert_eq!(internal_key.len(), 64);
+        assert!(!KEY_A.contains(internal_key) && !KEY_B.contains(internal_key));
+        assert_eq!(json["r"].as_str().unwrap().len(), 64);
+    }
+
+    /// A single key used to fail under rust-miniscript's `compile_tr`.
+    #[test]
+    fn test_compile_tr_single_key_policy() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy = format!("pk({KEY_A})");
+
+        cli.cmd("compile", &[&policy, "--type", "tr"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(format!("pk({KEY_A}))")));
+    }
+
+    /// A conjunction has a single spending path, so there is nothing to split.
+    #[test]
+    fn test_compile_tr_keeps_conjunction_in_one_leaf() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy = format!("and(pk({KEY_A}),pk({KEY_B}))");
+
+        cli.cmd("compile", &[&policy, "--type", "tr"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("and_v("))
+            .stdout(predicate::str::contains(",{").not());
+    }
+
+    #[test]
+    fn test_compile_tr_keeps_k_of_n_threshold_in_one_leaf() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy = format!("thresh(2,pk({KEY_A}),pk({KEY_B}),pk({KEY_C}))");
+
+        cli.cmd("compile", &[&policy, "--type", "tr"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("multi_a(2,"))
+            .stdout(predicate::str::contains(",{").not());
+    }
+
+    /// Validation runs on the whole policy, not per leaf: a key reused across two
+    /// branches is rejected just as it is for the other script types.
+    #[test]
+    fn test_compile_tr_rejects_key_reused_across_branches() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy = format!("or(pk({KEY_A}),and(pk({KEY_A}),pk({KEY_B})))");
+
+        for script_type in ["tr", "wsh"] {
+            cli.cmd("compile", &[&policy, "--type", script_type])
+                .assert()
+                .failure()
+                .stderr(predicate::str::contains("duplicate keys"));
+        }
+    }
+
+    #[test]
+    fn test_compile_tr_rejects_unsafe_branch() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        let policy = format!("or(pk({KEY_A}),older(10))");
+
+        cli.cmd("compile", &[&policy, "--type", "tr"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("not safe"));
+    }
+
+    /// Uses placeholder keys, since only the number of branches matters here.
+    fn one_of_n_policy(n: usize) -> String {
+        let keys: Vec<String> = (1..=n).map(|i| format!("pk(K{i:04})")).collect();
+        format!("thresh(1,{})", keys.join(","))
+    }
+
+    #[test]
+    fn test_compile_tr_accepts_the_maximum_number_of_leaves() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        cli.cmd(
+            "compile",
+            &[&one_of_n_policy(1024), "--type", "tr", "--placeholders"],
+        )
+        .assert()
+        .success();
+    }
+
+    #[test]
+    fn test_compile_tr_rejects_more_than_the_maximum_number_of_leaves() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
+
+        cli.cmd(
+            "compile",
+            &[&one_of_n_policy(1025), "--type", "tr", "--placeholders"],
+        )
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("taproot leaves"));
+    }
 }
 
 // --- CONFIG COMMAND TESTS ---
