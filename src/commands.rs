@@ -78,6 +78,8 @@ use crate::handlers::hwi::{HwiCommand, WalletHwiCommand};
 #[command(version, about, long_about = None)]
 pub struct CliOpts {
     /// Sets the network: bitcoin, testnet, testnet4, signet, or regtest.
+    /// Wallet commands other than `wallet config` use the network saved in
+    /// the wallet configuration.
     #[arg(
         env = "NETWORK",
         short = 'n',

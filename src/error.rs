@@ -67,6 +67,16 @@ pub enum BDKCliError {
     #[error("Miniscript compiler error: {0}")]
     MiniscriptCompilerError(#[from] bdk_wallet::miniscript::policy::compiler::CompilerError),
 
+    #[cfg(any(feature = "sqlite", feature = "redb"))]
+    #[error(
+        "Network mismatch for wallet '{wallet_name}': its database uses '{db_network}', but config.toml has '{config_network}'. Set network = \"{db_network}\" for this wallet in config.toml."
+    )]
+    NetworkMismatch {
+        wallet_name: String,
+        db_network: bdk_wallet::bitcoin::Network,
+        config_network: bdk_wallet::bitcoin::Network,
+    },
+
     #[error(
         "Transaction can weigh up to {weight:#} ({} vB) once signed, over the {:#} ({} vB) \
          standard limit, so Bitcoin Core nodes will not relay it",
