@@ -491,3 +491,69 @@ mod multipath_tests {
             .failure();
     }
 }
+
+#[cfg(all(feature = "repl", feature = "sqlite"))]
+mod repl_persist_tests {
+    use crate::common::BdkCli;
+    use serde_json::Value;
+    use tempfile::TempDir;
+
+    const WALLET_NAME: &str = "repl_persist_wallet";
+
+    fn setup_repl_wallet() -> (BdkCli, TempDir) {
+        let temp = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp.path().to_path_buf()));
+
+        let desc = cli.cmd("descriptor", &["--type", "tr"]).output().unwrap();
+        let v: Value = serde_json::from_slice(&desc.stdout).unwrap();
+        let ext = v["private_descriptors"]["external"].as_str().unwrap();
+        let int = v["private_descriptors"]["internal"].as_str().unwrap();
+
+        cli.build_base_cmd()
+            .args(["wallet", "--wallet", WALLET_NAME, "config"])
+            .args(["--ext-descriptor", ext, "--int-descriptor", int])
+            .args(["--database-type", "sqlite"])
+            .assert()
+            .success();
+
+        (cli, temp)
+    }
+
+    /// Runs `wallet new_address` in a fresh REPL process and returns the index it printed.
+    fn repl_new_address_index(cli: &BdkCli) -> u64 {
+        let output = cli
+            .build_base_cmd()
+            .args(["repl", "--wallet", WALLET_NAME])
+            .write_stdin("wallet new_address\nexit\n")
+            .output()
+            .expect("failed to run repl");
+
+        assert!(
+            output.status.success(),
+            "repl exited non-zero: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let marker = "\"index\": ";
+        let start = stdout
+            .find(marker)
+            .unwrap_or_else(|| panic!("new_address output missing index:\n{stdout}"))
+            + marker.len();
+        stdout[start..]
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .parse()
+            .expect("index was not a number")
+    }
+
+    #[test]
+    fn repl_persists_address_index_across_sessions() {
+        let (cli, _temp) = setup_repl_wallet();
+
+        assert_eq!(repl_new_address_index(&cli), 0);
+        // A second, separate REPL process must see the index persisted by the first one.
+        assert_eq!(repl_new_address_index(&cli), 1);
+    }
+}

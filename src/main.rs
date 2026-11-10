@@ -202,6 +202,10 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
                 .await
                 .map_err(Error::Generic)?;
 
+                // Persist after every command so the session's changes survive an exit,
+                // a crash, or Ctrl-C, matching the non-REPL path.
+                wallet.persist()?;
+
                 if should_exit {
                     break;
                 }
