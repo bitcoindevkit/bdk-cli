@@ -82,10 +82,43 @@ impl OnlineWalletSubCommand {
 #[derive(Parser, Debug, PartialEq, Clone, Eq)]
 pub struct FullScanCommand {
     /// Stop searching addresses for transactions after finding an unused gap of this length.
-    #[arg(env = "STOP_GAP", long = "scan-stop-gap", default_value = "20")]
-    stop_gap: usize,
+    /// Only available with the `electrum` and `esplora` backends. When the flag is omitted,
+    /// the `STOP_GAP` environment variable is read if it is set. [default: 20]
+    #[cfg(any(feature = "electrum", feature = "esplora"))]
+    #[arg(long = "scan-stop-gap")]
+    stop_gap: Option<usize>,
+
     #[clap(long, default_value = "5")]
     pub parallel_request: usize,
+}
+
+#[cfg(any(feature = "electrum", feature = "esplora"))]
+const DEFAULT_STOP_GAP: usize = 20;
+
+#[cfg(any(feature = "electrum", feature = "esplora"))]
+impl FullScanCommand {
+    /// Resolves the stop gap, in order, from `--scan-stop-gap`, the `STOP_GAP` environment
+    /// variable, or the default.
+    ///
+    /// `STOP_GAP` is read here instead of through clap so that a globally exported value is
+    /// ignored by backends that do not support the option (RPC and CBF in a multi-backend
+    /// build) instead of turning their scans into an error.
+    fn stop_gap(&self) -> Result<usize, Error> {
+        if let Some(stop_gap) = self.stop_gap {
+            return Ok(stop_gap);
+        }
+        match std::env::var("STOP_GAP") {
+            Ok(value) => value.parse().map_err(|_| {
+                Error::Generic(format!(
+                    "`STOP_GAP` must be a positive integer, got `{value}`"
+                ))
+            }),
+            Err(std::env::VarError::NotPresent) => Ok(DEFAULT_STOP_GAP),
+            Err(std::env::VarError::NotUnicode(_)) => Err(Error::Generic(
+                "`STOP_GAP` is not valid unicode".to_string(),
+            )),
+        }
+    }
 }
 
 #[cfg(any(
@@ -121,7 +154,7 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
             #[cfg(feature = "electrum")]
             Electrum { client, batch_size } => {
                 client.populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
-                let update = client.full_scan(request, self.stop_gap, *batch_size, false)?;
+                let update = client.full_scan(request, self.stop_gap()?, *batch_size, false)?;
                 let events = wallet.apply_update_events(update)?;
                 print_wallet_events(&events);
             }
@@ -132,7 +165,7 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
                 parallel_requests,
             } => {
                 let update = client
-                    .full_scan(request, self.stop_gap, *parallel_requests)
+                    .full_scan(request, self.stop_gap()?, *parallel_requests)
                     .await
                     .map_err(|e| *e)?;
                 let events = wallet.apply_update_events(update)?;
@@ -140,6 +173,14 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
             }
             #[cfg(feature = "rpc")]
             RpcClient { client } => {
+                #[cfg(any(feature = "electrum", feature = "esplora"))]
+                if self.stop_gap.is_some() {
+                    return Err(Error::Generic(
+                        "`--scan-stop-gap` is only supported by the electrum and esplora backends"
+                            .into(),
+                    ));
+                }
+
                 let blockchain_info = client.get_blockchain_info()?;
 
                 let genesis_block = bdk_wallet::bitcoin::constants::genesis_block(wallet.network());
@@ -187,12 +228,41 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
 
             #[cfg(feature = "cbf")]
             KyotoClient { client } => {
+                #[cfg(any(feature = "electrum", feature = "esplora"))]
+                if self.stop_gap.is_some() {
+                    return Err(Error::Generic(
+                        "`--scan-stop-gap` is only supported by the electrum and esplora backends"
+                            .into(),
+                    ));
+                }
+
                 sync_kyoto_client(wallet, client).await?;
             }
         }
         Ok(StatusResult {
             message: "Full scan completed successfully.".to_string(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FullScanCommand;
+    use clap::Parser;
+
+    #[test]
+    fn stop_gap_is_gated_to_supported_backends() {
+        #[cfg(any(feature = "electrum", feature = "esplora"))]
+        {
+            let default = FullScanCommand::try_parse_from(["bdk-cli"]).unwrap();
+            assert_eq!(default.stop_gap, None);
+            let custom =
+                FullScanCommand::try_parse_from(["bdk-cli", "--scan-stop-gap", "42"]).unwrap();
+            assert_eq!(custom.stop_gap, Some(42));
+        }
+
+        #[cfg(not(any(feature = "electrum", feature = "esplora")))]
+        assert!(FullScanCommand::try_parse_from(["bdk-cli", "--scan-stop-gap", "42"]).is_err());
     }
 }
 

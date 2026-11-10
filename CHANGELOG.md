@@ -23,6 +23,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Fixed `create_tx`, `create_dns_tx`, `create_sp_tx` and `bump_fee` building transactions over Bitcoin Core's 400,000 wu (100,000 vB) standard weight limit, which no default node relays
 - Fixed `key restore` ignoring `--password`, which restored passphrase-protected mnemonics to the wrong key
 - Fixed `key generate` silently producing a 24-word mnemonic for any `--entropy` value other than 12; values other than 12 and 24 are now rejected
+- Gated `full_scan`'s `--scan-stop-gap` to the Electrum and Esplora backends that use it; RPC and CBF wallets now reject the flag instead of silently ignoring it, while a `STOP_GAP` environment variable keeps working for supported backends and no longer breaks unsupported ones
 
 ## [4.0.0]
 
