@@ -14,6 +14,9 @@ use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
 use bdk_wallet::bitcoin::{Address, Amount, FeeRate, OutPoint, Psbt, ScriptBuf, Sequence, Txid};
+use bdk_wallet::descriptor::ExtractPolicy;
+use bdk_wallet::descriptor::policy::{BuildSatisfaction, Condition};
+use bdk_wallet::signer::SignersContainer;
 use bdk_wallet::{KeychainKind, SignOptions};
 use clap::Parser;
 use serde_json::json;
@@ -255,6 +258,32 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
     type Output = PsbtResult;
 
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let mut condition = Condition::default();
+        for (keychain, descriptor) in ctx.state.wallet.keychains() {
+            let policy = descriptor
+                .extract_policy(
+                    &SignersContainer::default(),
+                    BuildSatisfaction::None,
+                    ctx.state.wallet.secp_ctx(),
+                )?
+                .expect("wallet descriptors must have a policy");
+
+            let policy_path = match keychain {
+                KeychainKind::External => self.external_policy.as_deref(),
+                KeychainKind::Internal => self.internal_policy.as_deref(),
+            }
+            .map(serde_json::from_str::<BTreeMap<String, Vec<usize>>>)
+            .transpose()?
+            .unwrap_or_default();
+
+            let policy_condition = policy
+                .get_condition(&policy_path)
+                .map_err(|e| Error::Generic(e.to_string()))?;
+            condition = condition
+                .merge(&policy_condition)
+                .map_err(|e| Error::Generic(e.to_string()))?;
+        }
+
         let mut tx_builder = ctx.state.wallet.build_tx();
 
         if self.send_all {
@@ -301,19 +330,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
             tx_builder.add_data(data);
         }
 
-        let policies = vec![
-            self.external_policy
-                .clone()
-                .map(|p| (p, KeychainKind::External)),
-            self.internal_policy
-                .clone()
-                .map(|p| (p, KeychainKind::Internal)),
-        ];
-
-        for (policy, keychain) in policies.into_iter().flatten() {
-            let policy = serde_json::from_str::<BTreeMap<String, Vec<usize>>>(&policy)?;
-            tx_builder.policy_path(policy, keychain);
-        }
+        tx_builder.set_condition(condition);
 
         let psbt = tx_builder.finish()?;
 
@@ -472,7 +489,9 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
 
         let unsigned_psbt = psbt.clone();
 
-        let finalized = ctx.state.wallet.sign(&mut psbt, SignOptions::default())?;
+        let wallet = &ctx.state.wallet;
+        ctx.state.signers.sign_psbt(wallet, &mut psbt)?;
+        let finalized = wallet.finalize_psbt(&mut psbt, SignOptions::default())?;
 
         if !finalized {
             return Err(Error::Generic(
@@ -488,16 +507,8 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
         }
 
         let secp = Secp256k1::new();
-        let mut external_signers = ctx
-            .state
-            .wallet
-            .get_signers(KeychainKind::External)
-            .as_key_map(&secp);
-        let internal_signers = ctx
-            .state
-            .wallet
-            .get_signers(KeychainKind::Internal)
-            .as_key_map(&secp);
+        let mut external_signers = ctx.state.signers.external.clone();
+        let internal_signers = ctx.state.signers.internal.clone();
         external_signers.extend(internal_signers);
 
         match external_signers.iter().next().expect("not empty") {
@@ -526,7 +537,8 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
             psbt_input.final_script_witness = None;
         }
 
-        let _resigned = ctx.state.wallet.sign(&mut psbt, SignOptions::default())?;
+        ctx.state.signers.sign_psbt(wallet, &mut psbt)?;
+        let _resigned = wallet.finalize_psbt(&mut psbt, SignOptions::default())?;
 
         let raw_tx = psbt.extract_tx()?;
 
@@ -653,7 +665,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for SignCommand {
     type Output = PsbtResult;
 
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
-        let wallet = &mut ctx.state.wallet;
+        let wallet = &ctx.state.wallet;
         let psbt_bytes = BASE64_STANDARD
             .decode(&self.psbt)
             .map_err(|e| Error::Generic(e.to_string()))?;
@@ -664,7 +676,8 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for SignCommand {
             trust_witness_utxo: self.trust_witness_utxo.unwrap_or(false),
             ..Default::default()
         };
-        let finalized = wallet.sign(&mut psbt, signopt)?;
+        ctx.state.signers.sign_psbt(wallet, &mut psbt)?;
+        let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
         Ok(PsbtResult::new(&psbt, Some(finalized)))
     }
 }

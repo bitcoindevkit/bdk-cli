@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     error::BDKCliError as Error,
-    persister::new_wallet,
+    persister::{WalletSigners, new_wallet},
     utils::{load_wallet_config, prepare_wallet_db_dir},
 };
 #[cfg(any(feature = "sqlite", feature = "redb"))]
@@ -111,6 +111,10 @@ impl WalletRuntime {
             self.network,
             &self.wallet_opts,
         )?)))
+    }
+
+    pub fn build_signers(&self) -> Result<WalletSigners, Error> {
+        WalletSigners::new(self.network, &self.wallet_opts)
     }
 
     #[cfg(any(
