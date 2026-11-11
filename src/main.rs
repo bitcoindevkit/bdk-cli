@@ -123,11 +123,13 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
             WalletSubCommand::Hwi(cmd) => {
                 let runtime = WalletRuntime::load(&home_dir, &wallet_name)?;
                 let mut wallet = runtime.build_wallet(false)?;
+                let signers = runtime.build_signers()?;
 
                 let mut ctx = AppContext::new_offline_wallet(
                     runtime.network,
                     runtime.home_dir.clone(),
                     &mut wallet,
+                    &signers,
                 );
 
                 cmd.run(&mut ctx, &wallet_name)

@@ -4,10 +4,12 @@ use crate::utils::descriptors::validate_descriptor_pair;
 use crate::utils::path_exists;
 #[cfg(feature = "redb")]
 use bdk_redb::redb::TableHandle;
+#[cfg(any(feature = "sqlite", feature = "redb"))]
+use bdk_wallet::KeychainKind;
+use bdk_wallet::Wallet;
 use bdk_wallet::bitcoin::{Network, NetworkKind, secp256k1::Secp256k1};
 use bdk_wallet::descriptor::IntoWalletDescriptor;
 use bdk_wallet::miniscript::descriptor::KeyMap;
-use bdk_wallet::{KeychainKind, Wallet};
 #[cfg(any(feature = "sqlite", feature = "redb"))]
 use bdk_wallet::{PersistedWallet, WalletPersister};
 #[cfg(any(feature = "sqlite", feature = "redb"))]

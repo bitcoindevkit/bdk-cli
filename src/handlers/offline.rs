@@ -489,7 +489,9 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
 
         let unsigned_psbt = psbt.clone();
 
-        let finalized = ctx.state.wallet.sign(&mut psbt, SignOptions::default())?;
+        let wallet = &ctx.state.wallet;
+        ctx.state.signers.sign_psbt(wallet, &mut psbt)?;
+        let finalized = wallet.finalize_psbt(&mut psbt, SignOptions::default())?;
 
         if !finalized {
             return Err(Error::Generic(
@@ -505,16 +507,8 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
         }
 
         let secp = Secp256k1::new();
-        let mut external_signers = ctx
-            .state
-            .wallet
-            .get_signers(KeychainKind::External)
-            .as_key_map(&secp);
-        let internal_signers = ctx
-            .state
-            .wallet
-            .get_signers(KeychainKind::Internal)
-            .as_key_map(&secp);
+        let mut external_signers = ctx.state.signers.external.clone();
+        let internal_signers = ctx.state.signers.internal.clone();
         external_signers.extend(internal_signers);
 
         match external_signers.iter().next().expect("not empty") {
@@ -543,7 +537,8 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
             psbt_input.final_script_witness = None;
         }
 
-        let _resigned = ctx.state.wallet.sign(&mut psbt, SignOptions::default())?;
+        ctx.state.signers.sign_psbt(wallet, &mut psbt)?;
+        let _resigned = wallet.finalize_psbt(&mut psbt, SignOptions::default())?;
 
         let raw_tx = psbt.extract_tx()?;
 
@@ -670,7 +665,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for SignCommand {
     type Output = PsbtResult;
 
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
-        let wallet = &mut ctx.state.wallet;
+        let wallet = &ctx.state.wallet;
         let psbt_bytes = BASE64_STANDARD
             .decode(&self.psbt)
             .map_err(|e| Error::Generic(e.to_string()))?;
@@ -681,7 +676,8 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for SignCommand {
             trust_witness_utxo: self.trust_witness_utxo.unwrap_or(false),
             ..Default::default()
         };
-        let finalized = wallet.sign(&mut psbt, signopt)?;
+        ctx.state.signers.sign_psbt(wallet, &mut psbt)?;
+        let finalized = wallet.finalize_psbt(&mut psbt, signopt)?;
         Ok(PsbtResult::new(&psbt, Some(finalized)))
     }
 }
