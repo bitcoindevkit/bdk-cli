@@ -49,18 +49,19 @@ impl From<MnemonicWordCount> for WordCount {
 
 #[derive(Parser, Debug, Clone, PartialEq, Eq)]
 pub struct GenerateKeyCommand {
-    /// Entropy level based on number of random seed mnemonic words.
+    /// Number of words in the generated mnemonic.
     #[arg(
         env = "WORD_COUNT",
-        short = 'e',
-        long = "entropy",
+        short = 'w',
+        long = "word_count",
         value_enum,
         default_value_t = MnemonicWordCount::Words12
     )]
     word_count: MnemonicWordCount,
-    /// Seed password.
-    #[arg(env = "PASSWORD", short = 'p', long = "password")]
-    password: Option<String>,
+    /// Optional BIP-39 passphrase. Restoring the key needs the same mnemonic and
+    /// passphrase; a different passphrase gives a different key, not an error.
+    #[arg(env = "PASSPHRASE", short = 'p', long = "passphrase")]
+    passphrase: Option<String>,
 }
 
 impl AppCommand<AppContext<Init>> for GenerateKeyCommand {
@@ -70,7 +71,7 @@ impl AppCommand<AppContext<Init>> for GenerateKeyCommand {
         let mnemonic: GeneratedKey<_, miniscript::BareCtx> =
             Mnemonic::generate((self.word_count.into(), Language::English))
                 .map_err(|_| Error::Generic("Mnemonic generation error".to_string()))?;
-        key_from_mnemonic(mnemonic.into_key(), self.password.clone(), ctx.network)
+        key_from_mnemonic(mnemonic.into_key(), self.passphrase.clone(), ctx.network)
     }
 }
 
@@ -125,9 +126,10 @@ pub struct RestoreKeyCommand {
     /// Seed mnemonic words, must be quoted (eg. "word1 word2 ...").
     #[arg(env = "MNEMONIC", short = 'm', long = "mnemonic")]
     mnemonic: String,
-    /// Seed password.
-    #[arg(env = "PASSWORD", short = 'p', long = "password")]
-    password: Option<String>,
+    /// Optional BIP-39 passphrase. Restoring the key needs the same mnemonic and
+    /// passphrase; a different passphrase gives a different key, not an error.
+    #[arg(env = "PASSPHRASE", short = 'p', long = "passphrase")]
+    passphrase: Option<String>,
 }
 
 impl AppCommand<AppContext<Init>> for RestoreKeyCommand {
@@ -135,7 +137,7 @@ impl AppCommand<AppContext<Init>> for RestoreKeyCommand {
 
     fn execute(&self, ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
         let mnemonic = Mnemonic::parse_in(Language::English, &self.mnemonic)?;
-        key_from_mnemonic(mnemonic, self.password.clone(), ctx.network)
+        key_from_mnemonic(mnemonic, self.passphrase.clone(), ctx.network)
     }
 }
 
@@ -143,11 +145,11 @@ impl AppCommand<AppContext<Init>> for RestoreKeyCommand {
 /// both `key generate` and `key restore`.
 fn key_from_mnemonic(
     mnemonic: Mnemonic,
-    password: Option<String>,
+    passphrase: Option<String>,
     network: Network,
 ) -> Result<KeyResult, Error> {
     let secp = Secp256k1::new();
-    let xkey: ExtendedKey = (mnemonic.clone(), password).into_extended_key()?;
+    let xkey: ExtendedKey = (mnemonic.clone(), passphrase).into_extended_key()?;
     let xprv = xkey.into_xprv(network.into()).ok_or_else(|| {
         Error::Generic("Privatekey info not found (should not happen)".to_string())
     })?;
