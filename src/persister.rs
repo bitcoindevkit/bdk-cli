@@ -43,17 +43,11 @@ pub(crate) struct WalletSigners {
 impl WalletSigners {
     pub(crate) fn new(network: Network, wallet_opts: &WalletOpts) -> Result<Self, Error> {
         let secp = Secp256k1::new();
-        let ext_is_multipath = validate_descriptor_pair(
+        validate_descriptor_pair(
             &wallet_opts.ext_descriptor,
             wallet_opts.int_descriptor.as_deref(),
             network,
         )?;
-
-        if ext_is_multipath {
-            return Err(Error::Generic(
-                "Multipath descriptors are not supported by WalletSigners yet.".to_string(),
-            ));
-        }
 
         let (_, external_keymap) = wallet_opts
             .ext_descriptor

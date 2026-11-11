@@ -14,6 +14,9 @@ use bdk_wallet::bitcoin::base64::Engine;
 use bdk_wallet::bitcoin::base64::prelude::BASE64_STANDARD;
 use bdk_wallet::bitcoin::script::PushBytesBuf;
 use bdk_wallet::bitcoin::{Address, Amount, FeeRate, OutPoint, Psbt, ScriptBuf, Sequence, Txid};
+use bdk_wallet::descriptor::ExtractPolicy;
+use bdk_wallet::descriptor::policy::{BuildSatisfaction, Condition};
+use bdk_wallet::signer::SignersContainer;
 use bdk_wallet::{KeychainKind, SignOptions};
 use clap::Parser;
 use serde_json::json;
@@ -255,6 +258,32 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
     type Output = PsbtResult;
 
     fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<Self::Output, Error> {
+        let mut condition = Condition::default();
+        for (keychain, descriptor) in ctx.state.wallet.keychains() {
+            let policy = descriptor
+                .extract_policy(
+                    &SignersContainer::default(),
+                    BuildSatisfaction::None,
+                    ctx.state.wallet.secp_ctx(),
+                )?
+                .expect("wallet descriptors must have a policy");
+
+            let policy_path = match keychain {
+                KeychainKind::External => self.external_policy.as_deref(),
+                KeychainKind::Internal => self.internal_policy.as_deref(),
+            }
+            .map(serde_json::from_str::<BTreeMap<String, Vec<usize>>>)
+            .transpose()?
+            .unwrap_or_default();
+
+            let policy_condition = policy
+                .get_condition(&policy_path)
+                .map_err(|e| Error::Generic(e.to_string()))?;
+            condition = condition
+                .merge(&policy_condition)
+                .map_err(|e| Error::Generic(e.to_string()))?;
+        }
+
         let mut tx_builder = ctx.state.wallet.build_tx();
 
         if self.send_all {
@@ -301,19 +330,7 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateTxCommand {
             tx_builder.add_data(data);
         }
 
-        let policies = vec![
-            self.external_policy
-                .clone()
-                .map(|p| (p, KeychainKind::External)),
-            self.internal_policy
-                .clone()
-                .map(|p| (p, KeychainKind::Internal)),
-        ];
-
-        for (policy, keychain) in policies.into_iter().flatten() {
-            let policy = serde_json::from_str::<BTreeMap<String, Vec<usize>>>(&policy)?;
-            tx_builder.policy_path(policy, keychain);
-        }
+        tx_builder.set_condition(condition);
 
         let psbt = tx_builder.finish()?;
 
