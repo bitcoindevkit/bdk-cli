@@ -334,9 +334,11 @@ The `wallet config` sub-command allows you to save wallet settings to a `config.
 To save a wallet settings:
 
 ```shell
-cargo run --features <list-of-features> -- -n <network> wallet --wallet <wallet_name> config [ -f ] --ext-descriptor <ext_descriptor> --int-descriptor <int_descriptor>  --client-type <client_type>  --url <server_url> [--database-type <database_type>] [--rpc-user <rpc_user>]
-  [--rpc-password <rpc_password>] 
+cargo run --features <list-of-features> -- -n <network> wallet --wallet <wallet_name> config [ -f ] --ext-descriptor <ext_descriptor> --int-descriptor <int_descriptor>  --client-type <client_type>  --url <server_url> [--database-type <database_type>] [--basic-auth <user:password>]
+  [<cookie>]
 ```
+
+The `--basic-auth` option and the `<cookie>` file path apply to the `rpc` backend. If a cookie is given, it is used instead of the user and password.
 
 For example, to initialize a wallet named `my_wallet` with `electrum` as the backend on `signet` network:
 
