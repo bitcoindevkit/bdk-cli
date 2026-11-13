@@ -121,6 +121,21 @@ impl FullScanCommand {
     }
 }
 
+#[cfg(any(feature = "rpc", feature = "cbf"))]
+impl FullScanCommand {
+    /// Rejects `--scan-stop-gap` for backends that do not use it: RPC walks blocks and CBF
+    /// follows the filter lookahead, so neither reads `stop_gap`.
+    fn reject_stop_gap(&self) -> Result<(), Error> {
+        #[cfg(any(feature = "electrum", feature = "esplora"))]
+        if self.stop_gap.is_some() {
+            return Err(Error::Generic(
+                "`--scan-stop-gap` is only supported by the electrum and esplora backends".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -173,13 +188,7 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
             }
             #[cfg(feature = "rpc")]
             RpcClient { client } => {
-                #[cfg(any(feature = "electrum", feature = "esplora"))]
-                if self.stop_gap.is_some() {
-                    return Err(Error::Generic(
-                        "`--scan-stop-gap` is only supported by the electrum and esplora backends"
-                            .into(),
-                    ));
-                }
+                self.reject_stop_gap()?;
 
                 let blockchain_info = client.get_blockchain_info()?;
 
@@ -228,13 +237,7 @@ impl AsyncAppCommand<AppContext<OnlineOperations<'_>>> for FullScanCommand {
 
             #[cfg(feature = "cbf")]
             KyotoClient { client } => {
-                #[cfg(any(feature = "electrum", feature = "esplora"))]
-                if self.stop_gap.is_some() {
-                    return Err(Error::Generic(
-                        "`--scan-stop-gap` is only supported by the electrum and esplora backends"
-                            .into(),
-                    ));
-                }
+                self.reject_stop_gap()?;
 
                 sync_kyoto_client(wallet, client).await?;
             }
