@@ -4,7 +4,6 @@ use bdk_wallet::{
     SignOptions, Wallet,
     bitcoin::{FeeRate, Psbt, Txid, consensus::encode::serialize_hex},
 };
-use cli_table::{Cell, CellStruct, Style, Table};
 use payjoin::bitcoin::TxIn;
 use payjoin::persist::{OptionalTransitionOutcome, SessionPersister};
 use payjoin::receive::InputPair;
@@ -21,6 +20,7 @@ use payjoin::send::v2::{
     replay_event_log as replay_sender_event_log,
 };
 use payjoin::{HpkePublicKey, ImplementationError, UriExt};
+use serde::Serialize;
 use serde_json::{json, to_string_pretty};
 use std::{path::PathBuf, sync::Arc};
 
@@ -92,6 +92,12 @@ impl StatusText for ReceiveSession {
     }
 }
 
+#[derive(Serialize)]
+struct SessionHistory<'a> {
+    sessions: Vec<&'a SessionHistoryRow>,
+}
+
+#[derive(Serialize)]
 struct SessionHistoryRow {
     id: String,
     role: &'static str,
@@ -1050,33 +1056,8 @@ impl<'a> PayjoinManager<'a> {
             });
         }
 
-        let rows: Vec<Vec<CellStruct>> = send_rows
-            .iter()
-            .chain(recv_rows.iter())
-            .map(|row| {
-                vec![
-                    row.id.as_str().cell(),
-                    row.role.cell(),
-                    row.completed_at
-                        .clone()
-                        .unwrap_or_else(|| "Not Completed".to_string())
-                        .cell(),
-                    row.status.as_str().cell(),
-                ]
-            })
-            .collect();
+        let sessions: Vec<&SessionHistoryRow> = send_rows.iter().chain(recv_rows.iter()).collect();
 
-        let table = rows
-            .table()
-            .title(vec![
-                "Session ID".cell().bold(true),
-                "Sender/Receiver".cell().bold(true),
-                "Completed At".cell().bold(true),
-                "Status".cell().bold(true),
-            ])
-            .display()
-            .map_err(|e| Error::Generic(e.to_string()))?;
-
-        Ok(format!("{table}"))
+        Ok(to_string_pretty(&SessionHistory { sessions })?)
     }
 }
