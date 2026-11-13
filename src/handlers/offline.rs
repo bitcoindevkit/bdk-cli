@@ -500,24 +500,33 @@ impl AppCommand<AppContext<OfflineOperations<'_>>> for CreateSpTxCommand {
             .as_key_map(&secp);
         external_signers.extend(internal_signers);
 
-        match external_signers.iter().next().expect("not empty") {
+        let external_signer = external_signers
+            .iter()
+            .next()
+            .ok_or_else(|| Error::Generic("No signers found in wallet".to_string()))?;
+
+        match external_signer {
             (DescriptorPublicKey::Single(single_pub), DescriptorSecretKey::Single(prv)) => {
                 match single_pub.key {
                     SinglePubKey::FullKey(pk) => {
                         let keys: HashMap<PublicKey, PrivateKey> = [(pk, prv.key)].into();
-                        derive_sp(&mut psbt, &keys, &sp_recipients, &secp).expect("will fix later");
+                        derive_sp(&mut psbt, &keys, &sp_recipients, &secp)?;
                     }
                     SinglePubKey::XOnly(xonly) => {
                         let keys: HashMap<bdk_sp::bitcoin::XOnlyPublicKey, PrivateKey> =
                             [(xonly, prv.key)].into();
-                        derive_sp(&mut psbt, &keys, &sp_recipients, &secp).expect("will fix later");
+                        derive_sp(&mut psbt, &keys, &sp_recipients, &secp)?;
                     }
                 };
             }
             (_, DescriptorSecretKey::XPrv(k)) => {
-                derive_sp(&mut psbt, &k.xkey, &sp_recipients, &secp).expect("will fix later");
+                derive_sp(&mut psbt, &k.xkey, &sp_recipients, &secp)?;
             }
-            _ => unimplemented!("multi xkey signer"),
+            _ => {
+                return Err(Error::Generic(
+                    "Multi xkey signer not implemented".to_string(),
+                ));
+            }
         };
 
         // Unfinalize PSBT to resign

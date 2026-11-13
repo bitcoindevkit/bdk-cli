@@ -31,6 +31,10 @@ pub enum BDKCliError {
     #[error("Silent payment address decoding error: {0}")]
     SilentPaymentParseError(#[from] bdk_sp::encoding::ParseError),
 
+    #[cfg(feature = "silent-payments")]
+    #[error("Cannot create silent payment transaction: {0}")]
+    SilentPaymentSendError(#[from] bdk_sp::send::error::SpSendError),
+
     #[error("Descriptor error: {0}")]
     DescriptorError(#[from] bdk_wallet::descriptor::error::Error),
 
