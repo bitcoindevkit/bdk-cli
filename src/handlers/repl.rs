@@ -55,7 +55,7 @@ pub(crate) async fn respond(
         ReplSubCommand::Wallet { subcommand } => match subcommand {
             WalletSubCommand::OfflineWalletSubCommand(cmd) => {
                 let mut ctx = AppContext::new_offline_wallet(datadir, wallet);
-                cmd.execute(&mut ctx).map_err(|e| e.to_string())?;
+                cmd.execute(&mut ctx).await.map_err(|e| e.to_string())?;
                 Some(())
             }
             #[cfg(any(
