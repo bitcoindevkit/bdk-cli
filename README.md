@@ -334,9 +334,11 @@ The `wallet config` sub-command allows you to save wallet settings to a `config.
 To save a wallet settings:
 
 ```shell
-cargo run --features <list-of-features> -- -n <network> wallet --wallet <wallet_name> config [ -f ] --ext-descriptor <ext_descriptor> --int-descriptor <int_descriptor>  --client-type <client_type>  --url <server_url> [--database-type <database_type>] [--rpc-user <rpc_user>]
-  [--rpc-password <rpc_password>] 
+cargo run --features <list-of-features> -- -n <network> wallet --wallet <wallet_name> config [ -f ] --ext-descriptor <ext_descriptor> --int-descriptor <int_descriptor>  --client-type <client_type>  --url <server_url> [--database-type <database_type>] [--basic-auth <user:password>]
+  [<cookie>]
 ```
+
+The `--basic-auth` option and the `<cookie>` file path apply to the `rpc` backend. If a cookie is given, it is used instead of the user and password.
 
 For example, to initialize a wallet named `my_wallet` with `electrum` as the backend on `signet` network:
 
@@ -345,6 +347,29 @@ cargo run --features electrum -- -n signet wallet -w my_wallet config -e "tr(tpr
 ```
 
 To overwrite an existing wallet configuration, use the  `--force` flag after the `config` sub-command.
+
+#### Setting options with environment variables
+
+Most `wallet config` options can also be set through an environment variable. A flag given on the command line takes precedence over its variable. The values are saved to `config.toml`, and the other wallet commands read that file, so changing a variable later does not change a wallet that is already saved.
+
+| Variable | Option | Used by |
+| --- | --- | --- |
+| `NETWORK` | `-n`, `--network` | all commands |
+| `DATADIR` | `-d`, `--datadir` | all commands |
+| `WALLET_NAME` | `-w`, `--wallet` | `wallet` and `repl` |
+| `EXT_DESCRIPTOR` | `-e`, `--ext-descriptor` | `wallet config` |
+| `INT_DESCRIPTOR` | `-i`, `--int-descriptor` | `wallet config` |
+| `CLIENT_TYPE` | `-c`, `--client-type` | `wallet config` |
+| `DATABASE_TYPE` | `-d`, `--database-type` | `wallet config` |
+| `SERVER_URL` | `-u`, `--url` | `wallet config`, backends `electrum`, `esplora` and `rpc` |
+| `ELECTRUM_BATCH_SIZE` | `-b`, `--batch-size` | `wallet config`, backend `electrum` |
+| `ESPLORA_PARALLEL_REQUESTS` | `-p`, `--parallel-requests` | `wallet config`, backend `esplora` |
+| `RPC_BASIC_AUTH` | `-a`, `--basic-auth` (as `user:password`) | `wallet config`, backend `rpc` |
+| `COOKIE` | the `<cookie>` argument | `wallet config`, backend `rpc` |
+| `PROXY_ADDRS_PORT` | `--proxy` | `wallet config`, backends `electrum`, `esplora` and `cbf` |
+| `PROXY_USER_PASSWD` | `--proxy_auth` (as `user:password`) | `wallet config`, backends `electrum` and `esplora` |
+| `PROXY_RETRIES` | `-r`, `--retries` | `wallet config`, backends `electrum` and `esplora` |
+| `PROXY_TIMEOUT` | `-t`, `--timeout` | `wallet config`, backends `electrum` and `esplora` |
 
 #### Using a Configured Wallet
 
