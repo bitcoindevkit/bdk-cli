@@ -5,6 +5,56 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 
 ## [Unreleased]
 
+## [4.1.0](https://github.com/bitcoindevkit/bdk-cli/compare/v4.0.0...v4.1.0) - 2026-10-27
+
+### Added
+
+- *(wallet)* add saved config list and delete commands
+- *(hwi)* Add fingerprint to "hwi xpub"
+- *(hwi)* Add merging ext and int desc into policy
+- *(hwi)* Move register, address & sign to wallet
+- *(hwi)* Reuse saved wallet config for hwi
+- *(hwi)* Add hwi documentation
+- *(hwi)* Add hidapi to workflows
+- *(hwi)* Add hwi feature to dispatch and routing
+- *(hwi)* Add hwi subcommand handler
+- *(hwi)* Add utility fns to detect & list device
+- *(multipath)* Add checks for desc pair
+- *(multipath)* Add tests for multipath desc
+- *(multipath)* limit multipath desc to two paths
+- *(multipath)* add multipath desc support
+
+### Fixed
+
+- *(log)* show warnings by default
+- *(compile)* compile only for the requested script context
+- *(cli)* use valid envt variable names for env fallbacks
+- *(client)* Route cbf traffic via configured SOCKS5 proxy
+- *(client)* route electrum & esplora traffic through config proxy
+- *(deps)* bump rustls to 0.23.45
+- *(deps)* bump chacha20 to 0.10.2
+- *(fee_rate)* parse fee_rate at clap and keep sub-sat/vB precision
+- *(create_tx,bump_fee)* return errors instead of panicking
+- harden datadir and config file permissions
+- *(combine_psbt)* Propagate Psbt::combine errors
+
+### Other
+
+- Merge bitcoindevkit/bdk-cli#364: docs: list supported network values in CLI help
+- *(config)* remove redundant wallet field from WalletConfigInner
+- test redb without default features
+- document saved wallet config commands
+- *(hwi)* add more tests to helper fns
+- list supported network values in CLI help
+- *(hwi)* move descriptor utils into descriptor utils
+- *(changelog)* note warnings shown by default
+- *(compile)* cover sh and sh-wsh script types
+- *(compile)* use ValueEnum for script type
+- removed changelog section from pr template
+- bump workflow action versions
+- add release-plz workflow and update release docs
+- remove unused tap dependency
+
 - Added support for Multipath (two-paths) descriptors.
 - Fixed the data directory and config.toml permission being world-readable (0755/0644) to 0700/0600 on Unix.
 - Fixed `create_tx` and `bump_fee` panicking on malformed `--utxos` and `--add_data` values instead of returning an error
