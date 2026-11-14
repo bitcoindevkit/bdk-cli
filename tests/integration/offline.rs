@@ -411,6 +411,59 @@ mod repl_tests {
     }
 }
 
+#[cfg(all(feature = "repl", feature = "dns_payment", feature = "sqlite"))]
+mod repl_dns_tests {
+    use crate::common::BdkCli;
+    use serde_json::Value;
+    use tempfile::TempDir;
+
+    const WALLET_NAME: &str = "repl_dns_test_wallet";
+    /// A `--to` argument, the wallet is unfunded, so nothing is spent.
+    const RECIPIENT: &str = "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080:1000";
+
+    #[test]
+    fn test_repl_create_dns_tx_is_dispatched_async() {
+        let temp = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp.path().to_path_buf()));
+
+        let desc = cli.cmd("descriptor", &["--type", "tr"]).output().unwrap();
+        let v: Value = serde_json::from_slice(&desc.stdout).unwrap();
+        let ext = v["private_descriptors"]["external"].as_str().unwrap();
+        let int = v["private_descriptors"]["internal"].as_str().unwrap();
+
+        cli.build_base_cmd()
+            .args(["wallet", "--wallet", WALLET_NAME, "config"])
+            .args(["--ext-descriptor", ext, "--int-descriptor", int])
+            .args(["--database-type", "sqlite"])
+            .assert()
+            .success();
+
+        let output = cli
+            .build_base_cmd()
+            .args(["repl", "--wallet", WALLET_NAME])
+            .write_stdin(format!("wallet create_dns_tx --to {RECIPIENT}\nexit\n"))
+            .output()
+            .expect("failed to run repl");
+
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        // The command must reach the async handler, not the sync stub.
+        assert!(
+            !combined.contains("dispatched asynchronously"),
+            "create_dns_tx hit the sync stub in REPL mode:\n{combined}"
+        );
+        // The wallet is unfunded, so the async handler fails while building the tx.
+        assert!(
+            combined.contains("Insufficient funds"),
+            "create_dns_tx did not reach tx building:\n{combined}"
+        );
+    }
+}
+
 #[cfg(all(
     feature = "sqlite",
     not(any(

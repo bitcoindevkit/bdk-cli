@@ -94,16 +94,7 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
                         &mut wallet,
                     );
 
-                    match cmd {
-                        #[cfg(feature = "dns_payment")]
-                        commands::OfflineWalletSubCommand::CreateDnsTx(dns_cmd) => {
-                            dns_cmd
-                                .execute(&mut ctx)
-                                .await?
-                                .write_out(std::io::stdout())?;
-                        }
-                        other => other.execute(&mut ctx)?,
-                    }
+                    cmd.execute(&mut ctx).await?;
                 }
                 wallet.persist()?;
             }

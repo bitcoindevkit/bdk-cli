@@ -1,5 +1,7 @@
 use crate::commands::OfflineWalletSubCommand;
 use crate::error::BDKCliError as Error;
+#[cfg(feature = "dns_payment")]
+use crate::handlers::AsyncAppCommand;
 use crate::handlers::{AppCommand, AppContext, OfflineOperations};
 use crate::utils::output::{FormatOutput, ListResult};
 use crate::utils::types::{
@@ -38,7 +40,7 @@ use {
 };
 
 impl OfflineWalletSubCommand {
-    pub fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<(), Error> {
+    pub async fn execute(&self, ctx: &mut AppContext<OfflineOperations<'_>>) -> Result<(), Error> {
         match self {
             Self::NewAddress(new_address) => new_address.execute(ctx)?.write_out(std::io::stdout()),
             Self::Balance(balance) => balance.execute(ctx)?.write_out(std::io::stdout()),
@@ -89,9 +91,10 @@ impl OfflineWalletSubCommand {
                 locked_utxos.execute(ctx)?.write_out(std::io::stdout())
             }
             #[cfg(feature = "dns_payment")]
-            Self::CreateDnsTx(_) => Err(Error::Generic(
-                "CreateDnsTx is dispatched asynchronously through main".to_string(),
-            )),
+            Self::CreateDnsTx(create_dns_tx) => create_dns_tx
+                .execute(ctx)
+                .await?
+                .write_out(std::io::stdout()),
         }
     }
 }
