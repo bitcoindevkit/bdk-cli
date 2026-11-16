@@ -83,21 +83,21 @@ impl BlockchainClient {
     pub async fn broadcast(&self, tx: Transaction) -> Result<Txid, Error> {
         match self {
             #[cfg(feature = "electrum")]
-            Self::Electrum { client, .. } => client
-                .transaction_broadcast(&tx)
-                .map_err(|e| Error::Generic(e.to_string())),
+            Self::Electrum { client, .. } => {
+                client.transaction_broadcast(&tx).map_err(Error::Electrum)
+            }
 
             #[cfg(feature = "esplora")]
             Self::Esplora { client, .. } => client
                 .broadcast(&tx)
                 .await
                 .map(|()| tx.compute_txid())
-                .map_err(|e| Error::Generic(e.to_string())),
+                .map_err(Error::Esplora),
 
             #[cfg(feature = "rpc")]
             Self::RpcClient { client } => client
                 .send_raw_transaction(&tx)
-                .map_err(|e| Error::Generic(e.to_string())),
+                .map_err(Error::BitcoinCoreRpcError),
 
             #[cfg(feature = "cbf")]
             Self::KyotoClient { client } => {
@@ -128,9 +128,7 @@ impl BlockchainClient {
                 client.populate_tx_cache(wallet.tx_graph().full_txs().map(|tx_node| tx_node.tx));
 
                 let update = client.sync(request, *batch_size, false)?;
-                wallet
-                    .apply_update(update)
-                    .map_err(|e| Error::Generic(e.to_string()))
+                wallet.apply_update(update).map_err(Error::Chain)
             }
             #[cfg(feature = "esplora")]
             Self::Esplora {
@@ -141,9 +139,7 @@ impl BlockchainClient {
                     .sync(request, *parallel_requests)
                     .await
                     .map_err(|e| *e)?;
-                wallet
-                    .apply_update(update)
-                    .map_err(|e| Error::Generic(e.to_string()))
+                wallet.apply_update(update).map_err(Error::Chain)
             }
             #[cfg(feature = "rpc")]
             Self::RpcClient { client } => {
@@ -190,9 +186,7 @@ impl BlockchainClient {
                 Ok(())
             }
             #[cfg(feature = "cbf")]
-            Self::KyotoClient { client } => sync_kyoto_client(wallet, client)
-                .await
-                .map_err(|e| Error::Generic(e.to_string())),
+            Self::KyotoClient { client } => sync_kyoto_client(wallet, client).await,
         }
     }
 }
@@ -307,7 +301,7 @@ pub(crate) fn new_blockchain_client(
                 ),
             };
             let client = bdk_bitcoind_rpc::bitcoincore_rpc::Client::new(url, auth)
-                .map_err(|e| Error::Generic(e.to_string()))?;
+                .map_err(Error::BitcoinCoreRpcError)?;
             BlockchainClient::RpcClient {
                 client: Box::new(client),
             }
@@ -364,9 +358,7 @@ pub async fn sync_kyoto_client(
 
     let update = handle.update_subscriber.lock().await.update().await?;
     tracing::info!("Received update: applying to wallet");
-    let events = wallet
-        .apply_update_events(update)
-        .map_err(|e| Error::Generic(format!("Failed to apply update: {e}")))?;
+    let events = wallet.apply_update_events(update).map_err(Error::Chain)?;
     crate::utils::print_wallet_events(&events);
 
     tracing::info!(
