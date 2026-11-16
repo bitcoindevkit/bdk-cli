@@ -2,6 +2,7 @@
 use {
     crate::commands::ReplSubCommand,
     crate::handlers::{AppCommand, AppContext},
+    crate::persister::WalletSigners,
     crate::utils::output::FormatOutput,
     bdk_wallet::{Wallet, bitcoin::Network},
     clap::Parser,
@@ -24,6 +25,7 @@ use {crate::commands::WalletSubCommand, crate::error::BDKCliError as Error, std:
 pub(crate) async fn respond(
     network: Network,
     wallet: &mut Wallet,
+    signers: &WalletSigners,
     #[cfg(any(
         feature = "electrum",
         feature = "esplora",
@@ -54,7 +56,7 @@ pub(crate) async fn respond(
     let response = match repl_subcommand {
         ReplSubCommand::Wallet { subcommand } => match subcommand {
             WalletSubCommand::OfflineWalletSubCommand(cmd) => {
-                let mut ctx = AppContext::new_offline_wallet(network, datadir, wallet);
+                let mut ctx = AppContext::new_offline_wallet(network, datadir, wallet, signers);
                 cmd.execute(&mut ctx).map_err(|e| e.to_string())?;
                 Some(())
             }
@@ -70,6 +72,7 @@ pub(crate) async fn respond(
                     network,
                     datadir,
                     wallet,
+                    signers,
                     client_ref,
                     wallet_name.to_string(),
                 );
