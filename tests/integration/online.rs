@@ -878,6 +878,86 @@ mod test_online {
                 "over the 400000 wu (100000 vB) standard limit",
             ));
         }
+
+        #[test]
+        fn test_create_sp_tx_propagates_derive_sp_error_for_wsh_single_key() {
+            let env = TestEnv::new().unwrap();
+            let url = env.electrsd.electrum_url.as_str();
+            let tmp = TempDir::new().unwrap();
+            let cli = BdkCli::new("regtest", Some(tmp.path().to_path_buf()));
+
+            // Use static wsh(pk(...)), since `descriptor --type wsh` generates wpkh(...) which
+            // does not trigger an error to propagate. descriptor source: bdk-cli issue #380
+            let ext_desc = "wsh(pk(cVt4o7BGAig1UXywgGSmARhxMdzP5qvQsxKkSsc1XEkw3tDTQFpy))";
+
+            cli.build_base_cmd()
+                .arg("wallet")
+                .args(["--wallet", WALLET_NAME])
+                .arg("config")
+                .args(["--ext-descriptor", ext_desc])
+                .args(["--client-type", "electrum"])
+                .args(["--database-type", "sqlite"])
+                .args(["--url", url])
+                .assert()
+                .success();
+
+            fund_and_sync_wallet(&cli, &env);
+
+            // Use sp from bdk-cli issue #380
+            let sp_code = "sprt1qqtnxgt7kn0fpr7fl0u0ndjj35f499y8t9hgmpkp8n2rmkr2gpjzyxqe3qp5n5apt0c5fas9xwy7002l0zqsuhrv7y9clz8yvhnmvut83lypguwer";
+
+            cli.wallet_cmd(&[
+                "--wallet",
+                WALLET_NAME,
+                "create_sp_tx",
+                "--to-sp",
+                &format!("{sp_code}:20000"),
+            ])
+            .assert()
+            .code(1)
+            .stderr(predicates::str::contains(
+                "Cannot create silent payment transaction",
+            ));
+        }
+
+        #[test]
+        fn test_create_sp_tx_propagates_derive_sp_error_for_wsh_hd_key() {
+            let env = TestEnv::new().unwrap();
+            let url = env.electrsd.electrum_url.as_str();
+            let tmp = TempDir::new().unwrap();
+            let cli = BdkCli::new("regtest", Some(tmp.path().to_path_buf()));
+
+            let ext_desc = "wsh(pk(tprv8ZgxMBicQKsPe5og5RNRnC9NUsXsyCHwSkcenZaib7CSpja9fK31nCLfoNzBr4RTWVhtUJ5ncTy1W5JqrSNdmQt1Q9eZ77uAEBDHoJ6ULDU/84'/1'/0'/0/*))";
+
+            cli.build_base_cmd()
+                .arg("wallet")
+                .args(["--wallet", WALLET_NAME])
+                .arg("config")
+                .args(["--ext-descriptor", ext_desc])
+                .args(["--client-type", "electrum"])
+                .args(["--database-type", "sqlite"])
+                .args(["--url", url])
+                .assert()
+                .success();
+
+            fund_and_sync_wallet(&cli, &env);
+
+            // Use sp from bdk-cli issue #380
+            let sp_code = "sprt1qqtnxgt7kn0fpr7fl0u0ndjj35f499y8t9hgmpkp8n2rmkr2gpjzyxqe3qp5n5apt0c5fas9xwy7002l0zqsuhrv7y9clz8yvhnmvut83lypguwer";
+
+            cli.wallet_cmd(&[
+                "--wallet",
+                WALLET_NAME,
+                "create_sp_tx",
+                "--to-sp",
+                &format!("{sp_code}:20000"),
+            ])
+            .assert()
+            .code(1)
+            .stderr(predicates::str::contains(
+                "Cannot create silent payment transaction",
+            ));
+        }
     }
 
     #[cfg(feature = "message_signer")]
