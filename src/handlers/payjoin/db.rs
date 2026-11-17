@@ -823,7 +823,7 @@ mod tests {
         assert!(table.contains(&active_recv_ids[0].to_string()));
         assert!(table.contains(&inactive_send_ids[0].0.to_string()));
         assert!(table.contains(&inactive_recv_ids[0].0.to_string()));
-        assert!(table.contains("Not Completed"));
+        assert!(table.contains("\"completed_at\": null"));
 
         drop(active_sender);
         drop(active_receiver);
