@@ -4,16 +4,9 @@ use bdk_wallet::bitcoin::bip32::ChildNumber;
 use bdk_wallet::descriptor::IntoWalletDescriptor;
 use bdk_wallet::keys::GeneratableKey;
 #[cfg(feature = "compiler")]
-use bdk_wallet::{
-    bitcoin::{
-        XOnlyPublicKey,
-        key::{Parity, rand},
-        secp256k1::{PublicKey, Scalar, SecretKey},
-    },
-    miniscript::{
-        ForEachKey, FromStrKey, Legacy, MiniscriptKey, ScriptContext, Tap, descriptor::TapTree,
-        policy::Concrete,
-    },
+use bdk_wallet::miniscript::{
+    ForEachKey, FromStrKey, Legacy, MiniscriptKey, ScriptContext, Tap, descriptor::TapTree,
+    policy::Concrete,
 };
 #[cfg(any(feature = "hwi", feature = "compiler"))]
 use clap::ValueEnum;
@@ -37,6 +30,8 @@ use bdk_wallet::{
 };
 
 use crate::error::BDKCliError as Error;
+#[cfg(feature = "compiler")]
+use crate::utils::taproot::generate_unspendable_internal_key;
 use crate::utils::types::DescriptorResult;
 use crate::utils::types::KeychainPair;
 
@@ -256,10 +251,6 @@ pub fn validate_descriptor_pair(
     Ok(ext_is_multipath)
 }
 
-#[cfg(feature = "compiler")]
-const NUMS_UNSPENDABLE_KEY_HEX: &str =
-    "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
-
 /// Script types the compiled policy can be embedded in.
 #[cfg(feature = "compiler")]
 #[derive(Clone, Copy, ValueEnum, Debug, Eq, PartialEq)]
@@ -323,23 +314,9 @@ pub fn compile_policy<Pk: FromStrKey>(
         }
         CompileScriptType::Tr => {
             check_policy_keys::<Pk, Tap>(&policy)?;
-            // Use a randomized unspendable internal key (H + rG) instead of a fixed NUMS
-            // point. This improves privacy by preventing observers from determining whether
-            // key-path spending is disabled. `r` is returned so the user can verify the key
-            // is derived from the NUMS point. See BIP-341.
-            let secp = Secp256k1::new();
-            let r_secret = SecretKey::new(&mut rand::thread_rng());
+
+            let (xonly_internal_key, r_secret) = generate_unspendable_internal_key()?;
             r = Some(r_secret.display_secret().to_string());
-
-            let nums_key = XOnlyPublicKey::from_str(NUMS_UNSPENDABLE_KEY_HEX)
-                .map_err(|e| Error::Generic(format!("Invalid NUMS key: {e}")))?;
-            let nums_point = PublicKey::from_x_only_public_key(nums_key, Parity::Even);
-
-            let internal_key_point = nums_point
-                .add_exp_tweak(&secp, &Scalar::from(r_secret))
-                .map_err(|e| Error::Generic(format!("Failed to tweak NUMS key: {e}")))?;
-            let (xonly_internal_key, _) = internal_key_point.x_only_public_key();
-
             let tree = TapTree::Leaf(Arc::new(policy.compile()?));
             let internal_key = Pk::from_str(&xonly_internal_key.to_string())
                 .map_err(|e| Error::Generic(format!("Failed to parse internal key: {e}")))?;

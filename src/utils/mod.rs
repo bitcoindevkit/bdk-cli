@@ -5,4 +5,6 @@ pub use common::*;
 #[cfg(feature = "hwi")]
 pub mod hwi;
 pub mod runtime;
+#[cfg(feature = "compiler")]
+pub mod taproot;
 pub mod types;
