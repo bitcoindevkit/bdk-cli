@@ -1067,6 +1067,90 @@ rpc_password = "preserved-password"
             Some("preserved-password")
         );
     }
+
+    #[test]
+    fn test_config_force_rejects_network_change() {
+        let temp_dir = TempDir::new().unwrap();
+        let regtest = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+        let signet = BdkCli::new("signet", Some(temp_dir.path().to_path_buf()));
+        let wallet_name = "network_wallet";
+        let config_path = temp_dir.path().join("config.toml");
+
+        save_wallet(&regtest, wallet_name);
+        let before = fs::read_to_string(&config_path).unwrap();
+
+        let desc = signet
+            .cmd("descriptor", &["--type", "tr"])
+            .output()
+            .expect("Command to generate descriptors failed");
+        let desc_values: Value =
+            serde_json::from_slice(&desc.stdout).expect("Invalid JSON from output descriptor");
+        let pub_desc = &desc_values["public_descriptors"];
+
+        let mut command = signet.build_base_cmd();
+        command
+            .arg("wallet")
+            .args(["--wallet", wallet_name])
+            .arg("config")
+            .arg("--force")
+            .args(["--ext-descriptor", pub_desc["external"].as_str().unwrap()])
+            .args(["--int-descriptor", pub_desc["internal"].as_str().unwrap()])
+            .args(["--database-type", "sqlite"]);
+
+        #[cfg(feature = "rpc")]
+        command.args(["--client-type", "rpc", "--url", "http://localhost:18443"]);
+
+        command
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "Wallet 'network_wallet' is configured for network 'regtest', and --force cannot change it to 'signet'",
+            ));
+
+        let after = fs::read_to_string(&config_path).unwrap();
+        assert_eq!(
+            before, after,
+            "rejected --force must not change config.toml"
+        );
+    }
+
+    #[test]
+    fn test_config_force_same_network_updates_settings() {
+        let temp_dir = TempDir::new().unwrap();
+        let cli = BdkCli::new("regtest", Some(temp_dir.path().to_path_buf()));
+        let wallet_name = "network_wallet";
+        let config_path = temp_dir.path().join("config.toml");
+
+        save_wallet(&cli, wallet_name);
+        let before = fs::read_to_string(&config_path).unwrap();
+
+        let desc = cli
+            .cmd("descriptor", &["--type", "tr"])
+            .output()
+            .expect("Command to generate descriptors failed");
+        let desc_values: Value =
+            serde_json::from_slice(&desc.stdout).expect("Invalid JSON from output descriptor");
+        let pub_desc = &desc_values["public_descriptors"];
+
+        let mut command = cli.build_base_cmd();
+        command
+            .arg("wallet")
+            .args(["--wallet", wallet_name])
+            .arg("config")
+            .arg("--force")
+            .args(["--ext-descriptor", pub_desc["external"].as_str().unwrap()])
+            .args(["--int-descriptor", pub_desc["internal"].as_str().unwrap()])
+            .args(["--database-type", "sqlite"]);
+
+        #[cfg(feature = "rpc")]
+        command.args(["--client-type", "rpc", "--url", "http://localhost:18443"]);
+
+        command.assert().success();
+
+        let after = fs::read_to_string(&config_path).unwrap();
+        assert_ne!(before, after, "--force should save the new descriptors");
+        assert!(after.contains("network = \"regtest\""));
+    }
 }
 
 //  SILENT PAYMENTS

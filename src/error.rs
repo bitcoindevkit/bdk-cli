@@ -71,6 +71,10 @@ pub enum BDKCliError {
     #[error("Miniscript compiler error: {0}")]
     MiniscriptCompilerError(#[from] bdk_wallet::miniscript::policy::compiler::CompilerError),
 
+    #[cfg(any(feature = "sqlite", feature = "redb"))]
+    #[error("Wallet load error: {0}")]
+    LoadWallet(#[from] bdk_wallet::LoadError),
+
     #[error(
         "Transaction can weigh up to {weight:#} ({} vB) once signed, over the {:#} ({} vB) \
          standard limit, so Bitcoin Core nodes will not relay it",
@@ -227,6 +231,16 @@ impl From<bdk_redb::redb::DatabaseError> for BDKCliError {
 impl From<bdk_wallet::rusqlite::Error> for BDKCliError {
     fn from(err: bdk_wallet::rusqlite::Error) -> Self {
         BDKCliError::RusqliteError(Box::new(err))
+    }
+}
+
+#[cfg(any(feature = "sqlite", feature = "redb"))]
+impl From<bdk_wallet::LoadWithPersistError<BDKCliError>> for BDKCliError {
+    fn from(err: bdk_wallet::LoadWithPersistError<BDKCliError>) -> Self {
+        match err {
+            bdk_wallet::LoadWithPersistError::Persist(e) => e,
+            bdk_wallet::LoadWithPersistError::InvalidChangeSet(e) => e.into(),
+        }
     }
 }
 
