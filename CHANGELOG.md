@@ -25,6 +25,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Fixed `key generate` silently producing a 24-word mnemonic for any `--entropy` value other than 12; values other than 12 and 24 are now rejected
 - Gated `full_scan`'s `--scan-stop-gap` to the Electrum and Esplora backends that use it; RPC and CBF wallets now reject the flag instead of silently ignoring it, while a `STOP_GAP` environment variable keeps working for supported backends and no longer breaks unsupported ones
 - Changed `payjoin history` to return JSON instead of a rendered table
+- Fixed `wallet config --force` silently changing an existing wallet's network, which left the wallet unable to load; it is now rejected, and the network mismatch error names the wallet, both networks and how to fix `config.toml`
 
 ## [4.0.0]
 
