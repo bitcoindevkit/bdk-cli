@@ -71,7 +71,6 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
                 let client = runtime.build_client(&wallet)?;
                 {
                     let mut ctx = AppContext::new_online_wallet(
-                        runtime.network,
                         runtime.home_dir.clone(),
                         &mut wallet,
                         &client,
@@ -88,11 +87,8 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
                 let mut wallet = runtime.build_wallet(command_requires_db(&cmd))?;
 
                 {
-                    let mut ctx = AppContext::new_offline_wallet(
-                        runtime.network,
-                        runtime.home_dir.clone(),
-                        &mut wallet,
-                    );
+                    let mut ctx =
+                        AppContext::new_offline_wallet(runtime.home_dir.clone(), &mut wallet);
 
                     match cmd {
                         #[cfg(feature = "dns_payment")]
@@ -120,11 +116,7 @@ async fn run(cli_opts: CliOpts) -> Result<(), Error> {
                 let runtime = WalletRuntime::load(&home_dir, &wallet_name)?;
                 let mut wallet = runtime.build_wallet(false)?;
 
-                let mut ctx = AppContext::new_offline_wallet(
-                    runtime.network,
-                    runtime.home_dir.clone(),
-                    &mut wallet,
-                );
+                let mut ctx = AppContext::new_offline_wallet(runtime.home_dir.clone(), &mut wallet);
 
                 cmd.run(&mut ctx, &wallet_name)
                     .await?
