@@ -248,6 +248,38 @@ fn esplora_proxy_url(proxy_opts: &ProxyOpts) -> Option<String> {
     })
 }
 
+/// Create a bitcoind RPC client over the minreq HTTP transport, which reads
+/// chunked responses. The default simple_http transport rejects them.
+#[cfg(feature = "rpc")]
+fn rpc_client(
+    url: &str,
+    auth: bdk_bitcoind_rpc::bitcoincore_rpc::Auth,
+) -> Result<bdk_bitcoind_rpc::bitcoincore_rpc::Client, Error> {
+    use bdk_bitcoind_rpc::bitcoincore_rpc::{self, jsonrpc};
+
+    let rpc_error =
+        |e: jsonrpc::Error| Error::BitcoinCoreRpcError(bitcoincore_rpc::Error::JsonRpc(e));
+    let (user, pass) = auth.get_user_pass()?;
+
+    // simple_http accepts a url without a scheme, minreq requires one.
+    let url = if url.contains("://") {
+        url.to_string()
+    } else {
+        format!("http://{url}")
+    };
+
+    let mut builder = jsonrpc::minreq_http::Builder::new()
+        .url(&url)
+        .map_err(|e| rpc_error(e.into()))?;
+    if let Some(user) = user {
+        builder = builder.basic_auth(user, pass);
+    }
+
+    Ok(bitcoincore_rpc::Client::from_jsonrpc(
+        jsonrpc::Client::with_transport(builder.build()),
+    ))
+}
+
 #[cfg(any(
     feature = "electrum",
     feature = "esplora",
@@ -300,8 +332,7 @@ pub(crate) fn new_blockchain_client(
                     wallet_opts.basic_auth.1.clone(),
                 ),
             };
-            let client = bdk_bitcoind_rpc::bitcoincore_rpc::Client::new(url, auth)
-                .map_err(Error::BitcoinCoreRpcError)?;
+            let client = rpc_client(url, auth)?;
             BlockchainClient::RpcClient {
                 client: Box::new(client),
             }
