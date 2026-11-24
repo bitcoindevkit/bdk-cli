@@ -54,7 +54,7 @@ pub(crate) async fn respond(
     let response = match repl_subcommand {
         ReplSubCommand::Wallet { subcommand } => match subcommand {
             WalletSubCommand::OfflineWalletSubCommand(cmd) => {
-                let mut ctx = AppContext::new_offline_wallet(network, datadir, wallet);
+                let mut ctx = AppContext::new_offline_wallet(datadir, wallet);
                 cmd.execute(&mut ctx).map_err(|e| e.to_string())?;
                 Some(())
             }
@@ -67,7 +67,6 @@ pub(crate) async fn respond(
             WalletSubCommand::OnlineWalletSubCommand(cmd) => {
                 let client_ref = client.ok_or("Online commands require a client.".to_string())?;
                 let mut ctx = AppContext::new_online_wallet(
-                    network,
                     datadir,
                     wallet,
                     client_ref,

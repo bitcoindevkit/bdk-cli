@@ -61,13 +61,13 @@ impl WalletPersister for Persister {
 }
 
 #[cfg(any(feature = "sqlite", feature = "redb"))]
-pub(crate) fn new_persisted_wallet<P: WalletPersister>(
+pub(crate) fn new_persisted_wallet<P>(
     network: Network,
     persister: &mut P,
     wallet_opts: &WalletOpts,
 ) -> Result<PersistedWallet<P>, Error>
 where
-    P::Error: std::fmt::Display,
+    P: WalletPersister<Error = Error>,
 {
     let ext_descriptor = wallet_opts.ext_descriptor.clone();
     let int_descriptor = wallet_opts.int_descriptor.clone();
@@ -91,8 +91,7 @@ where
 
     let wallet_opt = wallet_load_params
         .check_network(network)
-        .load_wallet(persister)
-        .map_err(|e| Error::Generic(e.to_string()))?;
+        .load_wallet(persister)?;
 
     let wallet = match wallet_opt {
         Some(wallet) => wallet,

@@ -70,9 +70,9 @@ impl AppContext<Init> {
 }
 
 impl<'a> AppContext<OfflineOperations<'a>> {
-    pub fn new_offline_wallet(network: Network, datadir: PathBuf, wallet: &'a mut Wallet) -> Self {
+    pub fn new_offline_wallet(datadir: PathBuf, wallet: &'a mut Wallet) -> Self {
         Self {
-            network,
+            network: wallet.network(),
             datadir,
             state: OfflineOperations { wallet },
         }
@@ -87,14 +87,13 @@ impl<'a> AppContext<OfflineOperations<'a>> {
 ))]
 impl<'a> AppContext<OnlineOperations<'a>> {
     pub fn new_online_wallet(
-        network: Network,
         datadir: PathBuf,
         wallet: &'a mut Wallet,
         client: &'a BlockchainClient,
         wallet_name: String,
     ) -> Self {
         Self {
-            network,
+            network: wallet.network(),
             datadir,
             state: OnlineOperations {
                 wallet,
@@ -123,4 +122,23 @@ pub trait AsyncAppCommand<C> {
     type Output: FormatOutput;
 
     async fn execute(&self, ctx: &mut C) -> Result<Self::Output, Error>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DESCRIPTOR: &str = "wpkh(tpubD6NzVbkrYhZ4XgiXtGrdW5XDAPFCL9h7we1vwNCpn8tGbBcgfVYjXyhWo4E1xkh56hjod1RhGjxbaTLV3X4FyWuejifB9jusQ46QzG87VKp/0/*)";
+
+    #[test]
+    fn offline_wallet_context_uses_wallet_network() {
+        let mut wallet = Wallet::create_single(DESCRIPTOR)
+            .network(Network::Regtest)
+            .create_wallet_no_persist()
+            .unwrap();
+
+        let ctx = AppContext::new_offline_wallet(PathBuf::new(), &mut wallet);
+
+        assert_eq!(ctx.network, Network::Regtest);
+    }
 }

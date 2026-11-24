@@ -78,6 +78,15 @@ impl AppCommand<AppContext<Init>> for SaveConfigCommand {
             )));
         };
 
+        if let Some(existing) = config.wallets.get(wallet_name.as_str())
+            && existing.network != ctx.network.to_string()
+        {
+            return Err(Error::Generic(format!(
+                "Wallet '{}' is configured for network '{}', and --force cannot change it to '{}'.",
+                wallet_name, existing.network, ctx.network
+            )));
+        }
+
         #[cfg(any(
             feature = "electrum",
             feature = "esplora",
