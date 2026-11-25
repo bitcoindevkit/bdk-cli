@@ -11,8 +11,10 @@
 //! This module provides the necessary helper methods for tests
 //!
 use assert_cmd::Command;
+#[cfg(unix)]
 use bdk_testenv::{TestEnv, anyhow, bitcoincore_rpc::RpcApi, electrum_client::ElectrumApi};
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::time::{Duration, Instant};
 
 /// The bdk-cli command struct
@@ -92,6 +94,7 @@ impl BdkCli {
 /// `TestEnv::wait_until_electrum_sees_block` returns on the first queued header
 /// notification, which may be a stale one left over from an earlier `mine_blocks`
 /// call, so a following scan can run before the latest blocks are indexed.
+#[cfg(unix)]
 #[allow(unused)]
 pub fn wait_for_electrum_tip(env: &TestEnv, timeout: Duration) -> anyhow::Result<()> {
     let tip = env.rpc_client().get_block_count()? as usize;
