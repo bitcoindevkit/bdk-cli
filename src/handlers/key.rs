@@ -3,6 +3,7 @@ use crate::error::BDKCliError as Error;
 use crate::handlers::{AppCommand, AppContext, Init};
 use crate::utils::{output::FormatOutput, types::KeyResult};
 use bdk_wallet::bip39::{Language, Mnemonic};
+use bdk_wallet::bitcoin::Network;
 use bdk_wallet::bitcoin::bip32::{DerivationPath, KeySource, Xpriv};
 use bdk_wallet::bitcoin::key::Secp256k1;
 use bdk_wallet::keys::{
@@ -66,28 +67,10 @@ impl AppCommand<AppContext<Init>> for GenerateKeyCommand {
     type Output = KeyResult;
 
     fn execute(&self, ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
-        let secp = Secp256k1::new();
         let mnemonic: GeneratedKey<_, miniscript::BareCtx> =
             Mnemonic::generate((self.word_count.into(), Language::English))
                 .map_err(|_| Error::Generic("Mnemonic generation error".to_string()))?;
-        let mnemonic = mnemonic.into_key();
-        let xkey: ExtendedKey = (mnemonic.clone(), self.password.clone()).into_extended_key()?;
-        let xprv = xkey.into_xprv(ctx.network.into()).ok_or_else(|| {
-            Error::Generic("Privatekey info not found (should not happen)".to_string())
-        })?;
-        let fingerprint = xprv.fingerprint(&secp);
-        let phrase = mnemonic
-            .words()
-            .fold("".to_string(), |phrase, w| phrase + w + " ")
-            .trim()
-            .to_string();
-
-        Ok(KeyResult {
-            xprv: xprv.to_string(),
-            mnemonic: Some(phrase),
-            fingerprint: Some(fingerprint.to_string()),
-            xpub: None,
-        })
+        key_from_mnemonic(mnemonic.into_key(), self.password.clone(), ctx.network)
     }
 }
 
@@ -151,20 +134,29 @@ impl AppCommand<AppContext<Init>> for RestoreKeyCommand {
     type Output = KeyResult;
 
     fn execute(&self, ctx: &mut AppContext<Init>) -> Result<Self::Output, Error> {
-        let secp = Secp256k1::new();
-
         let mnemonic = Mnemonic::parse_in(Language::English, &self.mnemonic)?;
-        let xkey: ExtendedKey = (mnemonic.clone(), self.password.clone()).into_extended_key()?;
-        let xprv = xkey.into_xprv(ctx.network.into()).ok_or_else(|| {
-            Error::Generic("Privatekey info not found (should not happen)".to_string())
-        })?;
-        let fingerprint = xprv.fingerprint(&secp);
-
-        Ok(KeyResult {
-            xprv: xprv.to_string(),
-            mnemonic: Some(mnemonic.to_string()),
-            fingerprint: Some(fingerprint.to_string()),
-            xpub: None,
-        })
+        key_from_mnemonic(mnemonic, self.password.clone(), ctx.network)
     }
+}
+
+/// Derives the master key from a mnemonic and optional passphrase, as used by
+/// both `key generate` and `key restore`.
+fn key_from_mnemonic(
+    mnemonic: Mnemonic,
+    password: Option<String>,
+    network: Network,
+) -> Result<KeyResult, Error> {
+    let secp = Secp256k1::new();
+    let xkey: ExtendedKey = (mnemonic.clone(), password).into_extended_key()?;
+    let xprv = xkey.into_xprv(network.into()).ok_or_else(|| {
+        Error::Generic("Privatekey info not found (should not happen)".to_string())
+    })?;
+    let fingerprint = xprv.fingerprint(&secp);
+
+    Ok(KeyResult {
+        xprv: xprv.to_string(),
+        mnemonic: Some(mnemonic.to_string()),
+        fingerprint: Some(fingerprint.to_string()),
+        xpub: None,
+    })
 }
