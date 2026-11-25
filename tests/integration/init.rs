@@ -26,7 +26,7 @@ mod test_key {
 
         for word_count in [12, 24] {
             let output = cli
-                .key_cmd(&["generate", "--entropy", &word_count.to_string()])
+                .key_cmd(&["generate", "--word_count", &word_count.to_string()])
                 .output()
                 .expect("Failed to execute generate command");
             assert!(output.status.success(), "Generate command failed");
@@ -43,7 +43,7 @@ mod test_key {
         let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
 
         for word_count in ["0", "13", "15", "18", "21", "999"] {
-            cli.key_cmd(&["generate", "--entropy", word_count])
+            cli.key_cmd(&["generate", "--word_count", word_count])
                 .assert()
                 .failure()
                 .stderr(predicate::str::contains("possible values"));
@@ -134,12 +134,12 @@ mod test_key {
     }
 
     #[test]
-    fn test_cli_key_restore_with_password() {
+    fn test_cli_key_restore_with_passphrase() {
         let temp_dir = TempDir::new().unwrap();
         let cli = BdkCli::new("testnet", Some(temp_dir.path().to_path_buf()));
 
         let generate_cmd = cli
-            .key_cmd(&["generate", "--password", "foo"])
+            .key_cmd(&["generate", "--passphrase", "foo"])
             .output()
             .expect("Failed to execute generate command");
         assert!(generate_cmd.status.success(), "Generate command failed");
@@ -147,9 +147,9 @@ mod test_key {
             serde_json::from_slice(&generate_cmd.stdout).expect("Failed to parse JSON");
         let mnemonic = generate_json["mnemonic"].as_str().unwrap();
 
-        // Restoring with the same password must give back the same key
+        // Restoring with the same passphrase must give back the same key
         let restore_cmd = cli
-            .key_cmd(&["restore", "--mnemonic", mnemonic, "--password", "foo"])
+            .key_cmd(&["restore", "--mnemonic", mnemonic, "--passphrase", "foo"])
             .output()
             .expect("Failed to execute restore command");
         assert!(restore_cmd.status.success(), "Restore command failed");
@@ -158,16 +158,16 @@ mod test_key {
         assert_eq!(generate_json["xprv"], restore_json["xprv"]);
         assert_eq!(generate_json["fingerprint"], restore_json["fingerprint"]);
 
-        // Restoring without the password must give a different key
-        let no_password_cmd = cli
+        // Restoring without the passphrase must give a different key
+        let no_passphrase_cmd = cli
             .key_cmd(&["restore", "--mnemonic", mnemonic])
-            .env_remove("PASSWORD")
+            .env_remove("PASSPHRASE")
             .output()
             .expect("Failed to execute restore command");
-        assert!(no_password_cmd.status.success(), "Restore command failed");
-        let no_password_json: Value =
-            serde_json::from_slice(&no_password_cmd.stdout).expect("Failed to parse JSON");
-        assert_ne!(generate_json["xprv"], no_password_json["xprv"]);
+        assert!(no_passphrase_cmd.status.success(), "Restore command failed");
+        let no_passphrase_json: Value =
+            serde_json::from_slice(&no_passphrase_cmd.stdout).expect("Failed to parse JSON");
+        assert_ne!(generate_json["xprv"], no_passphrase_json["xprv"]);
     }
 }
 
