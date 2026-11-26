@@ -26,6 +26,7 @@ page. See [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md) for more details.
 - Gated `full_scan`'s `--scan-stop-gap` to the Electrum and Esplora backends that use it; RPC and CBF wallets now reject the flag instead of silently ignoring it, while a `STOP_GAP` environment variable keeps working for supported backends and no longer breaks unsupported ones
 - Changed `payjoin history` to return JSON instead of a rendered table
 - Fixed `wallet config --force` silently changing an existing wallet's network, which left the wallet unable to load; it is now rejected
+- Fixed the `rpc` backend failing against servers that send chunked responses
 
 ## [4.0.0]
 
