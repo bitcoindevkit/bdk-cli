@@ -11,8 +11,7 @@ use bdk_wallet::{
         secp256k1::{PublicKey, Scalar, SecretKey},
     },
     miniscript::{
-        ForEachKey, FromStrKey, Legacy, MiniscriptKey, ScriptContext, Tap, descriptor::TapTree,
-        policy::Concrete,
+        ForEachKey, FromStrKey, Legacy, MiniscriptKey, ScriptContext, Tap, policy::Concrete,
     },
 };
 #[cfg(any(feature = "hwi", feature = "compiler"))]
@@ -37,6 +36,8 @@ use bdk_wallet::{
 };
 
 use crate::error::BDKCliError as Error;
+#[cfg(feature = "compiler")]
+use crate::utils::taproot::compile_tap_tree;
 use crate::utils::types::DescriptorResult;
 use crate::utils::types::KeychainPair;
 
@@ -340,7 +341,7 @@ pub fn compile_policy<Pk: FromStrKey>(
                 .map_err(|e| Error::Generic(format!("Failed to tweak NUMS key: {e}")))?;
             let (xonly_internal_key, _) = internal_key_point.x_only_public_key();
 
-            let tree = TapTree::Leaf(Arc::new(policy.compile()?));
+            let tree = compile_tap_tree(&policy)?;
             let internal_key = Pk::from_str(&xonly_internal_key.to_string())
                 .map_err(|e| Error::Generic(format!("Failed to parse internal key: {e}")))?;
             Descriptor::new_tr(internal_key, Some(tree))
